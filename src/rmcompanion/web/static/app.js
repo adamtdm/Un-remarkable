@@ -782,11 +782,15 @@ el.btnConverterStart.addEventListener("click", async () => {
 
           const origMb = (job.original_size / (1024 * 1024)).toFixed(1);
           const resMb = (job.result_size / (1024 * 1024)).toFixed(1);
+          const redText =
+            job.reduction_percent >= 0
+              ? `${job.reduction_percent}% reduction`
+              : `+${Math.abs(job.reduction_percent)}% (upscaled)`;
           el.converterResultStats.innerHTML = `
             <strong>Pages:</strong> ${job.total_pages} &nbsp;|&nbsp;
             <strong>Original:</strong> ${origMb} MB &nbsp;➔&nbsp;
             <strong>Optimized:</strong> ${resMb} MB
-            (${job.reduction_percent}% reduction)<br>
+            (${redText})<br>
             <span style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 0.25rem; display: block;">
               Single-layer linearized PDF formatted at 229 PPI native screen size. Loads instantly on Paper Pro.
             </span>
@@ -842,7 +846,7 @@ function triggerSearch() {
       url.searchParams.set("q", q);
       url.searchParams.set("limit", "15");
       url.searchParams.set("only_notes", state.searchOnlyNotes ? "true" : "false");
-      url.searchParams.set("include_excluded", state.searchOnlyNotes ? "false" : "true");
+      url.searchParams.set("include_excluded", "false");
 
       const res = await fetch(url);
       if (!res.ok) return;

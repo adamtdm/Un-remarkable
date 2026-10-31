@@ -85,6 +85,8 @@ QUALITY_PROFILES: dict[int, QualityProfile] = {
 class ConverterEngine:
     """Manages document optimization jobs for fast e-ink rendering."""
 
+    MAX_CONVERSION_JOBS: int = 20
+
     def __init__(
         self,
         db: Database | None = None,
@@ -99,6 +101,18 @@ class ConverterEngine:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self._jobs: dict[str, dict[str, Any]] = {}
+        self._cleanup_stale_outputs()
+
+    def _cleanup_stale_outputs(self, max_age_hours: int = 24) -> None:
+        """Purge temporary conversion PDFs older than max_age_hours."""
+        try:
+            now = time.time()
+            cutoff = now - (max_age_hours * 3600)
+            for f in self.output_dir.glob("*.pdf"):
+                if f.is_file() and f.stat().st_mtime < cutoff:
+                    f.unlink(missing_ok=True)
+        except Exception as e:
+            logger.debug("Failed to clean up stale converter outputs: %s", e)
 
     def get_job(self, job_id: str) -> dict[str, Any] | None:
         return self._jobs.get(job_id)
@@ -108,21 +122,28 @@ class ConverterEngine:
 
     def convert_sync(
         self,
-        input_bytes: bytes,
-        input_type: str,
+        input_source: bytes | Path | None = None,
+        input_type: str = "pdf",
         quality_stop: int = 3,
         split_spreads: bool = False,
         manga_mode: bool = False,
         progress_cb: Callable[[int, int, str], None] | None = None,
         out_path: Path | None = None,
+        *,
+        input_bytes: bytes | None = None,
     ) -> bytes:
-        """Synchronously convert document bytes into an optimized PDF."""
+        """Synchronously convert document bytes or file path into an optimized PDF."""
+        source = input_source if input_source is not None else input_bytes
+        if source is None:
+            raise ValueError("No input source provided")
+
         profile = QUALITY_PROFILES.get(quality_stop, QUALITY_PROFILES[3])
         out_pdf = pymupdf.open()
 
         # Handle CBZ (ZIP of images)
         if input_type.lower() == "cbz":
-            with zipfile.ZipFile(io.BytesIO(input_bytes)) as z:
+            zip_target = source if isinstance(source, Path) else io.BytesIO(source)
+            with zipfile.ZipFile(zip_target) as z:
                 valid_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
                 img_names = sorted(
                     [n for n in z.namelist() if Path(n).suffix.lower() in valid_exts]
@@ -141,7 +162,12 @@ class ConverterEngine:
         # Handle PDF or EPUB
         else:
             filetype = "epub" if input_type.lower() == "epub" else "pdf"
-            with pymupdf.open(stream=input_bytes, filetype=filetype) as in_doc:
+            if isinstance(source, Path):
+                in_doc_ctx = pymupdf.open(str(source), filetype=filetype)
+            else:
+                in_doc_ctx = pymupdf.open(stream=source, filetype=filetype)
+
+            with in_doc_ctx as in_doc:
                 total = len(in_doc)
                 for idx, page in enumerate(in_doc):
                     if progress_cb:
@@ -233,12 +259,16 @@ class ConverterEngine:
         else:
             raise ValueError(f"No PDF or EPUB blob found for document {doc_id}")
 
-        input_bytes = self.blob_store.get(blob_hash)
+        blob_path = self.blob_store.get_path(blob_hash)
+        if not blob_path:
+            raise ValueError(f"Blob file missing from disk: {blob_hash}")
+        original_size = blob_path.stat().st_size
         title = doc.get("visible_name", "document")
         return self._launch_job(
             source_name=f"{title}.{input_type}",
-            input_bytes=input_bytes,
+            input_source=blob_path,
             input_type=input_type,
+            original_size=original_size,
             quality_stop=quality_stop,
             split_spreads=split_spreads,
             manga_mode=manga_mode,
@@ -259,8 +289,9 @@ class ConverterEngine:
 
         return self._launch_job(
             source_name=filename,
-            input_bytes=input_bytes,
+            input_source=input_bytes,
             input_type=ext,
+            original_size=len(input_bytes),
             quality_stop=quality_stop,
             split_spreads=split_spreads,
             manga_mode=manga_mode,
@@ -269,12 +300,23 @@ class ConverterEngine:
     def _launch_job(
         self,
         source_name: str,
-        input_bytes: bytes,
+        input_source: bytes | Path,
         input_type: str,
+        original_size: int,
         quality_stop: int,
         split_spreads: bool,
         manga_mode: bool,
     ) -> str:
+        # Evict oldest jobs when exceeding capacity
+        while len(self._jobs) >= self.MAX_CONVERSION_JOBS:
+            oldest_id = next(iter(self._jobs))
+            old_job = self._jobs.pop(oldest_id, None)
+            if old_job:
+                try:
+                    Path(old_job.get("output_path", "")).unlink(missing_ok=True)
+                except Exception as e:
+                    logger.debug("Failed to delete evicted job file %s: %s", oldest_id, e)
+
         job_id = str(uuid.uuid4())
         out_filename = f"{Path(source_name).stem}_optimized.pdf"
         out_path = self.output_dir / f"{job_id}.pdf"
@@ -290,7 +332,7 @@ class ConverterEngine:
             "progress_percent": 0,
             "current_page": 0,
             "total_pages": 0,
-            "original_size": len(input_bytes),
+            "original_size": original_size,
             "result_size": 0,
             "reduction_percent": 0.0,
             "started_at": time.time(),
@@ -308,10 +350,10 @@ class ConverterEngine:
                 job_info["progress_percent"] = int((current / max(total, 1)) * 100)
 
             try:
-                result_bytes = await loop.run_in_executor(
+                await loop.run_in_executor(
                     None,
                     self.convert_sync,
-                    input_bytes,
+                    input_source,
                     input_type,
                     quality_stop,
                     split_spreads,
@@ -340,5 +382,9 @@ class ConverterEngine:
                 job_info["status"] = "error"
                 job_info["error"] = str(e)
 
-        asyncio.create_task(_run())
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_run())
+        except RuntimeError:
+            pass
         return job_id

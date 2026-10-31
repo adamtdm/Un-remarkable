@@ -80,6 +80,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.state.db = db
+    app.state.blob_store = blob_store
+    app.state.auth = auth
+    app.state.client = client
+    app.state.sync_engine = sync_engine
+    app.state.exporter = exporter
+    app.state.converter_engine = converter_engine
+    app.state.text_indexer = text_indexer
+
     # CORS support for local and remote access
     app.add_middleware(
         CORSMiddleware,

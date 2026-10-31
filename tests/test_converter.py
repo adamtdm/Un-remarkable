@@ -56,3 +56,38 @@ def test_converter_sync_execution(tmp_path):
     # 1 normal + 2 split from spread + 1 normal = 4 pages
     assert len(doc_split) == 4
     doc_split.close()
+
+    # Convert from Path directly (mmap testing)
+    input_file = tmp_path / "input.pdf"
+    input_file.write_bytes(pdf_in)
+    out_file = tmp_path / "out_mmap.pdf"
+    converter.convert_sync(
+        input_source=input_file,
+        input_type="pdf",
+        quality_stop=2,
+        out_path=out_file,
+    )
+    assert out_file.is_file()
+    assert out_file.stat().st_size > 0
+
+
+def test_converter_job_eviction(tmp_path):
+    converter = ConverterEngine()
+    pdf_in = create_dummy_pdf(num_pages=1)
+    file_path = tmp_path / "test_sample.pdf"
+    file_path.write_bytes(pdf_in)
+
+    # Launch jobs exceeding MAX_CONVERSION_JOBS
+    for i in range(converter.MAX_CONVERSION_JOBS + 5):
+        converter._launch_job(
+            source_name=f"test_{i}.pdf",
+            input_source=file_path,
+            input_type="pdf",
+            original_size=len(pdf_in),
+            quality_stop=1,
+            split_spreads=False,
+            manga_mode=False,
+        )
+
+    # Length of jobs should never exceed MAX_CONVERSION_JOBS
+    assert len(converter._jobs) == converter.MAX_CONVERSION_JOBS

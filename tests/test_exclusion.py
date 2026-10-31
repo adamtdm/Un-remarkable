@@ -57,6 +57,91 @@ def test_document_and_folder_exclusion(tmp_path):
     assert len(title_results) >= 1
     assert title_results[0]["source"] == "title"
 
+    # Un-exclude the folder
+    affected_unexclude = db.set_exclude_from_search(folder_id, False)
+    assert folder_id in affected_unexclude
+    assert doc_id in affected_unexclude
+    assert not db.is_excluded_from_search(folder_id)
+    assert not db.is_excluded_from_search(doc_id)
+
+
+def test_api_recursive_unexclusion_reindexing(tmp_path):
+    import hashlib
+    import pymupdf
+    from fastapi.testclient import TestClient
+
+    from rmcompanion.config import Settings
+    from rmcompanion.web.app import create_app
+
+    settings = Settings(data_dir=tmp_path)
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    db = app.state.db
+    blob_store = app.state.blob_store
+
+    # 1. Create a dummy PDF with text
+    doc_pdf = pymupdf.open()
+    p = doc_pdf.new_page()
+    p.insert_text((50, 50), "Classified superhero research secret", fontsize=16)
+    pdf_bytes = doc_pdf.tobytes()
+    doc_pdf.close()
+
+    # 2. Store blob
+    pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
+    blob_store.put(pdf_hash, pdf_bytes, verify=False)
+
+    # 3. Insert folder and child document
+    folder_id = "fld-classified-1"
+    doc_id = "doc-hero-dossier-2"
+    doc_hash = "dochash123"
+
+    db.upsert_document({
+        "id": folder_id,
+        "visible_name": "Classified Folder",
+        "type": "CollectionType",
+        "parent_id": "",
+    })
+    db.upsert_document({
+        "id": doc_id,
+        "visible_name": "Hero Dossier",
+        "type": "DocumentType",
+        "file_type": "pdf",
+        "parent_id": folder_id,
+        "doc_hash": doc_hash,
+    })
+    db.set_document_files(
+        doc_hash,
+        [{"file_id": f"{doc_id}.pdf", "blob_hash": pdf_hash, "file_type": "pdf", "size": len(pdf_bytes)}],
+    )
+
+    # Index text initial
+    app.state.text_indexer.index_document(doc_id, doc_hash)
+
+    # Search finds it
+    res = client.get("/api/search?q=superhero").json()
+    assert len(res) >= 1
+    assert any(r["doc_id"] == doc_id for r in res)
+
+    # Exclude the folder via API
+    exc_res = client.post(f"/api/documents/{folder_id}/exclude-search", json={"exclude": True})
+    assert exc_res.status_code == 200
+    assert exc_res.json()["affected_count"] == 2
+
+    # Body text is purged from index; searching "superhero" returns 0 hits
+    search_exc = client.get("/api/search?q=superhero").json()
+    assert len(search_exc) == 0
+
+    # Un-exclude the folder via API
+    unexc_res = client.post(f"/api/documents/{folder_id}/exclude-search", json={"exclude": False})
+    assert unexc_res.status_code == 200
+    assert unexc_res.json()["affected_count"] == 2
+
+    # Now child document is automatically re-indexed and searchable again
+    search_restored = client.get("/api/search?q=superhero").json()
+    assert len(search_restored) >= 1
+    assert search_restored[0]["doc_id"] == doc_id
+
 
 def test_notes_only_search_filter(tmp_path):
     db_file = tmp_path / "test.db"

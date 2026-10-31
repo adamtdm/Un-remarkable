@@ -104,12 +104,19 @@ def get_router(
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
         affected = db.set_exclude_from_search(doc_id, payload.exclude)
-        # If un-excluding, trigger re-indexing
-        if not payload.exclude and not doc.get("deleted") and text_indexer:
-            try:
-                text_indexer.index_document(doc_id, doc.get("doc_hash", ""))
-            except Exception as e:
-                logger.warning("Failed to re-index %s: %s", doc_id, e)
+        # If un-excluding, trigger re-indexing for all affected non-collection documents
+        if not payload.exclude and text_indexer:
+            for aff_id in affected:
+                target_doc = db.get_document(aff_id)
+                if (
+                    target_doc
+                    and not target_doc.get("deleted")
+                    and target_doc.get("type") != "CollectionType"
+                ):
+                    try:
+                        text_indexer.index_document(aff_id, target_doc.get("doc_hash", ""))
+                    except Exception as e:
+                        logger.warning("Failed to re-index %s: %s", aff_id, e)
         return {
             "ok": True,
             "doc_id": doc_id,
@@ -124,18 +131,7 @@ def get_router(
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
         new_state = not doc.get("exclude_from_search", False)
-        affected = db.set_exclude_from_search(doc_id, new_state)
-        if not new_state and not doc.get("deleted") and text_indexer:
-            try:
-                text_indexer.index_document(doc_id, doc.get("doc_hash", ""))
-            except Exception as e:
-                logger.warning("Failed to re-index %s: %s", doc_id, e)
-        return {
-            "ok": True,
-            "doc_id": doc_id,
-            "exclude_from_search": new_state,
-            "affected_count": len(affected),
-        }
+        return set_exclude_search(doc_id, ExcludeSearchRequest(exclude=new_state))
 
     @r.get("/documents/{doc_id}/pages/{page_idx}/svg")
     def get_page_svg(doc_id: str, page_idx: int = 0, dark: bool = False) -> Response:
