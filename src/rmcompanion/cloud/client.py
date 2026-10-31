@@ -40,7 +40,7 @@ class RMCloudClient:
     async def _get_client(self) -> httpx.AsyncClient:
         if self._external_client is not None:
             return self._external_client
-        return httpx.AsyncClient(timeout=30.0)
+        return httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=15.0), follow_redirects=True)
 
     async def _request(
         self,
@@ -68,7 +68,7 @@ class RMCloudClient:
 
             while True:
                 attempt += 1
-                resp = await client.request(method, url, headers=req_headers, **kwargs)
+                resp = await client.request(method, url, headers=req_headers, follow_redirects=True, **kwargs)
 
                 # Handle token expiry
                 if resp.status_code == 401 and retry_auth:
