@@ -14,7 +14,10 @@ Mirror your entire reMarkable cloud library locally without jailbreaking, modify
 - **Perceptual OKLCH Dark Mode Reader:** Vector SVG renderer inverting background lightness while preserving color hues and highlights for natural night-time reading.
 - **Selective Search & OCR Exclusions:** Recursive folder-level and document-level search exclusions so novels and comics don't pollute meeting notes and notebook search queries.
 - **Full-Text Search (SQLite FTS5):** Instant full-text search across titles, tags, typed notes, and PDF text with search filtering (Notes only, All documents).
-- **AI Assistant Integration (MCP):** Native Model Context Protocol server exposing read tools over Streamable HTTP (`/mcp`) and stdio for Claude Desktop, Antigravity, and Cursor.
+- **AI Assistant Integration (MCP):** Native Model Context Protocol server exposing read and write tools over Streamable HTTP (`/mcp`) and stdio for Claude Desktop, Antigravity, and Cursor.
+- **Typed Notebook Editor & Markdown Import:** Create and type native reMarkable v6 `.rm` CRDT documents directly in your browser. Distraction-free Type Folio overlay in the reader and instant Markdown (`.md`) import.
+- **Handwriting OCR & Task Intelligence:** Rule-based parser extracting tasks (`*`, `- [ ]`, `TODO:`) and Vision OCR support (Google Gemini / OpenAI / Ollama) consolidating to-dos across notebooks into a synced "Tasks" notebook.
+- **Progressive Web App (PWA):** Installable standalone app on iOS, iPadOS, Android, and macOS with service worker offline shell and responsive touch controls.
 - **Immutable Content-Addressed Store:** Files are stored by SHA-256 hash in `./data/blobs/`, retaining full version history and point-in-time snapshots.
 
 ---
@@ -119,10 +122,72 @@ Add the server to your `claude_desktop_config.json`:
 
 ### Available MCP Tools
 - `list_documents`: Browse folders and list documents with metadata, page counts, and exclusion status.
-- `search_library`: Full-text search across titles, typed notes, PDF text, and tags.
+- `search`: Full-text search across titles, typed notes, PDF text, and tags.
 - `get_document`: Inspect document details, tags, versions, and page manifests.
 - `render_page`: Render any notebook page to vector SVG (with dark mode support).
 - `get_sync_status`: Check current sync generation, progress, and blob store statistics.
+- `list_tasks`: Query open or completed tasks consolidated from notebooks.
+- `complete_task`: Mark an action item or task as completed.
+- `create_notebook`: Create a new native reMarkable notebook with initial typed text.
+- `append_task`: Add a task checkbox item to the synced "Tasks" notebook.
+- `update_page_text`: Update or replace typed text on a specific page.
+
+---
+
+## Typed Notebook Editor & Markdown Import
+
+reMarkable Companion provides full native typing support generating authentic `.rm` v6 binary stroke and CRDT text trees:
+
+1. **Creating a Notebook:**
+   - Click **+ New Note** in the top navigation bar.
+   - Enter a title and optional parent folder.
+   - Type or paste notes or Markdown. Use `---` on a line by itself to create multi-page notebooks.
+   - Click **Create Notebook**. The document is saved directly into the content-addressed blob store and indexed for search and task extraction.
+2. **Distraction-Free Type Folio Overlay:**
+   - When reading any notebook in the document reader, click **⌨ Type**.
+   - An authentic typing panel opens alongside the page.
+   - Type or edit notes freely. Click **Save & Apply** to re-render the page vector SVG and persist changes back to the reMarkable document tree.
+3. **Importing Markdown Files:**
+   - In the **+ New Note** modal, click **Choose .md file...** to load any Markdown document.
+   - Markdown headers (`#`, `##`), bullet lists (`*`, `-`), and task checkboxes (`- [ ]`, `- [x]`) are preserved.
+
+---
+
+## Task Intelligence & Vision OCR
+
+reMarkable Companion automatically finds action items and to-dos in your notebooks:
+
+- **Rule-Based Extraction:** Scans typed text for checkboxes (`- [ ]`, `[ ]`), asterisks (`*`), and `TODO:` / `FIXME:` tags.
+- **Vision OCR for Handwriting:** Connect Google Gemini (`gemini-2.0-flash` recommended) or OpenAI/Ollama compatible endpoints in **⚙️ Settings** to transcribe handwritten margin notes, starred action items, and circled tasks.
+- **Task Consolidation:**
+  - Click **☑ Tasks** in the header to review all discovered open and completed tasks across all documents.
+  - Click **📓 Sync to 'Tasks' Notebook** to automatically assemble a master checklist notebook that syncs to your tablet.
+  - Add quick tasks directly using the top input field.
+
+---
+
+## Mobile PWA & Remote Access (Tailscale)
+
+### Install as a Mobile App (PWA)
+reMarkable Companion is a Progressive Web App with service worker caching:
+- **iPhone / iPad:** Open the web UI in Safari, tap **Share (square with arrow)**, and tap **Add to Home Screen**.
+- **Android:** Open in Chrome and tap the **Install app** or **Add to Home screen** banner.
+- **Desktop (macOS / Windows / Linux):** Click the install icon in Chrome or Edge address bar to run as a standalone window.
+
+### Remote Access via Tailscale (Zero Port-Forwarding)
+To securely access your companion and sync from outside your home without exposing ports to the public internet:
+
+1. Install Tailscale on the host machine running reMarkable Companion:
+   ```bash
+   curl -fsSL https://tailscale.com/install.sh | sh
+   sudo tailscale up
+   ```
+2. Install the Tailscale app on your iPhone, iPad, Android phone, or laptop and log into the same account.
+3. Access your companion directly via your host's Tailscale IP or MagicDNS hostname:
+   ```
+   http://remarkable-server.your-tailnet.ts.net:8099
+   ```
+4. All traffic is end-to-end encrypted with WireGuard.
 
 ---
 

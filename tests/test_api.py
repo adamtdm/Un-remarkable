@@ -40,3 +40,16 @@ def test_static_index_html(test_client):
     assert res.status_code == 200
     assert "reMarkable Companion" in res.text
     assert "<html" in res.text
+
+    # PWA files
+    manifest_res = test_client.get("/manifest.json")
+    assert manifest_res.status_code == 200
+    assert "reMarkable Companion" in manifest_res.json()["name"]
+
+    sw_res = test_client.get("/sw.js")
+    assert sw_res.status_code == 200
+    assert "rmc-shell" in sw_res.text
+
+    icon_res = test_client.get("/icon.svg")
+    assert icon_res.status_code == 200
+    assert "<svg" in icon_res.text

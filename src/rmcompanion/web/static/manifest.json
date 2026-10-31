@@ -1,0 +1,18 @@
+{
+  "name": "reMarkable Companion",
+  "short_name": "reMarkable",
+  "description": "Local cloud mirror, dark mode reader, and typed editor for reMarkable Paper Pro",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512 any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

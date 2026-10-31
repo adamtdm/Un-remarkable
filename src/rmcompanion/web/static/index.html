@@ -2,8 +2,15 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
   <title>reMarkable Companion</title>
+  <meta name="theme-color" content="#09090b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="reMarkable">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -447,5 +454,12 @@
   </div>
 
   <script src="/app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>
