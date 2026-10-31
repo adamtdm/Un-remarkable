@@ -1084,3 +1084,100 @@ main {
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+
+/* Phase 4: Typed Editor & Modal Elements */
+.btn-xs {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: var(--radius-sm);
+}
+
+.modal-textarea {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.modal-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.task-quick-add-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.task-quick-add-form input {
+  flex: 1;
+}
+
+/* Reader Distraction-free Typing Pane */
+.reader-typing-pane {
+  position: absolute;
+  top: 1rem;
+  right: 1.5rem;
+  width: 480px;
+  max-width: calc(100% - 3rem);
+  bottom: 1rem;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+  backdrop-filter: blur(8px);
+}
+
+.typing-pane-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-tertiary);
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+}
+
+.typing-pane-title {
+  display: flex;
+  flex-direction: column;
+}
+
+.typing-pane-title strong {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
+.typing-pane-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.typing-pane-textarea {
+  flex: 1;
+  width: 100%;
+  padding: 1rem;
+  border: none;
+  background-color: transparent;
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, serif;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  resize: none;
+}
+
+.typing-pane-textarea:focus {
+  outline: none;
+}
+

@@ -1,0 +1,188 @@
+"""Tests for Phase 4 typed notebook editor and markdown import."""
+
+import pytest
+
+from rmcompanion.config import Settings
+from rmcompanion.editor.notebook_editor import NotebookEditor, extract_page_typed_text
+from rmcompanion.intelligence.task_extractor import TaskExtractor
+from rmcompanion.render.exporter import Exporter
+from rmcompanion.store.blob_store import BlobStore
+from rmcompanion.store.db import Database
+
+
+@pytest.fixture
+def test_env(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache")
+    db = Database(db_path=tmp_path / "test.db", settings=settings)
+    blob_store = BlobStore(settings=settings)
+    exporter = Exporter(db=db, blob_store=blob_store, settings=settings)
+    task_extractor = TaskExtractor(db=db, blob_store=blob_store, exporter=exporter)
+    editor = NotebookEditor(db=db, blob_store=blob_store, task_extractor=task_extractor)
+    return {
+        "db": db,
+        "blob_store": blob_store,
+        "exporter": exporter,
+        "task_extractor": task_extractor,
+        "editor": editor,
+    }
+
+
+def test_create_notebook(test_env):
+    editor = test_env["editor"]
+    db = test_env["db"]
+
+    res = editor.create_notebook(
+        title="Weekly Sprint",
+        initial_text="Sprint goals:\n- [ ] Deliver Phase 4\n* Complete testing.",
+    )
+
+    doc_id = res["id"]
+    assert res["visible_name"] == "Weekly Sprint"
+    assert res["page_count"] == 1
+
+    doc = db.get_document(doc_id)
+    assert doc is not None
+    assert doc["visible_name"] == "Weekly Sprint"
+    assert len(doc["pages"]) == 1
+    assert len(doc["files"]) == 4  # .rm, .content, .metadata, .pagedata
+
+    # Test extracting typed text
+    extracted = editor.get_page_typed_text(doc_id, 0)
+    assert "Deliver Phase 4" in extracted
+    assert "Complete testing." in extracted
+
+    # Test task auto-extraction from typed text
+    tasks = db.list_tasks(doc_id=doc_id)
+    assert len(tasks) == 2
+
+
+def test_update_page_typed_text(test_env):
+    editor = test_env["editor"]
+    db = test_env["db"]
+
+    res = editor.create_notebook(title="Meeting Notes", initial_text="Initial line.")
+    doc_id = res["id"]
+
+    # Update text
+    updated = editor.update_page_typed_text(
+        doc_id=doc_id,
+        page_idx=0,
+        text="Updated line 1.\n- [ ] Follow up with client\n- [x] Send invoices",
+    )
+    assert updated["id"] == doc_id
+    assert updated["page_idx"] == 0
+
+    # Verify extracted text
+    text = editor.get_page_typed_text(doc_id, 0)
+    assert "Follow up with client" in text
+
+    # Verify tasks updated
+    tasks = db.list_tasks(doc_id=doc_id)
+    assert len(tasks) == 2
+    statuses = {t["clean_text"]: t["status"] for t in tasks}
+    assert statuses["Follow up with client"] == "open"
+    assert statuses["Send invoices"] == "completed"
+
+
+def test_tasks_notebook_sync(test_env):
+    editor = test_env["editor"]
+    db = test_env["db"]
+
+    # Append tasks to dedicated "Tasks" notebook
+    res1 = editor.append_task_to_tasks_notebook("Order replacement pen tips")
+    assert res1["visible_name"] == "Tasks"
+
+    res2 = editor.append_task_to_tasks_notebook("Configure Tailscale on server")
+    assert res2["visible_name"] == "Tasks"
+
+    text = editor.get_page_typed_text(res1["id"], 0)
+    assert "Order replacement pen tips" in text
+    assert "Configure Tailscale on server" in text
+
+
+def test_import_markdown(test_env):
+    editor = test_env["editor"]
+    db = test_env["db"]
+
+    md_content = """# Section 1
+Welcome to page 1.
+- [ ] Task on page 1
+
+---
+
+# Section 2
+Welcome to page 2.
+- [ ] Task on page 2
+"""
+    res = editor.import_markdown(title="Multi-page Spec", markdown_content=md_content)
+    doc_id = res["id"]
+    assert res["page_count"] == 2
+
+    # Verify page 0 and page 1
+    p0_text = editor.get_page_typed_text(doc_id, 0)
+    assert "Welcome to page 1" in p0_text
+
+    p1_text = editor.get_page_typed_text(doc_id, 1)
+    assert "Welcome to page 2" in p1_text
+
+    # Tasks across pages
+    tasks = db.list_tasks(doc_id=doc_id)
+    assert len(tasks) == 2
+
+
+def test_api_editor_endpoints(test_env):
+    from fastapi.testclient import TestClient
+    from rmcompanion.web.app import create_app
+
+    settings = Settings()
+    app = create_app(settings)
+    app.state.db = test_env["db"]
+    app.state.blob_store = test_env["blob_store"]
+    app.state.notebook_editor = test_env["editor"]
+
+    client = TestClient(app)
+
+    # 1. Create notebook
+    resp = client.post("/api/documents/new", json={"title": "Test Web Doc", "initial_text": "Hello world\n- [ ] Web task"})
+    assert resp.status_code == 200
+    data = resp.json()
+    doc_id = data["id"]
+    assert data["visible_name"] == "Test Web Doc"
+
+    # 2. Get text
+    resp_get = client.get(f"/api/documents/{doc_id}/pages/0/text")
+    assert resp_get.status_code == 200
+    assert "Web task" in resp_get.json()["text"]
+
+    # 3. Update text
+    resp_put = client.put(f"/api/documents/{doc_id}/pages/0/text", json={"text": "Updated content\n- [x] Web task"})
+    assert resp_put.status_code == 200
+    assert resp_put.json()["ok"] is True
+
+    # 4. Import markdown
+    resp_md = client.post("/api/documents/import-markdown", json={"title": "Imported MD", "markdown": "# Title\nContent"})
+    assert resp_md.status_code == 200
+    assert resp_md.json()["visible_name"] == "Imported MD"
+
+    # 5. Append task item
+    resp_task = client.post("/api/tasks/create-item", json={"text": "Buy reMarkable Marker Plus", "notebook_title": "Tasks"})
+    assert resp_task.status_code == 200
+    assert resp_task.json()["ok"] is True
+
+
+async def test_mcp_editor_tools(test_env):
+    from rmcompanion.mcp.server import create_mcp_server
+
+    server = create_mcp_server(
+        db=test_env["db"],
+        blob_store=test_env["blob_store"],
+        task_extractor=test_env["task_extractor"],
+        notebook_editor=test_env["editor"],
+    )
+
+    tool_list = await server.list_tools()
+    tools = {t.name: t for t in tool_list}
+    assert "create_notebook" in tools
+    assert "append_task" in tools
+    assert "update_page_text" in tools
+

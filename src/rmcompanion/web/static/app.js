@@ -143,6 +143,29 @@ const el = {
   settingsTestResult: document.getElementById("settings-test-result"),
   btnSettingsTest: document.getElementById("btn-settings-test"),
   btnSettingsSave: document.getElementById("btn-settings-save"),
+
+  // New notebook & typed editor elements
+  btnNewNotebook: document.getElementById("btn-new-notebook"),
+  newNotebookModal: document.getElementById("new-notebook-modal"),
+  btnNewNotebookClose: document.getElementById("btn-new-notebook-close"),
+  btnNewNotebookCancel: document.getElementById("btn-new-notebook-cancel"),
+  btnNewNotebookSubmit: document.getElementById("btn-new-notebook-submit"),
+  newNotebookTitle: document.getElementById("new-notebook-title"),
+  newNotebookParent: document.getElementById("new-notebook-parent"),
+  newNotebookContent: document.getElementById("new-notebook-content"),
+  btnImportFileTrigger: document.getElementById("btn-import-file-trigger"),
+  mdFileInput: document.getElementById("md-file-input"),
+
+  btnReaderTypeToggle: document.getElementById("btn-reader-type-toggle"),
+  readerTypingPane: document.getElementById("reader-typing-pane"),
+  typingPaneTextarea: document.getElementById("typing-pane-textarea"),
+  btnTypingDiscard: document.getElementById("btn-typing-discard"),
+  btnTypingSave: document.getElementById("btn-typing-save"),
+
+  btnSyncTasksNotebook: document.getElementById("btn-sync-tasks-notebook"),
+  taskQuickAddForm: document.getElementById("task-quick-add-form"),
+  taskQuickInput: document.getElementById("task-quick-input"),
+  btnTaskQuickAdd: document.getElementById("btn-task-quick-add"),
 };
 
 // --- Theme Management ---
@@ -693,6 +716,11 @@ el.btnReaderConvert.addEventListener("click", () => {
 
 function closeReader() {
   el.readerView.style.display = "none";
+  if (el.readerTypingPane) el.readerTypingPane.style.display = "none";
+  if (el.btnReaderTypeToggle) {
+    el.btnReaderTypeToggle.classList.remove("active");
+    el.btnReaderTypeToggle.textContent = "⌨ Type";
+  }
   state.currentDoc = null;
 }
 
@@ -1344,6 +1372,248 @@ if (el.btnSettingsTest) {
     } finally {
       el.btnSettingsTest.disabled = false;
       el.btnSettingsTest.textContent = "Test Connection";
+    }
+  });
+}
+
+// --- Phase 4: Typed Notebook Editor & Markdown Import ---
+async function loadTypingPaneText() {
+  if (!state.currentDoc) return;
+  const pageIdx = state.currentPageIdx || 0;
+  if (!el.typingPaneTextarea) return;
+
+  try {
+    const res = await fetch(`/api/documents/${state.currentDoc.id}/pages/${pageIdx}/text`);
+    if (res.ok) {
+      const data = await res.json();
+      el.typingPaneTextarea.value = data.text || "";
+    } else {
+      el.typingPaneTextarea.value = "";
+    }
+  } catch (e) {
+    console.error("Failed to fetch page text", e);
+  }
+}
+
+if (el.btnReaderTypeToggle) {
+  el.btnReaderTypeToggle.addEventListener("click", () => {
+    if (!el.readerTypingPane) return;
+    const isVisible = el.readerTypingPane.style.display !== "none";
+    if (isVisible) {
+      el.readerTypingPane.style.display = "none";
+      el.btnReaderTypeToggle.classList.remove("active");
+      el.btnReaderTypeToggle.textContent = "⌨ Type";
+    } else {
+      el.readerTypingPane.style.display = "flex";
+      el.btnReaderTypeToggle.classList.add("active");
+      el.btnReaderTypeToggle.textContent = "✕ Close";
+      loadTypingPaneText();
+      if (el.typingPaneTextarea) el.typingPaneTextarea.focus();
+    }
+  });
+}
+
+if (el.btnTypingDiscard) {
+  el.btnTypingDiscard.addEventListener("click", () => {
+    if (el.readerTypingPane) el.readerTypingPane.style.display = "none";
+    if (el.btnReaderTypeToggle) {
+      el.btnReaderTypeToggle.classList.remove("active");
+      el.btnReaderTypeToggle.textContent = "⌨ Type";
+    }
+  });
+}
+
+if (el.btnTypingSave) {
+  el.btnTypingSave.addEventListener("click", async () => {
+    if (!state.currentDoc || !el.typingPaneTextarea) return;
+    const pageIdx = state.currentPageIdx || 0;
+    const newText = el.typingPaneTextarea.value;
+
+    el.btnTypingSave.disabled = true;
+    el.btnTypingSave.textContent = "Saving...";
+
+    try {
+      const res = await fetch(`/api/documents/${state.currentDoc.id}/pages/${pageIdx}/text`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: newText }),
+      });
+      if (res.ok) {
+        // Refresh page SVG render
+        await loadCurrentPage();
+        fetchTasks();
+        if (el.readerTypingPane) el.readerTypingPane.style.display = "none";
+        if (el.btnReaderTypeToggle) {
+          el.btnReaderTypeToggle.classList.remove("active");
+          el.btnReaderTypeToggle.textContent = "⌨ Type";
+        }
+      } else {
+        alert("Failed to save typed text");
+      }
+    } catch (e) {
+      alert(`Error saving text: ${e.message}`);
+    } finally {
+      el.btnTypingSave.disabled = false;
+      el.btnTypingSave.textContent = "Save & Apply";
+    }
+  });
+}
+
+// New Notebook Modal
+function openNewNotebookModal() {
+  if (!el.newNotebookModal) return;
+  if (el.newNotebookTitle) el.newNotebookTitle.value = "";
+  if (el.newNotebookContent) el.newNotebookContent.value = "";
+
+  // Populate folder selector
+  if (el.newNotebookParent) {
+    el.newNotebookParent.innerHTML = '<option value="">(Root Library)</option>';
+    const folders = (state.allDocuments || []).filter((d) => d.type === "CollectionType" && !d.deleted);
+    for (const f of folders) {
+      const opt = document.createElement("option");
+      opt.value = f.id;
+      opt.textContent = `📁 ${f.visible_name}`;
+      if (f.id === state.currentFolderId) {
+        opt.selected = true;
+      }
+      el.newNotebookParent.appendChild(opt);
+    }
+  }
+
+  el.newNotebookModal.style.display = "flex";
+  if (el.newNotebookTitle) el.newNotebookTitle.focus();
+}
+
+function closeNewNotebookModal() {
+  if (el.newNotebookModal) el.newNotebookModal.style.display = "none";
+}
+
+if (el.btnNewNotebook) {
+  el.btnNewNotebook.addEventListener("click", openNewNotebookModal);
+}
+if (el.btnNewNotebookClose) {
+  el.btnNewNotebookClose.addEventListener("click", closeNewNotebookModal);
+}
+if (el.btnNewNotebookCancel) {
+  el.btnNewNotebookCancel.addEventListener("click", closeNewNotebookModal);
+}
+
+// Import .md file into new notebook
+if (el.btnImportFileTrigger && el.mdFileInput) {
+  el.btnImportFileTrigger.addEventListener("click", () => el.mdFileInput.click());
+  el.mdFileInput.addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      if (el.newNotebookContent) el.newNotebookContent.value = evt.target.result;
+      if (el.newNotebookTitle && !el.newNotebookTitle.value.trim()) {
+        el.newNotebookTitle.value = file.name.replace(/\.[^/.]+$/, "");
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+// Submit New Notebook
+if (el.btnNewNotebookSubmit) {
+  el.btnNewNotebookSubmit.addEventListener("click", async () => {
+    const title = el.newNotebookTitle ? el.newNotebookTitle.value.trim() : "";
+    const parentId = el.newNotebookParent ? el.newNotebookParent.value : "";
+    const content = el.newNotebookContent ? el.newNotebookContent.value : "";
+
+    el.btnNewNotebookSubmit.disabled = true;
+    el.btnNewNotebookSubmit.textContent = "Creating...";
+
+    try {
+      const res = await fetch("/api/documents/new", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title || "Untitled Notebook",
+          parent_id: parentId,
+          initial_text: content,
+        }),
+      });
+
+      if (res.ok) {
+        const newDoc = await res.json();
+        closeNewNotebookModal();
+        await fetchDocuments();
+        fetchTasks();
+        openReader(newDoc.id, 0);
+      } else {
+        alert("Failed to create notebook");
+      }
+    } catch (e) {
+      alert(`Error creating notebook: ${e.message}`);
+    } finally {
+      el.btnNewNotebookSubmit.disabled = false;
+      el.btnNewNotebookSubmit.textContent = "Create Notebook";
+    }
+  });
+}
+
+// Tasks Quick Add Form
+if (el.taskQuickAddForm) {
+  el.taskQuickAddForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!el.taskQuickInput) return;
+    const text = el.taskQuickInput.value.trim();
+    if (!text) return;
+
+    if (el.btnTaskQuickAdd) {
+      el.btnTaskQuickAdd.disabled = true;
+      el.btnTaskQuickAdd.textContent = "Adding...";
+    }
+
+    try {
+      const res = await fetch("/api/tasks/create-item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, notebook_title: "Tasks" }),
+      });
+      if (res.ok) {
+        el.taskQuickInput.value = "";
+        await fetchTasks();
+      } else {
+        alert("Failed to add task");
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      if (el.btnTaskQuickAdd) {
+        el.btnTaskQuickAdd.disabled = false;
+        el.btnTaskQuickAdd.textContent = "Add Task";
+      }
+    }
+  });
+}
+
+// Consolidate All Open Tasks to 'Tasks' Notebook
+if (el.btnSyncTasksNotebook) {
+  el.btnSyncTasksNotebook.addEventListener("click", async () => {
+    el.btnSyncTasksNotebook.disabled = true;
+    el.btnSyncTasksNotebook.textContent = "Consolidating...";
+
+    try {
+      const res = await fetch("/api/tasks/export-to-notebook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notebook_title: "Tasks" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Successfully synced ${data.result.task_count} tasks to 'Tasks' notebook!`);
+        fetchDocuments();
+      } else {
+        alert("Failed to sync tasks to notebook");
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      el.btnSyncTasksNotebook.disabled = false;
+      el.btnSyncTasksNotebook.textContent = "📓 Sync to 'Tasks' Notebook";
     }
   });
 }

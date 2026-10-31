@@ -9,6 +9,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.utilities.types import Image
 
 from rmcompanion.config import Settings, get_settings
+from rmcompanion.editor.notebook_editor import NotebookEditor
 from rmcompanion.intelligence.task_extractor import TaskExtractor
 from rmcompanion.render.exporter import Exporter
 from rmcompanion.store.blob_store import BlobStore
@@ -24,6 +25,7 @@ def create_mcp_server(
     exporter: Exporter | None = None,
     sync_engine: SyncEngine | None = None,
     task_extractor: TaskExtractor | None = None,
+    notebook_editor: NotebookEditor | None = None,
     settings: Settings | None = None,
 ) -> MCPServer:
     """Create and configure MCPServer instance with all reMarkable tools."""
@@ -31,6 +33,11 @@ def create_mcp_server(
     app_db = db or Database(settings=app_settings)
     app_blobs = blob_store or BlobStore(settings=app_settings)
     app_exporter = exporter or Exporter(db=app_db, blob_store=app_blobs, settings=app_settings)
+    app_editor = notebook_editor or NotebookEditor(
+        db=app_db,
+        blob_store=app_blobs,
+        task_extractor=task_extractor,
+    )
 
     server = MCPServer(
         name="remarkable-companion",
@@ -222,5 +229,46 @@ def create_mcp_server(
         """
         ok = app_db.set_task_status(task_id, "completed")
         return {"ok": ok, "task_id": task_id, "status": "completed"}
+
+    @server.tool(
+        name="create_notebook",
+        description="Create a new native reMarkable notebook with initial typed text.",
+    )
+    def create_notebook(title: str, text: str = "", parent_id: str = "") -> dict[str, Any]:
+        """Create a new notebook.
+
+        Args:
+            title: The visible title of the notebook.
+            text: Initial typed content for the first page.
+            parent_id: Optional parent folder UUID.
+        """
+        return app_editor.create_notebook(title=title, initial_text=text, parent_id=parent_id)
+
+    @server.tool(
+        name="append_task",
+        description="Append an action item or task checkbox to the synced reMarkable Tasks notebook.",
+    )
+    def append_task(text: str, notebook_title: str = "Tasks") -> dict[str, Any]:
+        """Append a task to the Tasks notebook.
+
+        Args:
+            text: The task description to add (e.g. 'Order stylus replacement tips').
+            notebook_title: Target notebook title (defaults to 'Tasks').
+        """
+        return app_editor.append_task_to_tasks_notebook(task_text=text, notebook_title=notebook_title)
+
+    @server.tool(
+        name="update_page_text",
+        description="Update or replace typed text on a specific page of a reMarkable notebook.",
+    )
+    def update_page_text(doc_id: str, page_idx: int, text: str) -> dict[str, Any]:
+        """Update typed text of a page.
+
+        Args:
+            doc_id: UUID of the notebook document.
+            page_idx: Zero-based page index.
+            text: The full new typed text for the page.
+        """
+        return app_editor.update_page_typed_text(doc_id=doc_id, page_idx=page_idx, text=text)
 
     return server

@@ -16,6 +16,7 @@ from rmcompanion.cloud.auth import AuthManager
 from rmcompanion.cloud.client import RMCloudClient
 from rmcompanion.config import Settings, get_settings
 from rmcompanion.converter.engine import ConverterEngine
+from rmcompanion.editor.notebook_editor import NotebookEditor
 from rmcompanion.index.text_indexer import TextIndexer
 from rmcompanion.intelligence.provider import get_vision_provider
 from rmcompanion.intelligence.task_extractor import TaskExtractor
@@ -59,6 +60,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         vision_provider=vision_provider,
     )
 
+    notebook_editor = NotebookEditor(
+        db=db,
+        blob_store=blob_store,
+        task_extractor=task_extractor,
+    )
+
     # Initialize MCP Server
     mcp_server = create_mcp_server(
         db=db,
@@ -66,6 +73,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         exporter=exporter,
         sync_engine=sync_engine,
         task_extractor=task_extractor,
+        notebook_editor=notebook_editor,
         settings=app_settings,
     )
 
@@ -100,6 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.converter_engine = converter_engine
     app.state.text_indexer = text_indexer
     app.state.task_extractor = task_extractor
+    app.state.notebook_editor = notebook_editor
 
     # CORS support for local and remote access
     app.add_middleware(
@@ -120,6 +129,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         converter_engine=converter_engine,
         text_indexer=text_indexer,
         task_extractor=task_extractor,
+        notebook_editor=notebook_editor,
         settings=app_settings,
     )
     app.include_router(api_router)

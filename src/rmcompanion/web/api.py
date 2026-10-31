@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from rmcompanion.cloud.auth import AuthManager
 from rmcompanion.config import Settings
 from rmcompanion.converter.engine import QUALITY_PROFILES, ConverterEngine
+from rmcompanion.editor.notebook_editor import NotebookEditor
 from rmcompanion.index.text_indexer import TextIndexer
 from rmcompanion.intelligence.task_extractor import TaskExtractor
 from rmcompanion.render.exporter import Exporter
@@ -48,6 +49,31 @@ class VisionSettingsRequest(BaseModel):
     base_url: str = ""
 
 
+class CreateNotebookRequest(BaseModel):
+    title: str
+    initial_text: str = ""
+    parent_id: str = ""
+
+
+class UpdatePageTextRequest(BaseModel):
+    text: str
+
+
+class ImportMarkdownRequest(BaseModel):
+    title: str
+    markdown: str
+    parent_id: str = ""
+
+
+class ExportTasksNotebookRequest(BaseModel):
+    notebook_title: str = "Tasks"
+
+
+class CreateTaskItemRequest(BaseModel):
+    text: str
+    notebook_title: str = "Tasks"
+
+
 def get_router(
     db: Database,
     blob_store: BlobStore,
@@ -57,9 +83,11 @@ def get_router(
     converter_engine: ConverterEngine | None = None,
     text_indexer: TextIndexer | None = None,
     task_extractor: TaskExtractor | None = None,
+    notebook_editor: NotebookEditor | None = None,
     settings: Settings | None = None,
 ) -> APIRouter:
     r = APIRouter(prefix="/api")
+    editor = notebook_editor or NotebookEditor(db=db, blob_store=blob_store, task_extractor=task_extractor)
 
     @r.get("/status")
     async def get_status() -> dict[str, Any]:
@@ -427,5 +455,85 @@ def get_router(
             return await provider.test_connection()
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    # Phase 4: Typed notebook editor and markdown import endpoints
+    @r.post("/documents/new")
+    def create_notebook_endpoint(payload: CreateNotebookRequest) -> dict[str, Any]:
+        """Create a new native reMarkable notebook."""
+        title = payload.title.strip() or "Untitled Notebook"
+        try:
+            return editor.create_notebook(
+                title=title,
+                initial_text=payload.initial_text,
+                parent_id=payload.parent_id,
+            )
+        except Exception as e:
+            logger.error("Failed to create notebook: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @r.get("/documents/{doc_id}/pages/{page_idx}/text")
+    def get_page_text_endpoint(doc_id: str, page_idx: int) -> dict[str, Any]:
+        """Get typed text of a notebook page."""
+        try:
+            text = editor.get_page_typed_text(doc_id, page_idx)
+            return {"doc_id": doc_id, "page_idx": page_idx, "text": text}
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Document not found")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @r.put("/documents/{doc_id}/pages/{page_idx}/text")
+    def update_page_text_endpoint(
+        doc_id: str,
+        page_idx: int,
+        payload: UpdatePageTextRequest,
+    ) -> dict[str, Any]:
+        """Update typed text of a notebook page."""
+        try:
+            res = editor.update_page_typed_text(doc_id, page_idx, payload.text)
+            return {"ok": True, "result": res}
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Document not found")
+        except IndexError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error("Failed to update page text: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @r.post("/documents/import-markdown")
+    def import_markdown_endpoint(payload: ImportMarkdownRequest) -> dict[str, Any]:
+        """Import markdown content to a new notebook."""
+        title = payload.title.strip() or "Imported Note"
+        try:
+            return editor.import_markdown(
+                title=title,
+                markdown_content=payload.markdown,
+                parent_id=payload.parent_id,
+            )
+        except Exception as e:
+            logger.error("Failed to import markdown: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @r.post("/tasks/export-to-notebook")
+    def export_tasks_to_notebook_endpoint(payload: ExportTasksNotebookRequest) -> dict[str, Any]:
+        """Consolidate open tasks into the synced Tasks notebook."""
+        try:
+            res = editor.sync_tasks_to_notebook(payload.notebook_title)
+            return {"ok": True, "result": res}
+        except Exception as e:
+            logger.error("Failed to export tasks to notebook: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @r.post("/tasks/create-item")
+    def create_task_item_endpoint(payload: CreateTaskItemRequest) -> dict[str, Any]:
+        """Append a single task checkbox to the Tasks notebook."""
+        if not payload.text.strip():
+            raise HTTPException(status_code=400, detail="Task text cannot be empty")
+        try:
+            res = editor.append_task_to_tasks_notebook(payload.text, payload.notebook_title)
+            return {"ok": True, "result": res}
+        except Exception as e:
+            logger.error("Failed to append task item: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
 
     return r
