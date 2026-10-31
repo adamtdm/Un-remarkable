@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS documents (
     last_opened_page INTEGER NOT NULL DEFAULT 0,
     pinned BOOLEAN NOT NULL DEFAULT 0,
     deleted BOOLEAN NOT NULL DEFAULT 0,
+    exclude_from_search BOOLEAN NOT NULL DEFAULT 0,
     file_type TEXT NOT NULL DEFAULT 'notebook', -- notebook, pdf, epub
     page_count INTEGER NOT NULL DEFAULT 0,
     doc_hash TEXT NOT NULL DEFAULT '',
@@ -120,6 +121,11 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.executescript(SCHEMA_SQL)
+            # Automatic schema migration for existing databases
+            try:
+                conn.execute("ALTER TABLE documents ADD COLUMN exclude_from_search BOOLEAN NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     @contextlib.contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -330,6 +336,8 @@ class Database:
             else:
                 doc["pages"] = []
                 doc["files"] = []
+            doc["exclude_from_search"] = bool(doc.get("exclude_from_search", False))
+            doc["effective_exclude"] = self.is_excluded_from_search(doc_id)
             return doc
 
     def list_documents(
@@ -356,7 +364,70 @@ class Database:
 
         with self.connect() as conn:
             rows = conn.execute(query, params).fetchall()
-            return [dict(r) for r in rows]
+            results = []
+            for r in rows:
+                d = dict(r)
+                d["pinned"] = bool(d.get("pinned", False))
+                d["deleted"] = bool(d.get("deleted", False))
+                d["exclude_from_search"] = bool(d.get("exclude_from_search", False))
+                results.append(d)
+            return results
+
+    def is_excluded_from_search(self, doc_id: str) -> bool:
+        """Check if document or any of its parent folders are marked exclude_from_search."""
+        current_id = doc_id
+        visited: set[str] = set()
+        with self.connect() as conn:
+            while current_id and current_id not in visited:
+                visited.add(current_id)
+                row = conn.execute(
+                    "SELECT parent_id, exclude_from_search FROM documents WHERE id = ?",
+                    (current_id,),
+                ).fetchone()
+                if not row:
+                    break
+                if row["exclude_from_search"]:
+                    return True
+                current_id = row["parent_id"]
+        return False
+
+    def get_descendant_ids(self, folder_id: str) -> list[str]:
+        """Get all descendant document and collection IDs under folder_id."""
+        descendants: list[str] = []
+        queue = [folder_id]
+        with self.connect() as conn:
+            while queue:
+                curr = queue.pop(0)
+                rows = conn.execute(
+                    "SELECT id, type FROM documents WHERE parent_id = ? AND deleted = 0",
+                    (curr,),
+                ).fetchall()
+                for r in rows:
+                    descendants.append(r["id"])
+                    if r["type"] == "CollectionType":
+                        queue.append(r["id"])
+        return descendants
+
+    def set_exclude_from_search(self, doc_id: str, exclude: bool) -> list[str]:
+        """Toggle exclusion for a document or folder. Purges non-title search index entries if excluded."""
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE documents SET exclude_from_search = ? WHERE id = ?",
+                (1 if exclude else 0, doc_id),
+            )
+            affected_ids = [doc_id]
+            row = conn.execute("SELECT type FROM documents WHERE id = ?", (doc_id,)).fetchone()
+            if row and row["type"] == "CollectionType":
+                descendants = self.get_descendant_ids(doc_id)
+                affected_ids.extend(descendants)
+
+            if exclude:
+                placeholders = ",".join("?" for _ in affected_ids)
+                conn.execute(
+                    f"DELETE FROM search_index WHERE doc_id IN ({placeholders}) AND source NOT IN ('title')",
+                    affected_ids,
+                )
+            return affected_ids
 
     def list_versions(self, doc_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
@@ -387,7 +458,13 @@ class Database:
                 (doc_id, page_idx, source, content),
             )
 
-    def search(self, query: str, limit: int = 25) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        limit: int = 25,
+        only_notes: bool = False,
+        include_excluded: bool = False,
+    ) -> list[dict[str, Any]]:
         clean_query = query.strip()
         if not clean_query:
             return []
@@ -395,7 +472,10 @@ class Database:
         words = [w.replace('"', '""') for w in clean_query.split() if w]
         fts_query = " ".join(f'"{w}"*' for w in words)
 
-        sql = """
+        note_filter = "AND d.file_type = 'notebook'" if only_notes else ""
+        exclude_filter = "" if include_excluded else "AND (d.exclude_from_search = 0 OR s.source = 'title')"
+
+        sql = f"""
         SELECT
             s.doc_id,
             s.page_idx,
@@ -407,18 +487,19 @@ class Database:
             d.parent_id
         FROM search_index s
         JOIN documents d ON s.doc_id = d.id
-        WHERE search_index MATCH ? AND d.deleted = 0
+        WHERE search_index MATCH ? AND d.deleted = 0 {note_filter} {exclude_filter}
         ORDER BY rank
         LIMIT ?
         """
+        fetch_limit = limit * 2 if not include_excluded else limit
         with self.connect() as conn:
             try:
-                cur = conn.execute(sql, (fts_query, limit))
-                return [dict(r) for r in cur.fetchall()]
+                cur = conn.execute(sql, (fts_query, fetch_limit))
+                results = [dict(r) for r in cur.fetchall()]
             except sqlite3.OperationalError:
                 # Fallback for complex syntax
                 cur = conn.execute(
-                    """
+                    f"""
                     SELECT
                         s.doc_id,
                         s.page_idx,
@@ -430,9 +511,16 @@ class Database:
                         d.parent_id
                     FROM search_index s
                     JOIN documents d ON s.doc_id = d.id
-                    WHERE s.content LIKE ? AND d.deleted = 0
+                    WHERE s.content LIKE ? AND d.deleted = 0 {note_filter} {exclude_filter}
                     LIMIT ?
                     """,
-                    (f"%{clean_query}%", limit),
+                    (f"%{clean_query}%", fetch_limit),
                 )
-                return [dict(r) for r in cur.fetchall()]
+                results = [dict(r) for r in cur.fetchall()]
+
+            if not include_excluded:
+                results = [
+                    r for r in results
+                    if r["source"] == "title" or not self.is_excluded_from_search(r["doc_id"])
+                ]
+            return results[:limit]

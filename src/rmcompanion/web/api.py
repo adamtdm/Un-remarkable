@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel
 
 from rmcompanion.cloud.auth import AuthManager
 from rmcompanion.config import Settings
+from rmcompanion.converter.engine import QUALITY_PROFILES, ConverterEngine
+from rmcompanion.index.text_indexer import TextIndexer
 from rmcompanion.render.exporter import Exporter
 from rmcompanion.store.blob_store import BlobStore
 from rmcompanion.store.db import Database
@@ -17,11 +20,19 @@ from rmcompanion.sync.engine import SyncEngine
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api")
-
 
 class RegisterCodeRequest(BaseModel):
     code: str
+
+
+class ExcludeSearchRequest(BaseModel):
+    exclude: bool
+
+
+class ConvertDocRequest(BaseModel):
+    quality_stop: int = 3
+    split_spreads: bool = False
+    manga_mode: bool = False
 
 
 def get_router(
@@ -30,6 +41,8 @@ def get_router(
     auth: AuthManager,
     sync_engine: SyncEngine,
     exporter: Exporter,
+    converter_engine: ConverterEngine | None = None,
+    text_indexer: TextIndexer | None = None,
     settings: Settings | None = None,
 ) -> APIRouter:
     r = APIRouter(prefix="/api")
@@ -49,9 +62,10 @@ def get_router(
         """Register device with an 8-character one-time code."""
         code = payload.code.strip()
         try:
-            device_token = await auth.register_device(code)
-            # Trigger immediate sync
-            asyncio_task = sync_engine.sync_once()
+            await auth.register_device(code)
+            # Trigger immediate sync in background
+            import asyncio
+            asyncio.create_task(sync_engine.sync_once())
             return {"status": "ok", "message": "Device authenticated successfully"}
         except Exception as e:
             logger.error("Authentication failed: %s", e)
@@ -82,6 +96,46 @@ def get_router(
         versions = db.list_versions(doc_id)
         doc["versions"] = versions
         return doc
+
+    @r.post("/documents/{doc_id}/exclude-search")
+    def set_exclude_search(doc_id: str, payload: ExcludeSearchRequest) -> dict[str, Any]:
+        """Set search/OCR exclusion for a document or folder."""
+        doc = db.get_document(doc_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        affected = db.set_exclude_from_search(doc_id, payload.exclude)
+        # If un-excluding, trigger re-indexing
+        if not payload.exclude and not doc.get("deleted") and text_indexer:
+            try:
+                text_indexer.index_document(doc_id, doc.get("doc_hash", ""))
+            except Exception as e:
+                logger.warning("Failed to re-index %s: %s", doc_id, e)
+        return {
+            "ok": True,
+            "doc_id": doc_id,
+            "exclude_from_search": payload.exclude,
+            "affected_count": len(affected),
+        }
+
+    @r.post("/documents/{doc_id}/indexing-toggle")
+    def toggle_exclude_search(doc_id: str) -> dict[str, Any]:
+        """Toggle current exclusion state for a document or folder."""
+        doc = db.get_document(doc_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        new_state = not doc.get("exclude_from_search", False)
+        affected = db.set_exclude_from_search(doc_id, new_state)
+        if not new_state and not doc.get("deleted") and text_indexer:
+            try:
+                text_indexer.index_document(doc_id, doc.get("doc_hash", ""))
+            except Exception as e:
+                logger.warning("Failed to re-index %s: %s", doc_id, e)
+        return {
+            "ok": True,
+            "doc_id": doc_id,
+            "exclude_from_search": new_state,
+            "affected_count": len(affected),
+        }
 
     @r.get("/documents/{doc_id}/pages/{page_idx}/svg")
     def get_page_svg(doc_id: str, page_idx: int = 0, dark: bool = False) -> Response:
@@ -124,10 +178,121 @@ def get_router(
             logger.exception("Error exporting PDF for %s: %s", doc_id, e)
             raise HTTPException(status_code=500, detail=str(e))
 
+    # --- Converter Endpoints ---
+
+    @r.get("/converter/profiles")
+    def get_converter_profiles() -> list[dict[str, Any]]:
+        """List available quality slider profiles."""
+        return [
+            {
+                "stop": p.stop,
+                "name": p.name,
+                "max_width": p.max_width,
+                "max_height": p.max_height,
+                "jpeg_quality": p.jpeg_quality,
+                "description": p.description,
+            }
+            for p in QUALITY_PROFILES.values()
+        ]
+
+    @r.post("/documents/{doc_id}/convert")
+    async def convert_library_doc(doc_id: str, payload: ConvertDocRequest) -> dict[str, Any]:
+        """Start optimization job for an existing document in the library."""
+        if not converter_engine:
+            raise HTTPException(status_code=503, detail="Converter engine not initialized")
+        try:
+            job_id = await converter_engine.start_job_from_doc(
+                doc_id=doc_id,
+                quality_stop=payload.quality_stop,
+                split_spreads=payload.split_spreads,
+                manga_mode=payload.manga_mode,
+            )
+            return {"ok": True, "job_id": job_id}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.exception("Failed to start convert job for %s: %s", doc_id, e)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @r.post("/converter/upload")
+    async def convert_upload(
+        file: UploadFile = File(...),
+        quality_stop: int = Form(3),
+        split_spreads: bool = Form(False),
+        manga_mode: bool = Form(False),
+    ) -> dict[str, Any]:
+        """Upload and convert an external file (PDF, EPUB, CBZ)."""
+        if not converter_engine:
+            raise HTTPException(status_code=503, detail="Converter engine not initialized")
+        try:
+            file_bytes = await file.read()
+            job_id = await converter_engine.start_job_from_upload(
+                filename=file.filename or "upload.pdf",
+                input_bytes=file_bytes,
+                quality_stop=quality_stop,
+                split_spreads=split_spreads,
+                manga_mode=manga_mode,
+            )
+            return {"ok": True, "job_id": job_id}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.exception("Failed to convert uploaded file: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @r.get("/converter/jobs")
+    def list_converter_jobs() -> list[dict[str, Any]]:
+        """List active and recent conversion jobs."""
+        if not converter_engine:
+            return []
+        return converter_engine.list_jobs()
+
+    @r.get("/converter/jobs/{job_id}")
+    def get_converter_job(job_id: str) -> dict[str, Any]:
+        """Get status and progress of a conversion job."""
+        if not converter_engine:
+            raise HTTPException(status_code=503, detail="Converter engine not initialized")
+        job = converter_engine.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return job
+
+    @r.get("/converter/jobs/{job_id}/download")
+    def download_converted_file(job_id: str) -> Response:
+        """Download the resulting optimized PDF."""
+        if not converter_engine:
+            raise HTTPException(status_code=503, detail="Converter engine not initialized")
+        job = converter_engine.get_job(job_id)
+        if not job or job.get("status") != "done":
+            raise HTTPException(status_code=404, detail="Converted file not ready or not found")
+        path = Path(job["output_path"])
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Output file missing from disk")
+
+        pdf_bytes = path.read_bytes()
+        filename = job.get("output_filename", "optimized.pdf")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # --- Search & History ---
+
     @r.get("/search")
-    def search(q: str = Query(..., min_length=1), limit: int = 25) -> list[dict[str, Any]]:
+    def search(
+        q: str = Query(..., min_length=1),
+        limit: int = 25,
+        only_notes: bool = False,
+        include_excluded: bool = False,
+    ) -> list[dict[str, Any]]:
         """Full-text search across documents and notes."""
-        return db.search(query=q, limit=limit)
+        return db.search(
+            query=q,
+            limit=limit,
+            only_notes=only_notes,
+            include_excluded=include_excluded,
+        )
 
     @r.get("/snapshots")
     def list_snapshots(limit: int = 30) -> list[dict[str, Any]]:

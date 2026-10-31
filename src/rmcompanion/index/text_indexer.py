@@ -28,6 +28,11 @@ class TextIndexer:
         if not doc or doc.get("deleted"):
             return
 
+        # Skip indexing body text if the document or any parent folder is excluded
+        if self.db.is_excluded_from_search(doc_id):
+            logger.debug("Skipping text indexing for excluded document %s", doc_id)
+            return
+
         files = {f["file_id"]: f["blob_hash"] for f in doc.get("files", [])}
         pages = doc.get("pages", [])
 
@@ -43,6 +48,19 @@ class TextIndexer:
                             self.db.index_content(doc_id, idx, "pdf_text", page_text.strip())
             except Exception as e:
                 logger.warning("Failed to extract PDF text for %s: %s", doc_id, e)
+
+        # 2. Index EPUB body text (if present and not covered by PDF)
+        epub_file = next((k for k in files if k.endswith(".epub")), None)
+        if epub_file and not pdf_file and self.blob_store.has(files[epub_file]):
+            try:
+                epub_bytes = self.blob_store.get(files[epub_file])
+                with pymupdf.open(stream=epub_bytes, filetype="epub") as epub_doc:
+                    for idx, page in enumerate(epub_doc):
+                        page_text = page.get_text()
+                        if page_text.strip():
+                            self.db.index_content(doc_id, idx, "pdf_text", page_text.strip())
+            except Exception as e:
+                logger.warning("Failed to extract EPUB text for %s: %s", doc_id, e)
 
         # 2. Index typed text and notes from .rm files
         for page_entry in pages:

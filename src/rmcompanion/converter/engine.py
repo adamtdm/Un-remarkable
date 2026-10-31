@@ -1,0 +1,344 @@
+"""Comic and oversized document converter tuned for reMarkable Paper Pro.
+
+Converts heavy fixed-layout EPUBs, bulky PDFs, and CBZ comic archives into
+lean, single-layer PDFs sized exactly to the Paper Pro's 2160x1620 screen.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import logging
+import time
+import uuid
+import zipfile
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import pymupdf
+
+from rmcompanion.config import Settings, get_settings
+from rmcompanion.store.blob_store import BlobStore
+from rmcompanion.store.db import Database
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class QualityProfile:
+    stop: int
+    name: str
+    max_height: int
+    max_width: int
+    jpeg_quality: int
+    description: str
+
+
+# 5-Stop Quality Slider Profiles
+# Paper Pro physical screen is 1620 x 2160 portrait (2160 x 1620 landscape) at 229 PPI
+QUALITY_PROFILES: dict[int, QualityProfile] = {
+    1: QualityProfile(
+        stop=1,
+        name="Smallest",
+        max_height=1600,
+        max_width=1200,
+        jpeg_quality=65,
+        description="Fastest page turns, ultra-low memory (~75% reduction)",
+    ),
+    2: QualityProfile(
+        stop=2,
+        name="Compact",
+        max_height=1920,
+        max_width=1440,
+        jpeg_quality=72,
+        description="Snappy paging with great legibility (~65% reduction)",
+    ),
+    3: QualityProfile(
+        stop=3,
+        name="Balanced",
+        max_height=2160,
+        max_width=1620,
+        jpeg_quality=82,
+        description="1:1 native Paper Pro pixel match (2160x1620 at 229 PPI) - Recommended",
+    ),
+    4: QualityProfile(
+        stop=4,
+        name="Sharp",
+        max_height=2560,
+        max_width=1920,
+        jpeg_quality=88,
+        description="Crisp fine text and detailed line art (~40% reduction)",
+    ),
+    5: QualityProfile(
+        stop=5,
+        name="Best",
+        max_height=3000,
+        max_width=2250,
+        jpeg_quality=92,
+        description="Maximum preservation of master scans (~10% reduction)",
+    ),
+}
+
+
+class ConverterEngine:
+    """Manages document optimization jobs for fast e-ink rendering."""
+
+    def __init__(
+        self,
+        db: Database | None = None,
+        blob_store: BlobStore | None = None,
+        settings: Settings | None = None,
+    ) -> None:
+        self.settings = settings or get_settings()
+        self.db = db or Database(settings=self.settings)
+        self.blob_store = blob_store or BlobStore(settings=self.settings)
+
+        self.output_dir = self.settings.cache_dir / "converted"
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        self._jobs: dict[str, dict[str, Any]] = {}
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        return self._jobs.get(job_id)
+
+    def list_jobs(self) -> list[dict[str, Any]]:
+        return list(reversed(list(self._jobs.values())))
+
+    def convert_sync(
+        self,
+        input_bytes: bytes,
+        input_type: str,
+        quality_stop: int = 3,
+        split_spreads: bool = False,
+        manga_mode: bool = False,
+        progress_cb: Callable[[int, int, str], None] | None = None,
+        out_path: Path | None = None,
+    ) -> bytes:
+        """Synchronously convert document bytes into an optimized PDF."""
+        profile = QUALITY_PROFILES.get(quality_stop, QUALITY_PROFILES[3])
+        out_pdf = pymupdf.open()
+
+        # Handle CBZ (ZIP of images)
+        if input_type.lower() == "cbz":
+            with zipfile.ZipFile(io.BytesIO(input_bytes)) as z:
+                valid_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
+                img_names = sorted(
+                    [n for n in z.namelist() if Path(n).suffix.lower() in valid_exts]
+                )
+                total = len(img_names)
+                for idx, name in enumerate(img_names):
+                    if progress_cb:
+                        progress_cb(idx + 1, total, f"Processing page {idx + 1} of {total}")
+                    raw_img = z.read(name)
+                    with pymupdf.open(stream=raw_img, filetype="image") as img_doc:
+                        self._process_and_insert_page(
+                            img_doc[0], out_pdf, profile, split_spreads, manga_mode
+                        )
+                    time.sleep(0.004)
+
+        # Handle PDF or EPUB
+        else:
+            filetype = "epub" if input_type.lower() == "epub" else "pdf"
+            with pymupdf.open(stream=input_bytes, filetype=filetype) as in_doc:
+                total = len(in_doc)
+                for idx, page in enumerate(in_doc):
+                    if progress_cb:
+                        progress_cb(idx + 1, total, f"Processing page {idx + 1} of {total}")
+                    self._process_and_insert_page(
+                        page, out_pdf, profile, split_spreads, manga_mode
+                    )
+                    time.sleep(0.004)
+
+        if out_path:
+            out_pdf.save(str(out_path), deflate=True, garbage=4, clean=True)
+            out_pdf.close()
+            return b""
+        else:
+            result_bytes = out_pdf.tobytes(deflate=True, garbage=4, clean=True)
+            out_pdf.close()
+            return result_bytes
+
+    def _process_and_insert_page(
+        self,
+        page: pymupdf.Page,
+        out_doc: pymupdf.Document,
+        profile: QualityProfile,
+        split_spreads: bool,
+        manga_mode: bool,
+    ) -> None:
+        """Render page or sub-pages to target resolution and insert as compressed JPEG."""
+        rect = page.rect
+        is_spread = rect.width > rect.height * 1.25
+
+        if is_spread and split_spreads:
+            # Split double spread into two portrait pages
+            half_w = rect.width / 2.0
+            r_left = pymupdf.Rect(rect.x0, rect.y0, rect.x0 + half_w, rect.y1)
+            r_right = pymupdf.Rect(rect.x0 + half_w, rect.y0, rect.x1, rect.y1)
+
+            sub_rects = [r_right, r_left] if manga_mode else [r_left, r_right]
+            for sub_r in sub_rects:
+                self._render_rect_to_page(page, sub_r, out_doc, profile, is_landscape=False)
+        else:
+            self._render_rect_to_page(page, rect, out_doc, profile, is_landscape=is_spread)
+
+    def _render_rect_to_page(
+        self,
+        page: pymupdf.Page,
+        clip_rect: pymupdf.Rect,
+        out_doc: pymupdf.Document,
+        profile: QualityProfile,
+        is_landscape: bool,
+    ) -> None:
+        target_w = profile.max_height if is_landscape else profile.max_width
+        target_h = profile.max_width if is_landscape else profile.max_height
+
+        scale_x = target_w / clip_rect.width
+        scale_y = target_h / clip_rect.height
+        scale = min(scale_x, scale_y)
+
+        mat = pymupdf.Matrix(scale, scale)
+        pix = page.get_pixmap(matrix=mat, clip=clip_rect, alpha=False)
+        jpg_bytes = pix.tobytes(output="jpeg", jpg_quality=profile.jpeg_quality)
+
+        new_page = out_doc.new_page(width=pix.width, height=pix.height)
+        new_page.insert_image(new_page.rect, stream=jpg_bytes)
+
+    async def start_job_from_doc(
+        self,
+        doc_id: str,
+        quality_stop: int = 3,
+        split_spreads: bool = False,
+        manga_mode: bool = False,
+    ) -> str:
+        """Start asynchronous conversion of an existing library document."""
+        doc = self.db.get_document(doc_id)
+        if not doc:
+            raise ValueError(f"Document {doc_id} not found")
+
+        files = {f["file_id"]: f["blob_hash"] for f in doc.get("files", [])}
+
+        # Look for PDF or EPUB blob
+        pdf_file = next((k for k in files if k.endswith(".pdf")), None)
+        epub_file = next((k for k in files if k.endswith(".epub")), None)
+
+        if pdf_file and self.blob_store.has(files[pdf_file]):
+            blob_hash = files[pdf_file]
+            input_type = "pdf"
+        elif epub_file and self.blob_store.has(files[epub_file]):
+            blob_hash = files[epub_file]
+            input_type = "epub"
+        else:
+            raise ValueError(f"No PDF or EPUB blob found for document {doc_id}")
+
+        input_bytes = self.blob_store.get(blob_hash)
+        title = doc.get("visible_name", "document")
+        return self._launch_job(
+            source_name=f"{title}.{input_type}",
+            input_bytes=input_bytes,
+            input_type=input_type,
+            quality_stop=quality_stop,
+            split_spreads=split_spreads,
+            manga_mode=manga_mode,
+        )
+
+    async def start_job_from_upload(
+        self,
+        filename: str,
+        input_bytes: bytes,
+        quality_stop: int = 3,
+        split_spreads: bool = False,
+        manga_mode: bool = False,
+    ) -> str:
+        """Start asynchronous conversion of an uploaded file."""
+        ext = Path(filename).suffix.lstrip(".").lower()
+        if ext not in {"pdf", "epub", "cbz"}:
+            raise ValueError(f"Unsupported format: .{ext} (must be .pdf, .epub, or .cbz)")
+
+        return self._launch_job(
+            source_name=filename,
+            input_bytes=input_bytes,
+            input_type=ext,
+            quality_stop=quality_stop,
+            split_spreads=split_spreads,
+            manga_mode=manga_mode,
+        )
+
+    def _launch_job(
+        self,
+        source_name: str,
+        input_bytes: bytes,
+        input_type: str,
+        quality_stop: int,
+        split_spreads: bool,
+        manga_mode: bool,
+    ) -> str:
+        job_id = str(uuid.uuid4())
+        out_filename = f"{Path(source_name).stem}_optimized.pdf"
+        out_path = self.output_dir / f"{job_id}.pdf"
+
+        job_info: dict[str, Any] = {
+            "job_id": job_id,
+            "source_name": source_name,
+            "output_filename": out_filename,
+            "output_path": str(out_path),
+            "quality_stop": quality_stop,
+            "quality_name": QUALITY_PROFILES.get(quality_stop, QUALITY_PROFILES[3]).name,
+            "status": "processing",
+            "progress_percent": 0,
+            "current_page": 0,
+            "total_pages": 0,
+            "original_size": len(input_bytes),
+            "result_size": 0,
+            "reduction_percent": 0.0,
+            "started_at": time.time(),
+            "completed_at": 0.0,
+            "error": "",
+        }
+        self._jobs[job_id] = job_info
+
+        async def _run() -> None:
+            loop = asyncio.get_running_loop()
+
+            def _progress(current: int, total: int, msg: str) -> None:
+                job_info["current_page"] = current
+                job_info["total_pages"] = total
+                job_info["progress_percent"] = int((current / max(total, 1)) * 100)
+
+            try:
+                result_bytes = await loop.run_in_executor(
+                    None,
+                    self.convert_sync,
+                    input_bytes,
+                    input_type,
+                    quality_stop,
+                    split_spreads,
+                    manga_mode,
+                    _progress,
+                    out_path,
+                )
+                result_size = out_path.stat().st_size
+                job_info["status"] = "done"
+                job_info["result_size"] = result_size
+                if job_info["original_size"] > 0:
+                    red = (
+                        1.0 - (result_size / job_info["original_size"])
+                    ) * 100.0
+                    job_info["reduction_percent"] = round(red, 1)
+                job_info["completed_at"] = time.time()
+                logger.info(
+                    "Job %s completed: %s -> %d bytes (%.1f%% reduction)",
+                    job_id,
+                    source_name,
+                    result_size,
+                    job_info["reduction_percent"],
+                )
+            except Exception as e:
+                logger.exception("Error processing job %s: %s", job_id, e)
+                job_info["status"] = "error"
+                job_info["error"] = str(e)
+
+        asyncio.create_task(_run())
+        return job_id

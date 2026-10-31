@@ -40,6 +40,25 @@ class SyncEngine:
         self._task: asyncio.Task[None] | None = None
         self._running = False
         self._sync_lock = asyncio.Lock()
+        self._progress: dict[str, Any] = {
+            "is_syncing": False,
+            "stage": "idle",
+            "total_docs": 0,
+            "current_doc_idx": 0,
+            "current_doc_name": "",
+            "current_doc_id": "",
+            "current_file": "",
+            "docs_updated": 0,
+            "bytes_downloaded": 0,
+            "started_at": 0.0,
+            "recent_activity": [],
+        }
+
+    def _add_recent_activity(self, item: dict[str, Any]) -> None:
+        activity = self._progress["recent_activity"]
+        activity.insert(0, item)
+        if len(activity) > 30:
+            activity.pop()
 
     @property
     def status(self) -> dict[str, Any]:
@@ -50,6 +69,7 @@ class SyncEngine:
             "last_root_hash": self.db.get_state("last_root_hash", ""),
             "last_error": self.db.get_state("sync_error", ""),
             "is_authenticated": self.auth.tokens.is_authenticated,
+            "progress": dict(self._progress),
         }
 
     async def sync_once(self) -> dict[str, Any]:
@@ -65,6 +85,11 @@ class SyncEngine:
         async with self._sync_lock:
             self.db.set_state("sync_status", "syncing")
             self.db.set_state("sync_error", "")
+            self._progress["is_syncing"] = True
+            self._progress["stage"] = "checking_cloud"
+            self._progress["started_at"] = time.time()
+            self._progress["current_doc_idx"] = 0
+            self._progress["docs_updated"] = 0
             start_time = time.time()
             try:
                 root_hash, generation, schema_version = await self.client.get_root()
@@ -74,6 +99,8 @@ class SyncEngine:
                     logger.debug("Remote root hash unchanged (%s, gen %d)", root_hash, generation)
                     self.db.set_state("sync_status", "idle")
                     self.db.set_state("last_sync_time", str(time.time()))
+                    self._progress["is_syncing"] = False
+                    self._progress["stage"] = "idle"
                     return {
                         "status": "idle",
                         "changed": False,
@@ -90,24 +117,33 @@ class SyncEngine:
                 )
 
                 # Download and save root index
+                self._progress["stage"] = "fetching_root"
                 root_entries, _, root_raw = await self.client.get_root_index(root_hash)
                 self.blob_store.put(root_hash, root_raw, verify=True)
 
                 doc_tuples: list[tuple[str, str]] = []
                 updated_count = 0
+                self._progress["stage"] = "syncing_documents"
+                self._progress["total_docs"] = len(root_entries)
 
-                for entry in root_entries:
+                for idx, entry in enumerate(root_entries):
                     doc_id = entry.doc_id
                     doc_hash = entry.hash
                     doc_tuples.append((doc_id, doc_hash))
 
-                    # Check if document has been modified
+                    self._progress["current_doc_idx"] = idx + 1
+                    self._progress["current_doc_id"] = doc_id
                     existing_doc = self.db.get_document(doc_id)
+                    doc_name = existing_doc.get("visible_name", doc_id) if existing_doc else doc_id
+                    self._progress["current_doc_name"] = doc_name
+
+                    # Check if document has been modified
                     if existing_doc and existing_doc.get("doc_hash") == doc_hash:
                         continue
 
-                    await self._sync_document(doc_id, doc_hash)
+                    await self._sync_document(doc_id, doc_hash, name_hint=doc_name)
                     updated_count += 1
+                    self._progress["docs_updated"] = updated_count
 
                 # Record overall snapshot
                 self.db.record_snapshot(root_hash, generation, schema_version, doc_tuples)
@@ -115,6 +151,10 @@ class SyncEngine:
                 self.db.set_state("last_generation", str(generation))
                 self.db.set_state("last_sync_time", str(time.time()))
                 self.db.set_state("sync_status", "idle")
+                self._progress["is_syncing"] = False
+                self._progress["stage"] = "idle"
+                self._progress["current_file"] = ""
+                self._progress["current_doc_name"] = ""
 
                 logger.info(
                     "Sync complete in %.2fs: %d documents in cloud, %d updated",
@@ -138,9 +178,11 @@ class SyncEngine:
                 logger.exception(err_msg)
                 self.db.set_state("sync_status", "error")
                 self.db.set_state("sync_error", str(e))
+                self._progress["is_syncing"] = False
+                self._progress["stage"] = "error"
                 return {"status": "error", "error": str(e)}
 
-    async def _sync_document(self, doc_id: str, doc_hash: str) -> None:
+    async def _sync_document(self, doc_id: str, doc_hash: str, name_hint: str = "") -> None:
         """Fetch index and all subfiles for a single document."""
         logger.debug("Syncing document %s (hash %s)", doc_id, doc_hash[:12])
         file_entries, _, doc_index_raw = await self.client.get_doc_index(doc_hash, doc_id)
@@ -155,11 +197,13 @@ class SyncEngine:
             file_id = f_entry.doc_id
             blob_hash = f_entry.hash
             blob_size = f_entry.size
+            self._progress["current_file"] = f"{name_hint or doc_id} / {file_id}"
 
             # Download blob if not present locally
             if not self.blob_store.has(blob_hash):
                 raw_blob = await self.client.get_blob(blob_hash, filename=file_id)
                 self.blob_store.put(blob_hash, raw_blob, verify=True)
+                self._progress["bytes_downloaded"] += len(raw_blob)
             else:
                 raw_blob = self.blob_store.get(blob_hash)
 
@@ -273,6 +317,15 @@ class SyncEngine:
         self.db.set_document_files(doc_hash, files_meta)
         self.db.set_document_pages(doc_hash, pages)
         self.db.set_document_tags(doc_id, tags)
+
+        self._add_recent_activity({
+            "timestamp": time.time(),
+            "doc_id": doc_id,
+            "name": doc_record["visible_name"],
+            "type": doc_record["file_type"] or doc_record["type"],
+            "pages": doc_record["page_count"],
+            "status": "synced",
+        })
 
         if self.on_doc_indexed and not doc_record["deleted"]:
             try:

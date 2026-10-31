@@ -21,6 +21,7 @@ dependencies = [
     "pymupdf>=1.25.0",
     "numpy>=2.0.0",
     "mcp>=2.0.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -43,3 +44,6 @@ rmcompanion = ["web/static/*"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff.lint]
+ignore = ["BLE001", "TRY401", "B008", "E501"]

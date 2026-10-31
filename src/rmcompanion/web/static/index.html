@@ -19,16 +19,22 @@
     </a>
 
     <div class="header-search">
-      <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="8"></circle>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-      </svg>
-      <input type="text" id="search-input" placeholder="Search notebooks, handwritten notes, PDFs..." autocomplete="off">
+      <div class="search-input-wrapper">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search notebooks, notes, PDFs..." autocomplete="off">
+      </div>
+      <div class="search-pills">
+        <button id="pill-search-notes" class="search-pill active" title="Search handwritten notebooks and typed notes only">Notes & Notebooks</button>
+        <button id="pill-search-all" class="search-pill" title="Search everything in library">All Files</button>
+      </div>
       <div id="search-dropdown" class="search-results-dropdown" style="display: none;"></div>
     </div>
 
     <div class="header-actions">
-      <div id="sync-badge" class="sync-badge unauth" title="Cloud Sync Status">
+      <div id="sync-badge" class="sync-badge unauth" title="Click to view live sync progress log">
         <div class="sync-dot"></div>
         <span id="sync-text">Checking...</span>
       </div>
@@ -41,6 +47,12 @@
           <path d="M16 21h5v-5"></path>
         </svg>
         <span>Sync</span>
+      </button>
+
+      <button id="btn-sync-drawer-toggle" class="btn btn-icon" title="Toggle detailed sync progress drawer">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
       </button>
 
       <button id="btn-theme-toggle" class="btn btn-icon" title="Toggle App Dark/Light Theme">
@@ -61,6 +73,38 @@
     </div>
   </header>
 
+  <!-- Live Sync Progress Drawer -->
+  <div id="sync-drawer" class="sync-drawer" style="display: none;">
+    <div class="sync-drawer-header">
+      <div class="sync-drawer-title">
+        <strong>Cloud Sync Monitor</strong>
+        <span id="sync-drawer-stage" class="stage-badge">Idle</span>
+      </div>
+      <button id="btn-sync-drawer-close" class="btn btn-icon" title="Close drawer">✕</button>
+    </div>
+
+    <div class="sync-drawer-body">
+      <div class="sync-progress-bar-container">
+        <div id="sync-progress-bar" class="sync-progress-bar" style="width: 0%;"></div>
+      </div>
+
+      <div class="sync-drawer-stats">
+        <span id="sync-progress-text">Ready</span>
+        <span id="sync-bytes-text">Transferred: 0 MB</span>
+      </div>
+
+      <div id="sync-active-file" class="sync-active-file" style="display: none;"></div>
+
+      <div class="sync-activity-heading">
+        <span>Recent Cloud Activity</span>
+        <span id="sync-updated-counter" class="sync-subtle">0 items updated</span>
+      </div>
+      <div id="sync-activity-list" class="sync-activity-list">
+        <div class="sync-empty-log">No recent sync events</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Connect Banner (shows if unauthenticated) -->
   <div id="auth-banner" class="auth-banner" style="display: none;">
     <div>
@@ -75,6 +119,17 @@
     <div class="toolbar">
       <div id="breadcrumbs" class="breadcrumbs">
         <a href="#" data-folder="">Home</a>
+      </div>
+
+      <div class="toolbar-center-actions">
+        <button id="btn-folder-exclude" class="btn btn-sm" style="display: none;" title="Toggle search & OCR exclusion for this folder">
+          <span id="folder-exclude-icon">🚫</span>
+          <span id="folder-exclude-label">Exclude Folder from Search</span>
+        </button>
+
+        <button id="btn-open-converter" class="btn btn-sm btn-accent" title="Convert comics and bulky files to native Paper Pro PDF">
+          ⚡ Optimize for Paper Pro
+        </button>
       </div>
 
       <div class="filter-tabs">
@@ -102,6 +157,7 @@
           <span>Library</span>
         </button>
         <span id="reader-title" class="reader-title">Document Title</span>
+        <span id="reader-exclude-badge" class="badge-excluded" style="display: none;" title="Excluded from full-text search & OCR">Excluded from Search</span>
       </div>
 
       <div class="reader-nav">
@@ -111,6 +167,8 @@
       </div>
 
       <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <button id="btn-reader-exclude-toggle" class="btn btn-sm" title="Exclude/Include in search index">🚫 Exclude</button>
+        <button id="btn-reader-convert" class="btn btn-sm btn-accent" title="Convert or optimize this document for Paper Pro">⚡ Optimize</button>
         <button id="btn-fit-toggle" class="btn" title="Toggle Fit Mode">Fit Width</button>
         <button id="btn-page-dark-toggle" class="btn" title="Toggle Inverted Dark Mode for Document">Dark: On</button>
         <button id="btn-export-pdf" class="btn" title="Export annotated PDF">Export PDF</button>
@@ -120,6 +178,80 @@
     <div class="reader-content" id="reader-content">
       <div id="reader-canvas-wrapper">
         <!-- SVG will be loaded here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Comic & File Converter Modal -->
+  <div id="converter-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h2>⚡ Paper Pro Document & Comic Optimizer</h2>
+        <button id="btn-converter-close" class="btn btn-icon">✕</button>
+      </div>
+
+      <p class="modal-desc">
+        Tuned specifically for the reMarkable Paper Pro (2160×1620 screen). Converts bulky PDFs, fixed-layout EPUBs, and CBZ comics into single-layer, fast-rendering PDFs with instant page turns.
+      </p>
+
+      <div class="converter-source-section">
+        <label><strong>Source Document:</strong></label>
+        <div class="converter-source-selector">
+          <input type="text" id="converter-doc-name" class="modal-input" readonly placeholder="Select a document or upload a file">
+          <input type="hidden" id="converter-doc-id">
+          <button id="btn-converter-upload-trigger" class="btn">Choose External File...</button>
+          <input type="file" id="converter-file-input" style="display: none;" accept=".pdf,.epub,.cbz">
+        </div>
+      </div>
+
+      <div class="converter-slider-section">
+        <div class="slider-header">
+          <label><strong>Quality & Size Slider:</strong></label>
+          <span id="slider-stop-name" class="slider-stop-badge">Stop 3: Balanced (Recommended)</span>
+        </div>
+        <input type="range" id="quality-slider" min="1" max="5" value="3" step="1" class="quality-range">
+        <div class="slider-ticks">
+          <span>1: Smallest</span>
+          <span>2: Compact</span>
+          <span>3: Balanced</span>
+          <span>4: Sharp</span>
+          <span>5: Best</span>
+        </div>
+        <div id="slider-description" class="slider-desc-card">
+          1:1 native Paper Pro pixel match (2160x1620 portrait at 229 PPI). Instant page turns with crisp e-ink contrast.
+        </div>
+      </div>
+
+      <div class="converter-options-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="chk-split-spreads">
+          <span>Split 2-page landscape spreads into individual portrait pages</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="chk-manga-mode">
+          <span>Manga reading direction (Right-to-Left)</span>
+        </label>
+      </div>
+
+      <!-- Job Progress / Result Area -->
+      <div id="converter-progress-area" style="display: none;">
+        <div class="sync-progress-bar-container">
+          <div id="converter-progress-bar" class="sync-progress-bar" style="width: 0%;"></div>
+        </div>
+        <div id="converter-progress-text" class="converter-status-text">Processing page 0 of 0...</div>
+      </div>
+
+      <div id="converter-result-area" class="converter-result-card" style="display: none;">
+        <div class="result-success-title">✓ Optimization Complete!</div>
+        <div id="converter-result-stats" class="result-stats"></div>
+        <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
+          <a id="btn-converter-download" class="btn btn-primary" href="#" target="_blank">Download Optimized PDF</a>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-converter-cancel" class="btn">Close</button>
+        <button id="btn-converter-start" class="btn btn-primary">Start Optimization</button>
       </div>
     </div>
   </div>

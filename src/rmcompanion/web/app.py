@@ -15,6 +15,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from rmcompanion.cloud.auth import AuthManager
 from rmcompanion.cloud.client import RMCloudClient
 from rmcompanion.config import Settings, get_settings
+from rmcompanion.converter.engine import ConverterEngine
 from rmcompanion.index.text_indexer import TextIndexer
 from rmcompanion.mcp.server import create_mcp_server
 from rmcompanion.render.exporter import Exporter
@@ -46,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     exporter = Exporter(db=db, blob_store=blob_store, settings=app_settings)
+    converter_engine = ConverterEngine(db=db, blob_store=blob_store, settings=app_settings)
 
     # Initialize MCP Server
     mcp_server = create_mcp_server(
@@ -94,6 +96,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         auth=auth,
         sync_engine=sync_engine,
         exporter=exporter,
+        converter_engine=converter_engine,
+        text_indexer=text_indexer,
         settings=app_settings,
     )
     app.include_router(api_router)
