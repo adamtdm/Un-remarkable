@@ -1,0 +1,109 @@
+"""FastAPI application factory mounting REST APIs, MCP endpoint, and web UI."""
+
+from __future__ import annotations
+
+import contextlib
+import logging
+from collections.abc import AsyncIterator
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from mcp.server.transport_security import TransportSecuritySettings
+
+from rmcompanion.cloud.auth import AuthManager
+from rmcompanion.cloud.client import RMCloudClient
+from rmcompanion.config import Settings, get_settings
+from rmcompanion.index.text_indexer import TextIndexer
+from rmcompanion.mcp.server import create_mcp_server
+from rmcompanion.render.exporter import Exporter
+from rmcompanion.store.blob_store import BlobStore
+from rmcompanion.store.db import Database
+from rmcompanion.sync.engine import SyncEngine
+from rmcompanion.web.api import get_router
+
+logger = logging.getLogger(__name__)
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Create and configure the primary FastAPI application."""
+    app_settings = settings or get_settings()
+
+    db = Database(settings=app_settings)
+    blob_store = BlobStore(settings=app_settings)
+    auth = AuthManager(settings=app_settings)
+    client = RMCloudClient(auth=auth, settings=app_settings)
+    text_indexer = TextIndexer(db=db, blob_store=blob_store)
+
+    sync_engine = SyncEngine(
+        client=client,
+        db=db,
+        blob_store=blob_store,
+        auth=auth,
+        settings=app_settings,
+        on_doc_indexed=text_indexer.index_document,
+    )
+
+    exporter = Exporter(db=db, blob_store=blob_store, settings=app_settings)
+
+    # Initialize MCP Server
+    mcp_server = create_mcp_server(
+        db=db,
+        blob_store=blob_store,
+        exporter=exporter,
+        sync_engine=sync_engine,
+        settings=app_settings,
+    )
+
+    # Create streamable HTTP app for MCP
+    mcp_asgi = mcp_server.streamable_http_app(
+        streamable_http_path="/",
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        logger.info("Initializing reMarkable Companion on port %d...", app_settings.port)
+        sync_engine.start_background_loop()
+        async with mcp_server.session_manager.run():
+            yield
+        sync_engine.stop()
+        logger.info("reMarkable Companion stopped")
+
+    app = FastAPI(
+        title="reMarkable Companion",
+        description="Local cloud mirror, dark mode web reader, and MCP server for reMarkable Paper Pro",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+
+    # CORS support for local and remote access
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Mount REST API
+    api_router = get_router(
+        db=db,
+        blob_store=blob_store,
+        auth=auth,
+        sync_engine=sync_engine,
+        exporter=exporter,
+        settings=app_settings,
+    )
+    app.include_router(api_router)
+
+    # Mount MCP endpoint
+    app.mount("/mcp", mcp_asgi)
+
+    # Mount Static Web Assets
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.is_dir():
+        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+
+    return app

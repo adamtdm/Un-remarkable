@@ -1,0 +1,15 @@
+services:
+  rmcompanion:
+    build: .
+    container_name: rmcompanion
+    restart: unless-stopped
+    ports:
+      - "8099:8099"
+    volumes:
+      - ./data:/data
+    environment:
+      - RMC_DATA_DIR=/data
+      - RMC_HOST=0.0.0.0
+      - RMC_PORT=8099
+      - RMC_SYNC_INTERVAL_SECONDS=120
+      - RMC_LOG_LEVEL=INFO

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>reMarkable Companion</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <a class="brand" id="brand-home">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+        <path d="M6 6h10"></path>
+        <path d="M6 10h10"></path>
+      </svg>
+      <span>reMarkable Companion</span>
+    </a>
+
+    <div class="header-search">
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input type="text" id="search-input" placeholder="Search notebooks, handwritten notes, PDFs..." autocomplete="off">
+      <div id="search-dropdown" class="search-results-dropdown" style="display: none;"></div>
+    </div>
+
+    <div class="header-actions">
+      <div id="sync-badge" class="sync-badge unauth" title="Cloud Sync Status">
+        <div class="sync-dot"></div>
+        <span id="sync-text">Checking...</span>
+      </div>
+
+      <button id="btn-sync-now" class="btn" title="Sync now with reMarkable cloud">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+          <path d="M3 3v5h5"></path>
+          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
+          <path d="M16 21h5v-5"></path>
+        </svg>
+        <span>Sync</span>
+      </button>
+
+      <button id="btn-theme-toggle" class="btn btn-icon" title="Toggle App Dark/Light Theme">
+        <svg id="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2"></path>
+          <path d="M12 20v2"></path>
+          <path d="m4.93 4.93 1.41 1.41"></path>
+          <path d="m17.66 17.66 1.41 1.41"></path>
+          <path d="M2 12h2"></path>
+          <path d="M20 12h2"></path>
+          <path d="m6.34 17.66-1.41 1.41"></path>
+          <path d="m19.07 4.93-1.41 1.41"></path>
+        </svg>
+      </button>
+
+      <button id="btn-auth-open" class="btn btn-primary" style="display: none;">Connect</button>
+    </div>
+  </header>
+
+  <!-- Connect Banner (shows if unauthenticated) -->
+  <div id="auth-banner" class="auth-banner" style="display: none;">
+    <div>
+      <strong>Not connected to reMarkable Cloud:</strong>
+      <span>Link your account to enable continuous background sync and local mirroring.</span>
+    </div>
+    <button id="btn-banner-connect" class="btn btn-primary">Connect Device</button>
+  </div>
+
+  <!-- Library View -->
+  <main id="library-view">
+    <div class="toolbar">
+      <div id="breadcrumbs" class="breadcrumbs">
+        <a href="#" data-folder="">Home</a>
+      </div>
+
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-type="">All</button>
+        <button class="filter-tab" data-type="notebook">Notebooks</button>
+        <button class="filter-tab" data-type="pdf">PDFs</button>
+        <button class="filter-tab" data-type="epub">EPUBs</button>
+      </div>
+    </div>
+
+    <div id="doc-grid" class="doc-grid">
+      <!-- Injected by JavaScript -->
+    </div>
+  </main>
+
+  <!-- Reader View Modal / Fullscreen -->
+  <div id="reader-view" class="reader-container fit-page" style="display: none;">
+    <div class="reader-header">
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <button id="btn-reader-close" class="btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span>Library</span>
+        </button>
+        <span id="reader-title" class="reader-title">Document Title</span>
+      </div>
+
+      <div class="reader-nav">
+        <button id="btn-page-prev" class="btn btn-icon" title="Previous Page (Left Arrow)">◀</button>
+        <span id="reader-page-indicator" style="font-size: 0.85rem; font-weight: 500; min-width: 90px; text-align: center;">Page 1 of 1</span>
+        <button id="btn-page-next" class="btn btn-icon" title="Next Page (Right Arrow)">▶</button>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <button id="btn-fit-toggle" class="btn" title="Toggle Fit Mode">Fit Width</button>
+        <button id="btn-page-dark-toggle" class="btn" title="Toggle Inverted Dark Mode for Document">Dark: On</button>
+        <button id="btn-export-pdf" class="btn" title="Export annotated PDF">Export PDF</button>
+      </div>
+    </div>
+
+    <div class="reader-content" id="reader-content">
+      <div id="reader-canvas-wrapper">
+        <!-- SVG will be loaded here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Connect Modal -->
+  <div id="auth-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal">
+      <h2>Connect reMarkable Account</h2>
+      <p>1. Go to <a href="https://my.remarkable.com/device/browser/connect" target="_blank" style="color: var(--accent);">my.remarkable.com/device/browser/connect</a><br>
+         2. Copy the 8-character one-time code and enter it below:</p>
+      
+      <input type="text" id="auth-code-input" class="modal-input" placeholder="ABCDEFGH" maxlength="8">
+      <div id="auth-error" style="color: var(--danger); font-size: 0.85rem; margin-bottom: 0.75rem; display: none;"></div>
+
+      <div class="modal-actions">
+        <button id="btn-auth-cancel" class="btn">Cancel</button>
+        <button id="btn-auth-submit" class="btn btn-primary">Pair Device</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
