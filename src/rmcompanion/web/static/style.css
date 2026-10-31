@@ -384,7 +384,8 @@ main {
   font-size: 1.15rem;
   text-align: center;
   letter-spacing: 0.25rem;
-  text-transform: uppercase;
+  font-family: monospace, -apple-system, sans-serif;
+  text-transform: lowercase;
   margin-bottom: 1rem;
   outline: none;
 }

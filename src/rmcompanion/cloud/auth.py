@@ -93,7 +93,7 @@ class AuthManager:
 
     async def register_device(self, one_time_code: str, client: httpx.AsyncClient | None = None) -> str:
         """Exchange an 8-character code from my.remarkable.com for a device token."""
-        code = one_time_code.strip()
+        code = one_time_code.strip().lower()
         if len(code) != 8:
             raise ValueError("One-time code must be exactly 8 characters long")
 

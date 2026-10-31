@@ -119,7 +119,7 @@ el.btnBannerConnect.addEventListener("click", openAuthModal);
 el.btnAuthCancel.addEventListener("click", closeAuthModal);
 
 el.btnAuthSubmit.addEventListener("click", async () => {
-  const code = el.authCodeInput.value.trim().toUpperCase();
+  const code = el.authCodeInput.value.trim().toLowerCase();
   if (code.length !== 8) {
     el.authError.textContent = "Code must be exactly 8 characters.";
     el.authError.style.display = "block";
