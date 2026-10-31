@@ -381,18 +381,25 @@ main {
 
 .modal-input {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.65rem 0.85rem;
   background-color: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   color: var(--text-primary);
+  font-size: 0.95rem;
+  text-align: left;
+  letter-spacing: normal;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.modal-input-code {
   font-size: 1.15rem;
   text-align: center;
-  letter-spacing: 0.25rem;
+  letter-spacing: 0.2rem;
   font-family: monospace, -apple-system, sans-serif;
   text-transform: lowercase;
   margin-bottom: 1rem;
-  outline: none;
 }
 
 .modal-input:focus {
@@ -954,4 +961,126 @@ main {
   font-size: 0.88rem;
   color: var(--text-primary);
   margin-top: 0.4rem;
+}
+
+/* Tasks Styling */
+.badge-count {
+  background-color: var(--accent);
+  color: #000;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: 0.25rem;
+}
+
+.tasks-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tasks-filter-pills {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.tasks-list {
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.task-item:hover {
+  border-color: var(--text-secondary);
+}
+
+.task-item.task-completed {
+  opacity: 0.65;
+}
+
+.task-item.task-completed .task-text {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.task-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.task-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.task-text {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.task-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.task-source-link {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.task-source-link:hover {
+  text-decoration: underline;
+}
+
+.btn-task-delete {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  font-size: 0.85rem;
+  border-radius: 4px;
+}
+
+.btn-task-delete:hover {
+  color: var(--danger);
+  background-color: var(--bg-primary);
+}
+
+.tasks-empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
 }

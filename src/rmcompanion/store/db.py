@@ -102,10 +102,25 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
     tokenize = 'porter unicode61'
 );
 
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    doc_id TEXT NOT NULL,
+    page_idx INTEGER NOT NULL DEFAULT 0,
+    raw_text TEXT NOT NULL,
+    clean_text TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',         -- 'open', 'completed'
+    marker_type TEXT NOT NULL DEFAULT 'star',     -- 'star', 'checkbox', 'todo'
+    fingerprint TEXT UNIQUE,
+    created_at REAL NOT NULL,
+    completed_at REAL
+);
+
 CREATE INDEX IF NOT EXISTS idx_docs_parent ON documents(parent_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_docs_type ON documents(type, deleted);
 CREATE INDEX IF NOT EXISTS idx_doc_files ON document_files(doc_hash);
 CREATE INDEX IF NOT EXISTS idx_doc_pages ON document_pages(doc_hash, page_idx);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_doc ON tasks(doc_id, page_idx);
 """
 
 
@@ -524,3 +539,76 @@ class Database:
                     if r["source"] == "title" or not self.is_excluded_from_search(r["doc_id"])
                 ]
             return results[:limit]
+
+    # --- Task Consolidation ---
+
+    def upsert_task(self, task_data: dict[str, Any]) -> None:
+        """Insert or update a task, respecting fingerprint deduplication."""
+        now = time.time()
+        fingerprint = task_data.get("fingerprint") or ""
+        with self.connect() as conn:
+            if fingerprint:
+                existing = conn.execute("SELECT id, status FROM tasks WHERE fingerprint = ?", (fingerprint,)).fetchone()
+                if existing:
+                    return
+
+            conn.execute(
+                """
+                INSERT INTO tasks (id, doc_id, page_idx, raw_text, clean_text, status, marker_type, fingerprint, created_at, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(fingerprint) DO UPDATE SET
+                    raw_text = excluded.raw_text,
+                    clean_text = excluded.clean_text
+                """,
+                (
+                    task_data["id"],
+                    task_data["doc_id"],
+                    task_data.get("page_idx", 0),
+                    task_data["raw_text"],
+                    task_data["clean_text"],
+                    task_data.get("status", "open"),
+                    task_data.get("marker_type", "star"),
+                    fingerprint,
+                    task_data.get("created_at", now),
+                    task_data.get("completed_at"),
+                ),
+            )
+
+    def list_tasks(self, status: str | None = None, doc_id: str | None = None) -> list[dict[str, Any]]:
+        query = """
+        SELECT t.*, d.visible_name AS doc_name
+        FROM tasks t
+        LEFT JOIN documents d ON t.doc_id = d.id
+        WHERE 1=1
+        """
+        params: list[Any] = []
+        if status:
+            query += " AND t.status = ?"
+            params.append(status)
+        if doc_id:
+            query += " AND t.doc_id = ?"
+            params.append(doc_id)
+        query += " ORDER BY t.status ASC, t.created_at DESC"
+
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def set_task_status(self, task_id: str, status: str) -> bool:
+        now = time.time() if status == "completed" else None
+        with self.connect() as conn:
+            cur = conn.execute(
+                "UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?",
+                (status, now, task_id),
+            )
+            return cur.rowcount > 0
+
+    def delete_task(self, task_id: str) -> bool:
+        with self.connect() as conn:
+            cur = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            return cur.rowcount > 0
+
+    def count_open_tasks(self) -> int:
+        with self.connect() as conn:
+            row = conn.execute("SELECT count(*) FROM tasks WHERE status = 'open'").fetchone()
+            return row[0] if row else 0

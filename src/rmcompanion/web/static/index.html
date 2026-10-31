@@ -70,6 +70,18 @@
         </svg>
       </button>
 
+      <button id="btn-tasks-toggle" class="btn btn-sm" title="Consolidated Tasks">
+        <span>☑ Tasks</span>
+        <span id="tasks-badge" class="badge-count" style="display: none;">0</span>
+      </button>
+
+      <button id="btn-settings-toggle" class="btn btn-icon" title="Vision OCR & Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+
       <button id="btn-auth-open" class="btn btn-primary" style="display: none;">Connect</button>
     </div>
   </header>
@@ -276,12 +288,89 @@
       <p>1. Go to <a href="https://my.remarkable.com/device/browser/connect" target="_blank" style="color: var(--accent);">my.remarkable.com/device/browser/connect</a><br>
          2. Copy the 8-character one-time code and enter it below:</p>
       
-      <input type="text" id="auth-code-input" class="modal-input" placeholder="abcdefgh" maxlength="8" autocapitalize="none" spellcheck="false">
+      <input type="text" id="auth-code-input" class="modal-input modal-input-code" placeholder="abcdefgh" maxlength="8" autocapitalize="none" spellcheck="false">
       <div id="auth-error" style="color: var(--danger); font-size: 0.85rem; margin-bottom: 0.75rem; display: none;"></div>
 
       <div class="modal-actions">
         <button id="btn-auth-cancel" class="btn">Cancel</button>
         <button id="btn-auth-submit" class="btn btn-primary">Pair Device</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tasks Modal -->
+  <div id="tasks-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <h2>☑ Consolidated Tasks</h2>
+          <span id="tasks-count-pill" class="slider-stop-badge">0 Open</span>
+        </div>
+        <button id="btn-tasks-close" class="btn btn-icon">✕</button>
+      </div>
+
+      <div class="tasks-toolbar">
+        <div class="tasks-filter-pills">
+          <button class="search-pill active" data-task-filter="open">Open</button>
+          <button class="search-pill" data-task-filter="completed">Completed</button>
+          <button class="search-pill" data-task-filter="all">All</button>
+        </div>
+        <button id="btn-tasks-scan-all" class="btn btn-sm btn-accent" title="Scan documents for new to-do items">
+          ⚡ Scan Documents for Tasks
+        </button>
+      </div>
+
+      <div id="tasks-list" class="tasks-list">
+        <!-- Rendered by JS -->
+      </div>
+
+      <div class="modal-actions" style="margin-top: 1.25rem;">
+        <button id="btn-tasks-done" class="btn btn-primary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal (Vision OCR & Providers) -->
+  <div id="settings-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>⚙️ AI & Vision OCR Settings</h2>
+        <button id="btn-settings-close" class="btn btn-icon">✕</button>
+      </div>
+
+      <p class="modal-desc">
+        Configure a vision model to recognize handwriting, extract action items marked with <code style="color: var(--accent);">*</code> or checkboxes, and index text.
+      </p>
+
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label for="settings-provider"><strong>Provider:</strong></label>
+        <select id="settings-provider" class="modal-input" style="width: 100%; margin-top: 0.35rem;">
+          <option value="gemini">Google Gemini (Recommended — fastest & best handwriting accuracy)</option>
+          <option value="openai">OpenAI / Compatible / Ollama</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label for="settings-model"><strong>Model Name:</strong></label>
+        <input type="text" id="settings-model" class="modal-input" style="width: 100%; margin-top: 0.35rem;" placeholder="gemini-2.0-flash">
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label for="settings-api-key"><strong>API Key:</strong></label>
+        <input type="password" id="settings-api-key" class="modal-input" style="width: 100%; margin-top: 0.35rem;" placeholder="Enter your API key">
+        <div id="settings-key-status" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem;"></div>
+      </div>
+
+      <div id="settings-base-url-group" class="form-group" style="margin-bottom: 1rem; display: none;">
+        <label for="settings-base-url"><strong>Custom Base URL (e.g. for Ollama):</strong></label>
+        <input type="text" id="settings-base-url" class="modal-input" style="width: 100%; margin-top: 0.35rem;" placeholder="http://localhost:11434">
+      </div>
+
+      <div id="settings-test-result" style="display: none; padding: 0.5rem; border-radius: var(--radius-sm); font-size: 0.82rem; margin-bottom: 1rem;"></div>
+
+      <div class="modal-actions">
+        <button id="btn-settings-test" class="btn">Test Connection</button>
+        <button id="btn-settings-save" class="btn btn-primary">Save Settings</button>
       </div>
     </div>
   </div>

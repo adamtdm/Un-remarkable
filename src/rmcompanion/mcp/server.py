@@ -9,6 +9,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.utilities.types import Image
 
 from rmcompanion.config import Settings, get_settings
+from rmcompanion.intelligence.task_extractor import TaskExtractor
 from rmcompanion.render.exporter import Exporter
 from rmcompanion.store.blob_store import BlobStore
 from rmcompanion.store.db import Database
@@ -22,6 +23,7 @@ def create_mcp_server(
     blob_store: BlobStore | None = None,
     exporter: Exporter | None = None,
     sync_engine: SyncEngine | None = None,
+    task_extractor: TaskExtractor | None = None,
     settings: Settings | None = None,
 ) -> MCPServer:
     """Create and configure MCPServer instance with all reMarkable tools."""
@@ -192,5 +194,33 @@ def create_mcp_server(
             "total_blobs": app_blobs.stats()[0],
             "total_blob_bytes": app_blobs.stats()[1],
         }
+
+    @server.tool(
+        name="list_tasks",
+        description="List consolidated tasks extracted from notebooks and notes.",
+    )
+    def list_tasks(status: str = "open", doc_id: str = "") -> list[dict[str, Any]]:
+        """List tasks.
+
+        Args:
+            status: Optional filter: 'open' or 'completed' (default 'open').
+            doc_id: Optional document ID to filter tasks by source.
+        """
+        st = status if status in {"open", "completed"} else None
+        did = doc_id if doc_id else None
+        return app_db.list_tasks(status=st, doc_id=did)
+
+    @server.tool(
+        name="complete_task",
+        description="Mark an action item or task as completed.",
+    )
+    def complete_task(task_id: str) -> dict[str, Any]:
+        """Mark task completed.
+
+        Args:
+            task_id: The ID of the task to complete.
+        """
+        ok = app_db.set_task_status(task_id, "completed")
+        return {"ok": ok, "task_id": task_id, "status": "completed"}
 
     return server

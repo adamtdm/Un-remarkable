@@ -14,6 +14,7 @@ const state = {
   activeConverterJobId: null,
   converterPollInterval: null,
   currentSort: "modified-desc",
+  currentTaskFilter: "open",
 };
 
 // 5-stop slider profiles
@@ -117,6 +118,31 @@ const el = {
   converterResultArea: document.getElementById("converter-result-area"),
   converterResultStats: document.getElementById("converter-result-stats"),
   btnConverterDownload: document.getElementById("btn-converter-download"),
+
+  // Tasks elements
+  btnTasksToggle: document.getElementById("btn-tasks-toggle"),
+  tasksBadge: document.getElementById("tasks-badge"),
+  tasksModal: document.getElementById("tasks-modal"),
+  btnTasksClose: document.getElementById("btn-tasks-close"),
+  btnTasksDone: document.getElementById("btn-tasks-done"),
+  tasksCountPill: document.getElementById("tasks-count-pill"),
+  tasksList: document.getElementById("tasks-list"),
+  btnTasksScanAll: document.getElementById("btn-tasks-scan-all"),
+  taskFilterPills: document.querySelectorAll("[data-task-filter]"),
+
+  // Settings elements
+  btnSettingsToggle: document.getElementById("btn-settings-toggle"),
+  settingsModal: document.getElementById("settings-modal"),
+  btnSettingsClose: document.getElementById("btn-settings-close"),
+  settingsProvider: document.getElementById("settings-provider"),
+  settingsModel: document.getElementById("settings-model"),
+  settingsApiKey: document.getElementById("settings-api-key"),
+  settingsBaseUrlGroup: document.getElementById("settings-base-url-group"),
+  settingsBaseUrl: document.getElementById("settings-base-url"),
+  settingsKeyStatus: document.getElementById("settings-key-status"),
+  settingsTestResult: document.getElementById("settings-test-result"),
+  btnSettingsTest: document.getElementById("btn-settings-test"),
+  btnSettingsSave: document.getElementById("btn-settings-save"),
 };
 
 // --- Theme Management ---
@@ -1055,6 +1081,274 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// --- Tasks Controller ---
+function openTasksModal() {
+  if (el.tasksModal) el.tasksModal.style.display = "flex";
+  fetchTasks();
+}
+
+function closeTasksModal() {
+  if (el.tasksModal) el.tasksModal.style.display = "none";
+}
+
+if (el.btnTasksToggle) el.btnTasksToggle.addEventListener("click", openTasksModal);
+if (el.btnTasksClose) el.btnTasksClose.addEventListener("click", closeTasksModal);
+if (el.btnTasksDone) el.btnTasksDone.addEventListener("click", closeTasksModal);
+
+el.taskFilterPills.forEach((pill) => {
+  pill.addEventListener("click", () => {
+    el.taskFilterPills.forEach((p) => p.classList.remove("active"));
+    pill.classList.add("active");
+    state.currentTaskFilter = pill.getAttribute("data-task-filter") || "open";
+    fetchTasks();
+  });
+});
+
+async function fetchTasks() {
+  try {
+    const url = new URL("/api/tasks", window.location.origin);
+    if (state.currentTaskFilter !== "all") {
+      url.searchParams.set("status", state.currentTaskFilter);
+    }
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const tasks = await res.json();
+
+    // Also get open tasks count for header badge
+    const openRes = await fetch("/api/tasks?status=open");
+    if (openRes.ok) {
+      const openTasks = await openRes.json();
+      const openCount = openTasks.length;
+      if (el.tasksBadge) {
+        el.tasksBadge.textContent = openCount;
+        el.tasksBadge.style.display = openCount > 0 ? "inline-block" : "none";
+      }
+      if (el.tasksCountPill) {
+        el.tasksCountPill.textContent = `${openCount} Open`;
+      }
+    }
+
+    renderTasks(tasks);
+  } catch (err) {
+    console.error("Failed to fetch tasks", err);
+  }
+}
+
+function renderTasks(tasks) {
+  if (!el.tasksList) return;
+  el.tasksList.innerHTML = "";
+
+  if (tasks.length === 0) {
+    el.tasksList.innerHTML = `
+      <div class="tasks-empty">
+        <p style="font-size: 1.1rem; margin-bottom: 0.4rem;">No tasks found</p>
+        <p style="font-size: 0.82rem; color: var(--text-muted);">
+          Mark items in your notebooks with <code style="color: var(--accent);">*</code> or checkboxes <code style="color: var(--accent);">[ ]</code> to consolidate them here.
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  tasks.forEach((t) => {
+    const isDone = t.status === "completed";
+    const item = document.createElement("div");
+    item.className = `task-item ${isDone ? "task-completed" : ""}`;
+
+    const markerIcon = t.marker_type === "star" ? "★" : (t.marker_type === "todo" ? "⚡" : "☐");
+
+    item.innerHTML = `
+      <input type="checkbox" class="task-checkbox" ${isDone ? "checked" : ""} aria-label="Toggle task completion">
+      <div class="task-content">
+        <div class="task-text">${escapeHtml(t.clean_text || t.raw_text)}</div>
+        <div class="task-meta">
+          <span title="Detected via ${t.marker_type}">${markerIcon}</span>
+          <span>From:</span>
+          <span class="task-source-link" title="Open source page">${escapeHtml(t.doc_name || "Document")} (p. ${t.page_idx + 1})</span>
+        </div>
+      </div>
+      <button class="btn-task-delete" title="Delete task">✕</button>
+    `;
+
+    // Checkbox toggle
+    const chk = item.querySelector(".task-checkbox");
+    chk.addEventListener("change", async () => {
+      const newStatus = chk.checked ? "completed" : "open";
+      await fetch(`/api/tasks/${t.id}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      fetchTasks();
+    });
+
+    // Jump to source page in reader
+    const link = item.querySelector(".task-source-link");
+    link.addEventListener("click", () => {
+      closeTasksModal();
+      openReader(t.doc_id, t.page_idx);
+    });
+
+    // Delete
+    const btnDel = item.querySelector(".btn-task-delete");
+    btnDel.addEventListener("click", async () => {
+      await fetch(`/api/tasks/${t.id}`, { method: "DELETE" });
+      fetchTasks();
+    });
+
+    el.tasksList.appendChild(item);
+  });
+}
+
+if (el.btnTasksScanAll) {
+  el.btnTasksScanAll.addEventListener("click", async () => {
+    el.btnTasksScanAll.disabled = true;
+    el.btnTasksScanAll.textContent = "Scanning...";
+    try {
+      const res = await fetch("/api/tasks/scan-all", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Task scan complete! Found ${data.tasks_found} tasks.`);
+        fetchTasks();
+      }
+    } catch (e) {
+      alert(`Scan failed: ${e.message}`);
+    } finally {
+      el.btnTasksScanAll.disabled = false;
+      el.btnTasksScanAll.textContent = "⚡ Scan Documents for Tasks";
+    }
+  });
+}
+
+// --- Vision Settings Controller ---
+function openSettingsModal() {
+  if (el.settingsModal) el.settingsModal.style.display = "flex";
+  loadVisionSettings();
+}
+
+function closeSettingsModal() {
+  if (el.settingsModal) el.settingsModal.style.display = "none";
+}
+
+if (el.btnSettingsToggle) el.btnSettingsToggle.addEventListener("click", openSettingsModal);
+if (el.btnSettingsClose) el.btnSettingsClose.addEventListener("click", closeSettingsModal);
+
+if (el.settingsProvider) {
+  el.settingsProvider.addEventListener("change", () => {
+    const isOllama = el.settingsProvider.value === "openai";
+    if (el.settingsBaseUrlGroup) {
+      el.settingsBaseUrlGroup.style.display = isOllama ? "block" : "none";
+    }
+    if (el.settingsModel && !el.settingsModel.value) {
+      el.settingsModel.value = isOllama ? "gpt-4o-mini" : "gemini-2.0-flash";
+    }
+  });
+}
+
+async function loadVisionSettings() {
+  try {
+    const res = await fetch("/api/settings/vision");
+    if (!res.ok) return;
+    const conf = await res.json();
+
+    if (el.settingsProvider) el.settingsProvider.value = conf.provider || "gemini";
+    if (el.settingsModel) el.settingsModel.value = conf.model || "gemini-2.0-flash";
+    if (el.settingsBaseUrl) el.settingsBaseUrl.value = conf.base_url || "";
+    if (el.settingsBaseUrlGroup) {
+      el.settingsBaseUrlGroup.style.display = conf.provider === "openai" ? "block" : "none";
+    }
+
+    if (el.settingsKeyStatus) {
+      if (conf.api_key_set) {
+        el.settingsKeyStatus.textContent = `✓ Key saved: ${conf.api_key_masked}`;
+        el.settingsKeyStatus.style.color = "var(--success)";
+      } else {
+        el.settingsKeyStatus.textContent = "No API key configured (cloud handwriting OCR inactive)";
+        el.settingsKeyStatus.style.color = "var(--text-muted)";
+      }
+    }
+  } catch (e) {
+    console.error("Failed to load vision settings", e);
+  }
+}
+
+if (el.btnSettingsSave) {
+  el.btnSettingsSave.addEventListener("click", async () => {
+    const payload = {
+      provider: el.settingsProvider ? el.settingsProvider.value : "gemini",
+      model: el.settingsModel ? el.settingsModel.value.trim() : "gemini-2.0-flash",
+      api_key: el.settingsApiKey ? el.settingsApiKey.value.trim() : "",
+      base_url: el.settingsBaseUrl ? el.settingsBaseUrl.value.trim() : "",
+    };
+
+    try {
+      const res = await fetch("/api/settings/vision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        if (el.settingsApiKey) el.settingsApiKey.value = "";
+        await loadVisionSettings();
+        alert("Vision settings saved successfully!");
+        closeSettingsModal();
+      } else {
+        alert("Failed to save settings");
+      }
+    } catch (e) {
+      alert(`Error: ${e.message}`);
+    }
+  });
+}
+
+if (el.btnSettingsTest) {
+  el.btnSettingsTest.addEventListener("click", async () => {
+    el.btnSettingsTest.disabled = true;
+    el.btnSettingsTest.textContent = "Testing...";
+    if (el.settingsTestResult) {
+      el.settingsTestResult.style.display = "block";
+      el.settingsTestResult.style.backgroundColor = "var(--bg-tertiary)";
+      el.settingsTestResult.style.color = "var(--text-secondary)";
+      el.settingsTestResult.textContent = "Sending test image to vision provider...";
+    }
+
+    const payload = {
+      provider: el.settingsProvider ? el.settingsProvider.value : "gemini",
+      model: el.settingsModel ? el.settingsModel.value.trim() : "gemini-2.0-flash",
+      api_key: el.settingsApiKey ? el.settingsApiKey.value.trim() : "",
+      base_url: el.settingsBaseUrl ? el.settingsBaseUrl.value.trim() : "",
+    };
+
+    try {
+      const res = await fetch("/api/settings/vision/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        el.settingsTestResult.style.backgroundColor = "rgba(34, 197, 94, 0.15)";
+        el.settingsTestResult.style.color = "var(--success)";
+        el.settingsTestResult.textContent = `✓ Success! Connected in ${data.latency_s}s. Reply: "${data.reply}"`;
+      } else {
+        el.settingsTestResult.style.backgroundColor = "var(--danger-bg)";
+        el.settingsTestResult.style.color = "var(--danger)";
+        el.settingsTestResult.textContent = `✕ Connection test failed: ${data.detail || "Error"}`;
+      }
+    } catch (e) {
+      if (el.settingsTestResult) {
+        el.settingsTestResult.style.backgroundColor = "var(--danger-bg)";
+        el.settingsTestResult.style.color = "var(--danger)";
+        el.settingsTestResult.textContent = `✕ Error: ${e.message}`;
+      }
+    } finally {
+      el.btnSettingsTest.disabled = false;
+      el.btnSettingsTest.textContent = "Test Connection";
+    }
+  });
+}
+
 // --- Initialization ---
 fetchStatus();
+fetchTasks();
 fetchDocuments();
