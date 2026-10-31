@@ -13,6 +13,7 @@ const state = {
   syncDrawerOpen: false,
   activeConverterJobId: null,
   converterPollInterval: null,
+  currentSort: "modified-desc",
 };
 
 // 5-stop slider profiles
@@ -74,10 +75,12 @@ const el = {
   btnOpenConverter: document.getElementById("btn-open-converter"),
 
   searchInput: document.getElementById("search-input"),
+  btnSearchClear: document.getElementById("btn-search-clear"),
   searchDropdown: document.getElementById("search-dropdown"),
   pillSearchNotes: document.getElementById("pill-search-notes"),
   pillSearchAll: document.getElementById("pill-search-all"),
   brandHome: document.getElementById("brand-home"),
+  selectSort: document.getElementById("select-sort"),
 
   // Reader elements
   readerView: document.getElementById("reader-view"),
@@ -396,13 +399,42 @@ async function fetchDocuments() {
   try {
     const url = new URL("/api/documents", window.location.origin);
     url.searchParams.set("parent_id", state.currentFolder);
-    if (state.currentFilter) {
+    if (state.currentFilter && state.currentFilter !== "excluded") {
       url.searchParams.set("file_type", state.currentFilter);
     }
 
     const res = await fetch(url);
     if (!res.ok) return;
-    const docs = await res.json();
+    let docs = await res.json();
+
+    // Filter by excluded if that tab is active
+    if (state.currentFilter === "excluded") {
+      docs = docs.filter((d) => d.exclude_from_search);
+    }
+
+    // Sort documents (folders stay first for natural navigation)
+    docs.sort((a, b) => {
+      const isFolderA = a.type === "CollectionType";
+      const isFolderB = b.type === "CollectionType";
+      if (isFolderA !== isFolderB) {
+        return isFolderA ? -1 : 1;
+      }
+
+      switch (state.currentSort) {
+        case "name-asc":
+          return (a.visible_name || "").localeCompare(b.visible_name || "");
+        case "name-desc":
+          return (b.visible_name || "").localeCompare(a.visible_name || "");
+        case "pages-desc":
+          return (b.page_count || 0) - (a.page_count || 0);
+        case "modified-asc":
+          return (a.last_modified || "").localeCompare(b.last_modified || "");
+        case "modified-desc":
+        default:
+          return (b.last_modified || "").localeCompare(a.last_modified || "");
+      }
+    });
+
     renderDocumentGrid(docs);
   } catch (e) {
     console.error("Failed to load documents", e);
@@ -415,7 +447,7 @@ function renderDocumentGrid(docs) {
   if (docs.length === 0) {
     el.docGrid.innerHTML = `
       <div style="grid-column: 1/-1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
-        <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No documents in this folder</p>
+        <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No documents in this view</p>
         <p style="font-size: 0.85rem;">Items synced from your reMarkable tablet will appear here.</p>
       </div>
     `;
@@ -436,7 +468,8 @@ function renderDocumentGrid(docs) {
         </svg>
       `;
     } else {
-      const thumbUrl = `/api/documents/${doc.id}/pages/0/png?dark=${state.appTheme === "dark"}`;
+      // Fast SVG rendering with browser HTTP caching
+      const thumbUrl = `/api/documents/${doc.id}/pages/0/svg?dark=${state.appTheme === "dark"}`;
       iconHtml = `<img src="${thumbUrl}" alt="Page 1 preview" loading="lazy">`;
     }
 
@@ -447,22 +480,40 @@ function renderDocumentGrid(docs) {
     card.innerHTML = `
       <div class="doc-card-thumb">${iconHtml}</div>
       <div class="doc-card-body">
-        <div class="doc-card-title" title="${escapeHtml(doc.visible_name)}">${escapeHtml(doc.visible_name)}</div>
+        <div class="card-header-row">
+          <div class="doc-card-title" title="${escapeHtml(doc.visible_name)}">${escapeHtml(doc.visible_name)}</div>
+          <div class="card-menu-wrapper">
+            <button class="btn-card-menu" title="Card options" aria-label="Card options">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="1.5"></circle>
+                <circle cx="12" cy="5" r="1.5"></circle>
+                <circle cx="12" cy="19" r="1.5"></circle>
+              </svg>
+            </button>
+            <div class="card-menu-dropdown" style="display: none;">
+              <button class="menu-item menu-item-open">
+                ${isFolder ? '📂 Open Folder' : '📖 Open & Read'}
+              </button>
+              ${!isFolder ? `<button class="menu-item menu-item-optimize">⚡ Optimize for Paper Pro</button>` : ""}
+              <button class="menu-item menu-item-exclude">
+                ${isExcluded ? '✓ Include in Search' : '🚫 Exclude from Search'}
+              </button>
+              ${!isFolder ? `<a href="/api/documents/${doc.id}/export/pdf?dark=${state.appTheme === 'dark'}" download class="menu-item menu-item-export" style="text-decoration: none; color: inherit;">📥 Export PDF</a>` : ""}
+              <button class="menu-item menu-item-copy-id">📋 Copy ID</button>
+            </div>
+          </div>
+        </div>
         <div class="doc-card-meta">
           <span class="doc-badge">${badgeText}</span>
           ${excludePill}
           <span>${pageText}</span>
-        </div>
-        <div class="doc-card-actions" style="margin-top: 0.5rem; display: flex; gap: 0.4rem; justify-content: flex-end;">
-          ${!isFolder ? `<button class="btn btn-sm btn-doc-optimize" title="Optimize for Paper Pro" style="font-size: 0.72rem; padding: 2px 6px;">⚡ Optimize</button>` : ""}
-          <button class="btn btn-sm btn-card-exclude" title="Toggle Search/OCR Exclusion" style="font-size: 0.72rem; padding: 2px 6px;">${isExcluded ? '✓ Included' : '🚫 Exclude'}</button>
         </div>
       </div>
     `;
 
     // Click on card body opens folder / document
     card.addEventListener("click", (e) => {
-      if (e.target.closest("button")) return;
+      if (e.target.closest(".card-menu-wrapper")) return;
       if (isFolder) {
         state.folderPath.push({ id: doc.id, name: doc.visible_name });
         navigateToFolder(doc.id);
@@ -471,20 +522,45 @@ function renderDocumentGrid(docs) {
       }
     });
 
-    // Optimize button
-    const btnOpt = card.querySelector(".btn-doc-optimize");
-    if (btnOpt) {
-      btnOpt.addEventListener("click", (e) => {
+    // Ellipsis Menu Toggle
+    const btnMenu = card.querySelector(".btn-card-menu");
+    const menuDropdown = card.querySelector(".card-menu-dropdown");
+    btnMenu.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isOpen = menuDropdown.style.display === "block";
+      document.querySelectorAll(".card-menu-dropdown").forEach((d) => (d.style.display = "none"));
+      menuDropdown.style.display = isOpen ? "none" : "block";
+    });
+
+    // Menu Actions
+    const mOpen = card.querySelector(".menu-item-open");
+    if (mOpen) {
+      mOpen.addEventListener("click", (e) => {
         e.stopPropagation();
+        menuDropdown.style.display = "none";
+        if (isFolder) {
+          state.folderPath.push({ id: doc.id, name: doc.visible_name });
+          navigateToFolder(doc.id);
+        } else {
+          openReader(doc.id);
+        }
+      });
+    }
+
+    const mOpt = card.querySelector(".menu-item-optimize");
+    if (mOpt) {
+      mOpt.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menuDropdown.style.display = "none";
         openConverterModal(doc.id, doc.visible_name);
       });
     }
 
-    // Exclude toggle
-    const btnEx = card.querySelector(".btn-card-exclude");
-    if (btnEx) {
-      btnEx.addEventListener("click", async (e) => {
+    const mEx = card.querySelector(".menu-item-exclude");
+    if (mEx) {
+      mEx.addEventListener("click", async (e) => {
         e.stopPropagation();
+        menuDropdown.style.display = "none";
         try {
           await fetch(`/api/documents/${doc.id}/indexing-toggle`, { method: "POST" });
           fetchDocuments();
@@ -494,7 +570,36 @@ function renderDocumentGrid(docs) {
       });
     }
 
+    const mCopy = card.querySelector(".menu-item-copy-id");
+    if (mCopy) {
+      mCopy.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menuDropdown.style.display = "none";
+        navigator.clipboard.writeText(doc.id).then(() => {
+          mCopy.textContent = "✓ Copied!";
+          setTimeout(() => {
+            mCopy.textContent = "📋 Copy ID";
+          }, 1500);
+        });
+      });
+    }
+
     el.docGrid.appendChild(card);
+  });
+}
+
+// Close card menus on outside click
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".card-menu-wrapper")) {
+    document.querySelectorAll(".card-menu-dropdown").forEach((d) => (d.style.display = "none"));
+  }
+});
+
+// Sort Selector
+if (el.selectSort) {
+  el.selectSort.addEventListener("change", (e) => {
+    state.currentSort = e.target.value;
+    fetchDocuments();
   });
 }
 
@@ -835,6 +940,9 @@ let searchDebounce = null;
 function triggerSearch() {
   clearTimeout(searchDebounce);
   const q = el.searchInput.value.trim();
+  if (el.btnSearchClear) {
+    el.btnSearchClear.style.display = q.length > 0 ? "block" : "none";
+  }
   if (q.length < 2) {
     el.searchDropdown.style.display = "none";
     return;
@@ -899,8 +1007,25 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// Search clear button
+if (el.btnSearchClear) {
+  el.btnSearchClear.addEventListener("click", () => {
+    el.searchInput.value = "";
+    el.btnSearchClear.style.display = "none";
+    el.searchDropdown.style.display = "none";
+    el.searchInput.focus();
+  });
+}
+
 // --- Keyboard Shortcuts ---
 window.addEventListener("keydown", (e) => {
+  if (e.key === "/" && document.activeElement !== el.searchInput && el.readerView.style.display !== "flex") {
+    e.preventDefault();
+    el.searchInput.focus();
+    el.searchInput.select();
+    return;
+  }
+
   if (el.authModal.style.display === "flex") {
     if (e.key === "Escape") closeAuthModal();
     return;

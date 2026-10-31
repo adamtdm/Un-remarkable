@@ -4,12 +4,14 @@
   --bg-tertiary: #27272a;
   --border-color: #3f3f46;
   --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
+  --text-secondary: #d4d4d8;
+  --text-muted: #a1a1aa;
   --accent: #38bdf8;
   --accent-hover: #0ea5e9;
   --accent-dim: rgba(56, 189, 248, 0.15);
-  --danger: #ef4444;
+  --danger: #f87171;
+  --danger-bg: rgba(239, 68, 68, 0.2);
+  --danger-border: rgba(239, 68, 68, 0.4);
   --success: #22c55e;
   --warning: #f59e0b;
   --radius-sm: 6px;
@@ -24,11 +26,14 @@
   --bg-tertiary: #f1f5f9;
   --border-color: #e2e8f0;
   --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
   --accent: #0284c7;
   --accent-hover: #0369a1;
   --accent-dim: rgba(2, 132, 199, 0.1);
+  --danger: #dc2626;
+  --danger-bg: rgba(220, 38, 38, 0.12);
+  --danger-border: rgba(220, 38, 38, 0.3);
   --shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
@@ -670,18 +675,138 @@ main {
 
 /* Exclusion Badges */
 .badge-excluded {
-  background-color: rgba(239, 68, 68, 0.15);
+  background-color: var(--danger-bg);
   color: var(--danger);
   padding: 2px 8px;
   border-radius: 12px;
   font-size: 0.75rem;
   font-weight: 600;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid var(--danger-border);
 }
 
 .doc-badge.doc-badge-excluded {
-  background-color: rgba(239, 68, 68, 0.2);
+  background-color: var(--danger-bg);
   color: var(--danger);
+  border: 1px solid var(--danger-border);
+}
+
+/* Card Ellipsis Menu */
+.card-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.card-menu-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.btn-card-menu {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.btn-card-menu:hover,
+.btn-card-menu:focus-visible {
+  color: var(--text-primary);
+  background-color: var(--bg-tertiary);
+  outline: none;
+}
+
+.card-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  z-index: 60;
+  min-width: 195px;
+  padding: 4px 0;
+  animation: fadeIn 0.12s ease;
+}
+
+.menu-item {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background-color: var(--accent-dim);
+  color: var(--accent);
+  outline: none;
+}
+
+/* Toolbar Controls & Sort */
+.toolbar-sort {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.sort-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.select-sort {
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  cursor: pointer;
+  outline: none;
+}
+
+.select-sort:focus {
+  border-color: var(--accent);
+}
+
+/* Search Clear Button */
+.btn-search-clear {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 6px;
+  border-radius: 50%;
+  line-height: 1;
+}
+
+.btn-search-clear:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
 }
 
 .toolbar-center-actions {

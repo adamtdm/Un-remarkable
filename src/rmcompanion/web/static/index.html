@@ -24,7 +24,8 @@
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
-        <input type="text" id="search-input" placeholder="Search notebooks, notes, PDFs..." autocomplete="off">
+        <input type="text" id="search-input" placeholder="Search notebooks, notes, PDFs... (/)" autocomplete="off">
+        <button id="btn-search-clear" class="btn-search-clear" style="display: none;" title="Clear search">✕</button>
       </div>
       <div class="search-pills">
         <button id="pill-search-notes" class="search-pill active" title="Search handwritten notebooks and typed notes only">Notes & Notebooks</button>
@@ -137,6 +138,18 @@
         <button class="filter-tab" data-type="notebook">Notebooks</button>
         <button class="filter-tab" data-type="pdf">PDFs</button>
         <button class="filter-tab" data-type="epub">EPUBs</button>
+        <button class="filter-tab" data-type="excluded">Excluded</button>
+      </div>
+
+      <div class="toolbar-sort">
+        <label for="select-sort" class="sort-label">Sort:</label>
+        <select id="select-sort" class="select-sort" aria-label="Sort documents">
+          <option value="modified-desc">Modified (Newest)</option>
+          <option value="modified-asc">Modified (Oldest)</option>
+          <option value="name-asc">Name (A–Z)</option>
+          <option value="name-desc">Name (Z–A)</option>
+          <option value="pages-desc">Most Pages</option>
+        </select>
       </div>
     </div>
 

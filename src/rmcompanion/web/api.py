@@ -138,7 +138,11 @@ def get_router(
         """Render a single page to SVG."""
         try:
             svg = exporter.render_page_svg(doc_id, page_idx=page_idx, dark_mode=dark)
-            return Response(content=svg, media_type="image/svg+xml")
+            return Response(
+                content=svg,
+                media_type="image/svg+xml",
+                headers={"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"},
+            )
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Document not found")
         except Exception as e:
@@ -150,7 +154,11 @@ def get_router(
         """Render a single page to PNG."""
         try:
             png = exporter.render_page_png(doc_id, page_idx=page_idx, dark_mode=dark)
-            return Response(content=png, media_type="image/png")
+            return Response(
+                content=png,
+                media_type="image/png",
+                headers={"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"},
+            )
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Document not found")
         except Exception as e:
