@@ -103,6 +103,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Mount Static Web Assets
     static_dir = Path(__file__).parent / "static"
+    if not static_dir.is_dir():
+        for candidate in [
+            Path("/app/src/rmcompanion/web/static"),
+            Path("./src/rmcompanion/web/static"),
+        ]:
+            if candidate.is_dir():
+                static_dir = candidate
+                break
+
     if static_dir.is_dir():
         app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
