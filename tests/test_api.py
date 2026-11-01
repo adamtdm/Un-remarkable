@@ -40,16 +40,63 @@ def test_static_index_html(test_client):
     assert res.status_code == 200
     assert "reMarkable Companion" in res.text
     assert "<html" in res.text
+    assert 'data-type="folder">Folders<' in res.text
+    assert "no-cache" in res.headers.get("cache-control", "")
 
-    # PWA files
+    # PWA files and cache control
     manifest_res = test_client.get("/manifest.json")
     assert manifest_res.status_code == 200
     assert "reMarkable Companion" in manifest_res.json()["name"]
+    assert "no-cache" in manifest_res.headers.get("cache-control", "")
 
     sw_res = test_client.get("/sw.js")
     assert sw_res.status_code == 200
     assert "rmc-shell" in sw_res.text
+    assert "no-store" in sw_res.headers.get("cache-control", "")
 
     icon_res = test_client.get("/icon.svg")
     assert icon_res.status_code == 200
     assert "<svg" in icon_res.text
+
+
+def test_api_documents_folder_filter(tmp_path):
+    from rmcompanion.store.db import Database
+    settings = Settings(data_dir=tmp_path)
+    db = Database(settings.db_path)
+    db.upsert_document({
+        "id": "folder-1",
+        "visible_name": "Projects Folder",
+        "type": "CollectionType",
+        "parent_id": "",
+        "file_type": "",
+    })
+    db.upsert_document({
+        "id": "notebook-1",
+        "visible_name": "Meeting Notes",
+        "type": "DocumentType",
+        "parent_id": "",
+        "file_type": "notebook",
+    })
+
+    app = create_app(settings=settings)
+    with TestClient(app) as client:
+        # All items
+        res_all = client.get("/api/documents")
+        assert res_all.status_code == 200
+        ids_all = [d["id"] for d in res_all.json()]
+        assert "folder-1" in ids_all
+        assert "notebook-1" in ids_all
+
+        # Filter by folder
+        res_folders = client.get("/api/documents?file_type=folder")
+        assert res_folders.status_code == 200
+        ids_folders = [d["id"] for d in res_folders.json()]
+        assert "folder-1" in ids_folders
+        assert "notebook-1" not in ids_folders
+
+        # Filter by notebook
+        res_notes = client.get("/api/documents?file_type=notebook")
+        assert res_notes.status_code == 200
+        ids_notes = [d["id"] for d in res_notes.json()]
+        assert "notebook-1" in ids_notes
+        assert "folder-1" not in ids_notes

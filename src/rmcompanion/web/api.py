@@ -124,10 +124,12 @@ def get_router(
         parent_id: str = "",
         include_deleted: bool = False,
         file_type: str | None = None,
+        type: str | None = None,
     ) -> list[dict[str, Any]]:
         """List documents in a given folder."""
         pid = parent_id if parent_id else ""
-        return db.list_documents(parent_id=pid, include_deleted=include_deleted, file_type=file_type)
+        effective_file_type = file_type or type
+        return db.list_documents(parent_id=pid, include_deleted=include_deleted, file_type=effective_file_type)
 
     @r.get("/documents/{doc_id}")
     def get_document(doc_id: str) -> dict[str, Any]:

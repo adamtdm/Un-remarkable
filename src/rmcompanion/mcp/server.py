@@ -60,7 +60,7 @@ def create_mcp_server(
         Args:
             parent_id: Folder UUID, or empty string "" for the root library.
             include_deleted: Whether to include documents currently in the trash.
-            file_type: Optional filter: 'notebook', 'pdf', or 'epub'.
+            file_type: Optional filter: 'folder', 'notebook', 'pdf', or 'epub'.
         """
         pid = parent_id if parent_id else ""
         ft = file_type if file_type else None

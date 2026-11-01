@@ -371,9 +371,12 @@ class Database:
             query += " AND parent_id = ?"
             params.append(parent_id)
 
-        if file_type is not None:
-            query += " AND file_type = ?"
-            params.append(file_type)
+        if file_type is not None and file_type != "":
+            if file_type.lower() in ("folder", "collection", "collectiontype"):
+                query += " AND type = 'CollectionType'"
+            else:
+                query += " AND file_type = ? AND type = 'DocumentType'"
+                params.append(file_type)
 
         query += " ORDER BY type DESC, visible_name ASC"
 

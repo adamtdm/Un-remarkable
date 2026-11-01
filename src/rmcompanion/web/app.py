@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
 from mcp.server.transport_security import TransportSecuritySettings
 
 from rmcompanion.cloud.auth import AuthManager
@@ -137,7 +138,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Mount MCP endpoint
     app.mount("/mcp", mcp_asgi)
 
-    # Mount Static Web Assets
+    # Mount Static Web Assets with Cache-Control headers
     static_dir = Path(__file__).parent / "static"
     if not static_dir.is_dir():
         for candidate in [
@@ -148,7 +149,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 static_dir = candidate
                 break
 
+    class CacheBustingStaticFiles(StaticFiles):
+        async def get_response(self, path: str, scope: Any) -> Response:
+            response = await super().get_response(path, scope)
+            if path in ("", ".") or path.endswith(".html") or path.endswith("sw.js") or path.endswith("manifest.json"):
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+            elif path.endswith(".css") or path.endswith(".js"):
+                response.headers["Cache-Control"] = "no-cache, must-revalidate"
+            return response
+
     if static_dir.is_dir():
-        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+        app.mount("/", CacheBustingStaticFiles(directory=str(static_dir), html=True), name="static")
 
     return app

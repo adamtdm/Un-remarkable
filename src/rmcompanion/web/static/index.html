@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=20261101b">
 </head>
 <body>
   <!-- Header -->
@@ -162,6 +162,7 @@
 
       <div class="filter-tabs">
         <button class="filter-tab active" data-type="">All</button>
+        <button class="filter-tab" data-type="folder">Folders</button>
         <button class="filter-tab" data-type="notebook">Notebooks</button>
         <button class="filter-tab" data-type="pdf">PDFs</button>
         <button class="filter-tab" data-type="epub">EPUBs</button>
@@ -573,11 +574,32 @@
     </div>
   </div>
 
-  <script src="/app.js"></script>
+  <script src="/app.js?v=20261101b"></script>
   <script>
+    // Purge legacy service worker caches immediately
+    if ("caches" in window) {
+      caches.keys().then((keys) => {
+        keys.forEach((key) => {
+          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-20261101b") {
+            caches.delete(key);
+          }
+        });
+      });
+    }
+
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js").catch(() => {});
+        navigator.serviceWorker.register("/sw.js?v=20261101b").then((reg) => {
+          reg.update();
+        }).catch(() => {});
+      });
+
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
       });
     }
   </script>

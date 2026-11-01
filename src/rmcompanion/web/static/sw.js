@@ -1,10 +1,10 @@
 // Service Worker for reMarkable Companion PWA
-const CACHE_NAME = "rmc-shell-v1";
+const CACHE_NAME = "rmc-shell-v20261101b";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
-  "/style.css",
-  "/app.js",
+  "/style.css?v=20261101b",
+  "/app.js?v=20261101b",
   "/manifest.json",
   "/icon.svg"
 ];
@@ -24,35 +24,32 @@ self.addEventListener("activate", (event) => {
       return Promise.all(
         keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Network-only for API calls and dynamic server endpoints
+  // Network-only for API calls, MCP endpoints, and dynamic SVG pages
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/mcp")) {
     return;
   }
 
-  // Stale-while-revalidate for app shell and static resources
+  // Network-first for static shell assets with offline fallback
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return networkResponse;
-        })
-        .catch(() => cachedResponse);
-
-      return cachedResponse || fetchPromise;
-    })
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        return caches.match(event.request);
+      })
   );
 });
