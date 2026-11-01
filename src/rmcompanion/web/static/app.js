@@ -21,6 +21,7 @@ const state = {
   currentTaskFilter: "open",
   isFullscreen: false,
   hudTimeout: null,
+  pageIndicatorTimeout: null,
   qcMode: "task",
 };
 
@@ -123,12 +124,15 @@ const el = {
 
   // Reader elements
   readerView: document.getElementById("reader-view"),
+  readerHeader: document.getElementById("reader-header"),
+  readerNav: document.getElementById("reader-nav"),
   readerTitle: document.getElementById("reader-title"),
   readerExcludeBadge: document.getElementById("reader-exclude-badge"),
   readerPageIndicator: document.getElementById("reader-page-indicator"),
   btnPagePrev: document.getElementById("btn-page-prev"),
   btnPageNext: document.getElementById("btn-page-next"),
   btnReaderClose: document.getElementById("btn-reader-close"),
+  btnReaderCloseText: document.getElementById("btn-reader-close-text"),
   btnReaderExcludeToggle: document.getElementById("btn-reader-exclude-toggle"),
   btnReaderConvert: document.getElementById("btn-reader-convert"),
   btnFitToggle: document.getElementById("btn-fit-toggle"),
@@ -136,7 +140,6 @@ const el = {
   btnExportPdf: document.getElementById("btn-export-pdf"),
   btnReaderFullscreen: document.getElementById("btn-reader-fullscreen"),
   btnFullscreenLabel: document.getElementById("btn-fullscreen-label"),
-  btnFullscreenExit: document.getElementById("btn-fullscreen-exit"),
   readerCanvasWrapper: document.getElementById("reader-canvas-wrapper"),
   readerClickZones: document.getElementById("reader-click-zones"),
   zonePrev: document.getElementById("zone-prev"),
@@ -1585,7 +1588,13 @@ function closeReader() {
   } catch (_) {}
 }
 
-el.btnReaderClose.addEventListener("click", closeReader);
+el.btnReaderClose.addEventListener("click", () => {
+  if (state.isFullscreen) {
+    toggleFullscreenMode(false);
+  } else {
+    closeReader();
+  }
+});
 
 async function loadCurrentPage() {
   if (!state.currentDoc) return;
@@ -1597,6 +1606,10 @@ async function loadCurrentPage() {
   el.readerPageIndicator.textContent = `Page ${pageIdx + 1} of ${totalPages}`;
   el.btnPagePrev.disabled = pageIdx <= 0;
   el.btnPageNext.disabled = pageIdx >= totalPages - 1;
+
+  if (state.isFullscreen) {
+    flashPageIndicator();
+  }
 
   try {
     const url = new URL(window.location.href);
@@ -1678,13 +1691,22 @@ el.btnExportPdf.addEventListener("click", () => {
 });
 
 // --- Fullscreen Reading Mode Controller ---
+function flashPageIndicator() {
+  if (!state.isFullscreen || !el.readerNav) return;
+  el.readerNav.classList.add("flash-visible");
+  if (state.pageIndicatorTimeout) clearTimeout(state.pageIndicatorTimeout);
+  state.pageIndicatorTimeout = setTimeout(() => {
+    if (el.readerNav) el.readerNav.classList.remove("flash-visible");
+  }, 1800);
+}
+
 function toggleFullscreenMode(forceState = null) {
   const next = forceState !== null ? forceState : !state.isFullscreen;
   state.isFullscreen = next;
 
   if (state.isFullscreen) {
-    el.readerView.classList.add("is-fullscreen", "show-hud");
-    if (el.btnFullscreenExit) el.btnFullscreenExit.style.display = "inline-flex";
+    el.readerView.classList.add("is-fullscreen");
+    el.readerView.classList.remove("show-hud");
     if (el.readerClickZones) el.readerClickZones.style.display = "flex";
 
     try {
@@ -1693,10 +1715,10 @@ function toggleFullscreenMode(forceState = null) {
       }
     } catch (_) {}
 
-    scheduleHudHide();
+    flashPageIndicator();
   } else {
     el.readerView.classList.remove("is-fullscreen", "show-hud");
-    if (el.btnFullscreenExit) el.btnFullscreenExit.style.display = "none";
+    if (el.readerNav) el.readerNav.classList.remove("flash-visible");
     if (el.readerClickZones) el.readerClickZones.style.display = "none";
 
     try {
@@ -1717,6 +1739,9 @@ function toggleFullscreenMode(forceState = null) {
   if (el.trayReaderFullscreenLabel) {
     el.trayReaderFullscreenLabel.textContent = state.isFullscreen ? "Exit Fullscreen" : "Fullscreen Reading Mode";
   }
+  if (el.btnReaderCloseText) {
+    el.btnReaderCloseText.textContent = state.isFullscreen ? "Exit Fullscreen" : "Library";
+  }
 }
 
 function showHud() {
@@ -1731,7 +1756,7 @@ function scheduleHudHide() {
     if (state.isFullscreen && el.readerView) {
       el.readerView.classList.remove("show-hud");
     }
-  }, 2500);
+  }, 3000);
 }
 
 function toggleHud() {
@@ -1752,10 +1777,6 @@ if (el.btnReaderFullscreenMobile) {
   el.btnReaderFullscreenMobile.addEventListener("click", () => toggleFullscreenMode());
 }
 
-if (el.btnFullscreenExit) {
-  el.btnFullscreenExit.addEventListener("click", () => toggleFullscreenMode(false));
-}
-
 if (el.trayReaderFullscreen) {
   el.trayReaderFullscreen.addEventListener("click", () => {
     closeReaderOptionsTray();
@@ -1764,8 +1785,10 @@ if (el.trayReaderFullscreen) {
 }
 
 if (el.readerView) {
-  el.readerView.addEventListener("mousemove", () => {
-    if (state.isFullscreen) {
+  el.readerView.addEventListener("mousemove", (e) => {
+    if (!state.isFullscreen) return;
+    if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return;
+    if (e.clientY < 60 || e.clientY > window.innerHeight - 60) {
       showHud();
     }
   });

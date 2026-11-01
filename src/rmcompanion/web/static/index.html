@@ -228,23 +228,17 @@
 
   <!-- Reader View Modal / Fullscreen -->
   <div id="reader-view" class="reader-container fit-page" style="display: none;">
-    <div class="reader-header">
+    <div class="reader-header" id="reader-header">
       <div style="display: flex; align-items: center; gap: 0.75rem;">
         <button id="btn-reader-close" class="btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg id="icon-reader-close" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="19" y1="12" x2="5" y2="12"></line>
             <polyline points="12 19 5 12 12 5"></polyline>
           </svg>
-          <span>Library</span>
+          <span id="btn-reader-close-text">Library</span>
         </button>
         <span id="reader-title" class="reader-title">Document Title</span>
         <span id="reader-exclude-badge" class="badge-excluded" style="display: none;" title="Excluded from full-text search & OCR">Excluded from Search</span>
-      </div>
-
-      <div class="reader-nav">
-        <button id="btn-page-prev" class="btn btn-icon" title="Previous Page (Left Arrow)">◀</button>
-        <span id="reader-page-indicator" style="font-size: 0.85rem; font-weight: 500; min-width: 90px; text-align: center;">Page 1 of 1</span>
-        <button id="btn-page-next" class="btn btn-icon" title="Next Page (Right Arrow)">▶</button>
       </div>
 
       <div class="reader-actions-desktop" style="display: flex; align-items: center; gap: 0.5rem;">
@@ -278,14 +272,6 @@
       </div>
     </div>
 
-    <!-- Floating Fullscreen Exit Pill -->
-    <button id="btn-fullscreen-exit" class="btn-fullscreen-exit" title="Exit Fullscreen (Esc or F)" style="display: none;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
-      </svg>
-      <span>Exit Fullscreen</span>
-    </button>
-
     <div class="reader-content" id="reader-content">
       <!-- Interactive tap/click zones in fullscreen -->
       <div id="reader-click-zones" class="reader-click-zones" style="display: none;">
@@ -310,6 +296,13 @@
         </div>
         <textarea id="typing-pane-textarea" class="typing-pane-textarea" placeholder="Type notes here... Use '- [ ]' or '*' for tasks, '#' for headings."></textarea>
       </div>
+    </div>
+
+    <!-- Navigation Pill: positioned cleanly at bottom -->
+    <div class="reader-nav" id="reader-nav">
+      <button id="btn-page-prev" class="btn btn-icon" title="Previous Page (Left Arrow)">◀</button>
+      <span id="reader-page-indicator" style="font-size: 0.85rem; font-weight: 500; min-width: 90px; text-align: center;">Page 1 of 1</span>
+      <button id="btn-page-next" class="btn btn-icon" title="Next Page (Right Arrow)">▶</button>
     </div>
   </div>
 
