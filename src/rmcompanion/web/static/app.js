@@ -166,6 +166,36 @@ const el = {
   taskQuickAddForm: document.getElementById("task-quick-add-form"),
   taskQuickInput: document.getElementById("task-quick-input"),
   btnTaskQuickAdd: document.getElementById("btn-task-quick-add"),
+
+  // Mobile Action Tray elements
+  mobileActionTray: document.getElementById("mobile-action-tray"),
+  trayDocIcon: document.getElementById("tray-doc-icon"),
+  trayDocTitle: document.getElementById("tray-doc-title"),
+  trayDocMeta: document.getElementById("tray-doc-meta"),
+  trayBtnOpen: document.getElementById("tray-btn-open"),
+  trayLabelOpen: document.getElementById("tray-label-open"),
+  trayBtnType: document.getElementById("tray-btn-type"),
+  trayBtnOptimize: document.getElementById("tray-btn-optimize"),
+  trayBtnExport: document.getElementById("tray-btn-export"),
+  trayBtnExclude: document.getElementById("tray-btn-exclude"),
+  trayIconExclude: document.getElementById("tray-icon-exclude"),
+  trayLabelExclude: document.getElementById("tray-label-exclude"),
+  trayDescExclude: document.getElementById("tray-desc-exclude"),
+  trayBtnCancel: document.getElementById("tray-btn-cancel"),
+
+  // Mobile Reader Options elements
+  btnReaderTypeMobile: document.getElementById("btn-reader-type-mobile"),
+  btnReaderMoreMobile: document.getElementById("btn-reader-more-mobile"),
+  readerOptionsTray: document.getElementById("reader-options-tray"),
+  trayReaderDarkToggle: document.getElementById("tray-reader-dark-toggle"),
+  trayReaderDarkLabel: document.getElementById("tray-reader-dark-label"),
+  trayReaderFitToggle: document.getElementById("tray-reader-fit-toggle"),
+  trayReaderFitLabel: document.getElementById("tray-reader-fit-label"),
+  trayReaderConvert: document.getElementById("tray-reader-convert"),
+  trayReaderExclude: document.getElementById("tray-reader-exclude"),
+  trayReaderExcludeLabel: document.getElementById("tray-reader-exclude-label"),
+  trayReaderExport: document.getElementById("tray-reader-export"),
+  trayReaderClose: document.getElementById("tray-reader-close"),
 };
 
 // --- Theme Management ---
@@ -576,10 +606,26 @@ function renderDocumentGrid(docs) {
     const menuDropdown = card.querySelector(".card-menu-dropdown");
     btnMenu.addEventListener("click", (e) => {
       e.stopPropagation();
-      const isOpen = menuDropdown.style.display === "block";
-      document.querySelectorAll(".card-menu-dropdown").forEach((d) => (d.style.display = "none"));
-      menuDropdown.style.display = isOpen ? "none" : "block";
+      if (window.innerWidth <= 768) {
+        openMobileActionTray(doc);
+      } else {
+        const isOpen = menuDropdown.style.display === "block";
+        document.querySelectorAll(".card-menu-dropdown").forEach((d) => (d.style.display = "none"));
+        menuDropdown.style.display = isOpen ? "none" : "block";
+      }
     });
+
+    // Long-press affordance on mobile cards
+    let touchTimer = null;
+    card.addEventListener("touchstart", (e) => {
+      if (e.target.closest(".card-menu-wrapper")) return;
+      touchTimer = setTimeout(() => {
+        if (navigator.vibrate) navigator.vibrate(25);
+        openMobileActionTray(doc);
+      }, 500);
+    }, { passive: true });
+    card.addEventListener("touchend", () => clearTimeout(touchTimer));
+    card.addEventListener("touchmove", () => clearTimeout(touchTimer));
 
     // Menu Actions
     const mOpen = card.querySelector(".menu-item-open");
@@ -643,6 +689,230 @@ document.addEventListener("click", (e) => {
     document.querySelectorAll(".card-menu-dropdown").forEach((d) => (d.style.display = "none"));
   }
 });
+
+// --- Mobile Action Tray Controller ---
+let selectedMobileDoc = null;
+
+function openMobileActionTray(doc) {
+  if (!el.mobileActionTray) return;
+  selectedMobileDoc = doc;
+
+  const isFolder = doc.type === "CollectionType";
+  const isExcluded = doc.exclude_from_search || doc.effective_exclude;
+  const pageCount = doc.page_count || 0;
+
+  if (isFolder) {
+    el.trayDocIcon.textContent = "📁";
+  } else if (doc.file_type === "pdf") {
+    el.trayDocIcon.textContent = "📄";
+  } else if (doc.file_type === "epub") {
+    el.trayDocIcon.textContent = "📚";
+  } else {
+    el.trayDocIcon.textContent = "📓";
+  }
+
+  el.trayDocTitle.textContent = doc.visible_name;
+  el.trayDocMeta.textContent = isFolder 
+    ? "Folder" 
+    : `${doc.file_type === "notebook" ? "Notebook" : (doc.file_type || "Document").toUpperCase()} • ${pageCount} ${pageCount === 1 ? "page" : "pages"}`;
+
+  el.trayLabelOpen.textContent = isFolder ? "Open Folder" : "Open & Read";
+
+  if (el.trayBtnType) {
+    el.trayBtnType.style.display = !isFolder && (doc.file_type === "notebook" || !doc.file_type) ? "flex" : "none";
+  }
+
+  if (el.trayBtnOptimize) {
+    el.trayBtnOptimize.style.display = !isFolder ? "flex" : "none";
+  }
+
+  if (el.trayBtnExport) {
+    el.trayBtnExport.style.display = !isFolder ? "flex" : "none";
+  }
+
+  if (el.trayBtnExclude) {
+    if (isExcluded) {
+      el.trayIconExclude.textContent = "✓";
+      el.trayLabelExclude.textContent = "Include in Search";
+      el.trayDescExclude.textContent = "Include in full-text search and OCR indexing";
+    } else {
+      el.trayIconExclude.textContent = "🚫";
+      el.trayLabelExclude.textContent = "Exclude from Search";
+      el.trayDescExclude.textContent = "Hide from full-text search and OCR indexing";
+    }
+  }
+
+  el.mobileActionTray.style.display = "flex";
+  requestAnimationFrame(() => {
+    el.mobileActionTray.classList.add("active");
+  });
+}
+
+function closeMobileActionTray() {
+  if (!el.mobileActionTray) return;
+  el.mobileActionTray.classList.remove("active");
+  setTimeout(() => {
+    if (!el.mobileActionTray.classList.contains("active")) {
+      el.mobileActionTray.style.display = "none";
+    }
+  }, 240);
+}
+
+if (el.trayBtnCancel) {
+  el.trayBtnCancel.addEventListener("click", closeMobileActionTray);
+}
+
+if (el.mobileActionTray) {
+  el.mobileActionTray.addEventListener("click", (e) => {
+    if (e.target === el.mobileActionTray) {
+      closeMobileActionTray();
+    }
+  });
+}
+
+if (el.trayBtnOpen) {
+  el.trayBtnOpen.addEventListener("click", () => {
+    if (!selectedMobileDoc) return;
+    const doc = selectedMobileDoc;
+    closeMobileActionTray();
+    if (doc.type === "CollectionType") {
+      state.folderPath.push({ id: doc.id, name: doc.visible_name });
+      navigateToFolder(doc.id);
+    } else {
+      openReader(doc.id);
+    }
+  });
+}
+
+if (el.trayBtnType) {
+  el.trayBtnType.addEventListener("click", async () => {
+    if (!selectedMobileDoc) return;
+    const doc = selectedMobileDoc;
+    closeMobileActionTray();
+    await openReader(doc.id);
+    if (el.btnReaderTypeToggle) {
+      el.btnReaderTypeToggle.click();
+    }
+  });
+}
+
+if (el.trayBtnOptimize) {
+  el.trayBtnOptimize.addEventListener("click", () => {
+    if (!selectedMobileDoc) return;
+    const doc = selectedMobileDoc;
+    closeMobileActionTray();
+    openConverterModal(doc.id, doc.visible_name);
+  });
+}
+
+if (el.trayBtnExport) {
+  el.trayBtnExport.addEventListener("click", () => {
+    if (!selectedMobileDoc) return;
+    const doc = selectedMobileDoc;
+    closeMobileActionTray();
+    window.open(`/api/documents/${doc.id}/export/pdf?dark=${state.appTheme === "dark"}`, "_blank");
+  });
+}
+
+if (el.trayBtnExclude) {
+  el.trayBtnExclude.addEventListener("click", async () => {
+    if (!selectedMobileDoc) return;
+    const doc = selectedMobileDoc;
+    closeMobileActionTray();
+    try {
+      await fetch(`/api/documents/${doc.id}/indexing-toggle`, { method: "POST" });
+      fetchDocuments();
+    } catch (err) {
+      console.error("Failed to toggle exclusion", err);
+    }
+  });
+}
+
+// --- Mobile Reader Options Controller ---
+function openReaderOptionsTray() {
+  if (!el.readerOptionsTray || !state.currentDoc) return;
+
+  if (el.trayReaderDarkLabel) {
+    el.trayReaderDarkLabel.textContent = `Inverted Dark Mode: ${state.pageDarkMode ? "On" : "Off"}`;
+  }
+  if (el.trayReaderFitLabel) {
+    el.trayReaderFitLabel.textContent = `Fit Mode: ${state.fitMode === "width" ? "Fit Width" : "Fit Page"}`;
+  }
+  if (el.trayReaderExcludeLabel) {
+    const isExcluded = state.currentDoc.exclude_from_search || state.currentDoc.effective_exclude;
+    el.trayReaderExcludeLabel.textContent = isExcluded ? "✓ Include in Search" : "🚫 Exclude from Search";
+  }
+
+  el.readerOptionsTray.style.display = "flex";
+  requestAnimationFrame(() => {
+    el.readerOptionsTray.classList.add("active");
+  });
+}
+
+function closeReaderOptionsTray() {
+  if (!el.readerOptionsTray) return;
+  el.readerOptionsTray.classList.remove("active");
+  setTimeout(() => {
+    if (!el.readerOptionsTray.classList.contains("active")) {
+      el.readerOptionsTray.style.display = "none";
+    }
+  }, 240);
+}
+
+if (el.btnReaderMoreMobile) {
+  el.btnReaderMoreMobile.addEventListener("click", openReaderOptionsTray);
+}
+
+if (el.btnReaderTypeMobile) {
+  el.btnReaderTypeMobile.addEventListener("click", () => {
+    if (el.btnReaderTypeToggle) el.btnReaderTypeToggle.click();
+  });
+}
+
+if (el.trayReaderDarkToggle) {
+  el.trayReaderDarkToggle.addEventListener("click", () => {
+    closeReaderOptionsTray();
+    if (el.btnPageDarkToggle) el.btnPageDarkToggle.click();
+  });
+}
+
+if (el.trayReaderFitToggle) {
+  el.trayReaderFitToggle.addEventListener("click", () => {
+    closeReaderOptionsTray();
+    if (el.btnFitToggle) el.btnFitToggle.click();
+  });
+}
+
+if (el.trayReaderConvert) {
+  el.trayReaderConvert.addEventListener("click", () => {
+    closeReaderOptionsTray();
+    if (state.currentDoc) openConverterModal(state.currentDoc.id, state.currentDoc.visible_name);
+  });
+}
+
+if (el.trayReaderExclude) {
+  el.trayReaderExclude.addEventListener("click", () => {
+    closeReaderOptionsTray();
+    if (el.btnReaderExcludeToggle) el.btnReaderExcludeToggle.click();
+  });
+}
+
+if (el.trayReaderExport) {
+  el.trayReaderExport.addEventListener("click", () => {
+    closeReaderOptionsTray();
+    if (el.btnExportPdf) el.btnExportPdf.click();
+  });
+}
+
+if (el.trayReaderClose) {
+  el.trayReaderClose.addEventListener("click", closeReaderOptionsTray);
+}
+
+if (el.readerOptionsTray) {
+  el.readerOptionsTray.addEventListener("click", (e) => {
+    if (e.target === el.readerOptionsTray) closeReaderOptionsTray();
+  });
+}
 
 // Sort Selector
 if (el.selectSort) {

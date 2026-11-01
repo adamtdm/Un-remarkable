@@ -206,13 +206,23 @@
         <button id="btn-page-next" class="btn btn-icon" title="Next Page (Right Arrow)">▶</button>
       </div>
 
-      <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <div class="reader-actions-desktop" style="display: flex; align-items: center; gap: 0.5rem;">
         <button id="btn-reader-type-toggle" class="btn btn-sm btn-primary" title="Open distraction-free typed text editor">⌨ Type</button>
         <button id="btn-reader-exclude-toggle" class="btn btn-sm" title="Exclude/Include in search index">🚫 Exclude</button>
         <button id="btn-reader-convert" class="btn btn-sm btn-accent" title="Convert or optimize this document for Paper Pro">⚡ Optimize</button>
         <button id="btn-fit-toggle" class="btn" title="Toggle Fit Mode">Fit Width</button>
         <button id="btn-page-dark-toggle" class="btn" title="Toggle Inverted Dark Mode for Document">Dark: On</button>
         <button id="btn-export-pdf" class="btn" title="Export annotated PDF">Export PDF</button>
+      </div>
+      <div class="reader-actions-mobile" style="display: none;">
+        <button id="btn-reader-type-mobile" class="btn btn-sm btn-primary" title="Type notes">⌨ Type</button>
+        <button id="btn-reader-more-mobile" class="btn btn-icon" title="Reader options" aria-label="Reader options">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="1.5"></circle>
+            <circle cx="12" cy="5" r="1.5"></circle>
+            <circle cx="12" cy="19" r="1.5"></circle>
+          </svg>
+        </button>
       </div>
     </div>
 
@@ -449,6 +459,116 @@
       <div class="modal-actions">
         <button id="btn-settings-test" class="btn">Test Connection</button>
         <button id="btn-settings-save" class="btn btn-primary">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Bottom Action Sheet / Tray for Documents & Folders -->
+  <div id="mobile-action-tray" class="bottom-sheet-backdrop" style="display: none;">
+    <div class="bottom-sheet" id="bottom-sheet-content">
+      <div class="bottom-sheet-handle"></div>
+      <div class="bottom-sheet-header">
+        <div id="tray-doc-icon" class="tray-doc-icon"></div>
+        <div class="tray-doc-info">
+          <h3 id="tray-doc-title" class="tray-doc-title">Document Title</h3>
+          <p id="tray-doc-meta" class="tray-doc-meta">Notebook • 4 pages</p>
+        </div>
+      </div>
+
+      <div class="bottom-sheet-actions">
+        <button id="tray-btn-open" class="tray-action-btn">
+          <span class="tray-btn-icon">📖</span>
+          <div class="tray-btn-text">
+            <strong id="tray-label-open">Open & Read</strong>
+            <span>View document in reader</span>
+          </div>
+        </button>
+
+        <button id="tray-btn-type" class="tray-action-btn">
+          <span class="tray-btn-icon">⌨</span>
+          <div class="tray-btn-text">
+            <strong>Type & Edit Notes</strong>
+            <span>Distraction-free Type Folio text editor</span>
+          </div>
+        </button>
+
+        <button id="tray-btn-optimize" class="tray-action-btn">
+          <span class="tray-btn-icon">⚡</span>
+          <div class="tray-btn-text">
+            <strong>Optimize for Paper Pro</strong>
+            <span>Convert comic or bulky PDF for faster page turns</span>
+          </div>
+        </button>
+
+        <button id="tray-btn-export" class="tray-action-btn">
+          <span class="tray-btn-icon">📥</span>
+          <div class="tray-btn-text">
+            <strong>Export Annotated PDF</strong>
+            <span>Download vector PDF with handwriting</span>
+          </div>
+        </button>
+
+        <button id="tray-btn-exclude" class="tray-action-btn">
+          <span class="tray-btn-icon" id="tray-icon-exclude">🚫</span>
+          <div class="tray-btn-text">
+            <strong id="tray-label-exclude">Exclude from Search</strong>
+            <span id="tray-desc-exclude">Hide from full-text search and OCR indexing</span>
+          </div>
+        </button>
+      </div>
+
+      <div class="bottom-sheet-footer">
+        <button id="tray-btn-cancel" class="btn btn-tray-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Reader Options Bottom Sheet -->
+  <div id="reader-options-tray" class="bottom-sheet-backdrop" style="display: none;">
+    <div class="bottom-sheet">
+      <div class="bottom-sheet-handle"></div>
+      <div class="bottom-sheet-header">
+        <h3 class="tray-doc-title">Reader Options</h3>
+      </div>
+      <div class="bottom-sheet-actions">
+        <button id="tray-reader-dark-toggle" class="tray-action-btn">
+          <span class="tray-btn-icon">🌓</span>
+          <div class="tray-btn-text">
+            <strong id="tray-reader-dark-label">Inverted Dark Mode: On</strong>
+            <span>Perceptual lightness inversion for low light</span>
+          </div>
+        </button>
+        <button id="tray-reader-fit-toggle" class="tray-action-btn">
+          <span class="tray-btn-icon">📐</span>
+          <div class="tray-btn-text">
+            <strong id="tray-reader-fit-label">Fit Mode: Fit Width</strong>
+            <span>Toggle full page or zoom to width</span>
+          </div>
+        </button>
+        <button id="tray-reader-convert" class="tray-action-btn">
+          <span class="tray-btn-icon">⚡</span>
+          <div class="tray-btn-text">
+            <strong>Optimize for Paper Pro</strong>
+            <span>Single-layer 229 PPI comic conversion</span>
+          </div>
+        </button>
+        <button id="tray-reader-exclude" class="tray-action-btn">
+          <span class="tray-btn-icon">🚫</span>
+          <div class="tray-btn-text">
+            <strong id="tray-reader-exclude-label">Exclude from Search</strong>
+            <span>Toggle library search & OCR indexing</span>
+          </div>
+        </button>
+        <button id="tray-reader-export" class="tray-action-btn">
+          <span class="tray-btn-icon">📥</span>
+          <div class="tray-btn-text">
+            <strong>Export PDF</strong>
+            <span>Download PDF with strokes and annotations</span>
+          </div>
+        </button>
+      </div>
+      <div class="bottom-sheet-footer">
+        <button id="tray-reader-close" class="btn btn-tray-cancel">Close</button>
       </div>
     </div>
   </div>
