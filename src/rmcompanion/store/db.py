@@ -268,7 +268,7 @@ class Database:
 
             # Update title in search index
             conn.execute("DELETE FROM search_index WHERE doc_id = ? AND source = 'title'", (doc_id,))
-            if not doc_data.get("deleted", False):
+            if not doc_data.get("deleted", False) and doc_data.get("parent_id") != "trash":
                 conn.execute(
                     "INSERT INTO search_index (doc_id, page_idx, source, content) VALUES (?, 0, 'title', ?)",
                     (doc_id, doc_data.get("visible_name", "")),
@@ -641,7 +641,7 @@ class Database:
         fts_query = " ".join(f'"{w}"*' for w in words)
 
         note_filter = "AND d.file_type = 'notebook'" if only_notes else ""
-        exclude_filter = "" if include_excluded else "AND (d.exclude_from_search = 0 OR s.source = 'title')"
+        exclude_filter = "" if include_excluded else "AND d.exclude_from_search = 0 AND d.parent_id != 'trash'"
 
         sql = f"""
         SELECT
@@ -652,7 +652,8 @@ class Database:
             d.visible_name,
             d.type,
             d.file_type,
-            d.parent_id
+            d.parent_id,
+            d.exclude_from_search
         FROM search_index s
         JOIN documents d ON s.doc_id = d.id
         WHERE search_index MATCH ? AND d.deleted = 0 {note_filter} {exclude_filter}
@@ -676,7 +677,8 @@ class Database:
                         d.visible_name,
                         d.type,
                         d.file_type,
-                        d.parent_id
+                        d.parent_id,
+                        d.exclude_from_search
                     FROM search_index s
                     JOIN documents d ON s.doc_id = d.id
                     WHERE s.content LIKE ? AND d.deleted = 0 {note_filter} {exclude_filter}
@@ -690,7 +692,9 @@ class Database:
                 excluded_ids = self.get_all_excluded_ids()
                 results = [
                     r for r in results
-                    if r["source"] == "title" or r["doc_id"] not in excluded_ids
+                    if r["doc_id"] not in excluded_ids
+                    and not r.get("exclude_from_search")
+                    and r.get("parent_id") != "trash"
                 ]
             return results[:limit]
 

@@ -52,10 +52,13 @@ def test_document_and_folder_exclusion(tmp_path):
     results_after_exclusion = db.search("satire", include_excluded=False)
     assert len(results_after_exclusion) == 0
 
-    # Title match should still work for discovery
-    title_results = db.search("The Boys", include_excluded=False)
-    assert len(title_results) >= 1
-    assert title_results[0]["source"] == "title"
+    # Both title and content should be excluded from search when include_excluded=False
+    title_results_excluded = db.search("The Boys", include_excluded=False)
+    assert len(title_results_excluded) == 0
+
+    # Title match works if include_excluded=True
+    title_results_included = db.search("The Boys", include_excluded=True)
+    assert len(title_results_included) >= 1
 
     # Un-exclude the folder
     affected_unexclude = db.set_exclude_from_search(folder_id, False)
@@ -63,6 +66,11 @@ def test_document_and_folder_exclusion(tmp_path):
     assert doc_id in affected_unexclude
     assert not db.is_excluded_from_search(folder_id)
     assert not db.is_excluded_from_search(doc_id)
+
+    # Title match should now be restored
+    title_results_restored = db.search("The Boys", include_excluded=False)
+    assert len(title_results_restored) >= 1
+    assert title_results_restored[0]["source"] == "title"
 
 
 def test_api_recursive_unexclusion_reindexing(tmp_path):

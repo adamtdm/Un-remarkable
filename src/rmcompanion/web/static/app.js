@@ -923,7 +923,11 @@ function renderDocumentGrid(docs) {
       } else {
         const isOpen = menuDropdown.style.display === "block";
         document.querySelectorAll(".card-menu-dropdown").forEach((d) => (d.style.display = "none"));
-        menuDropdown.style.display = isOpen ? "none" : "block";
+        document.querySelectorAll(".doc-card, .doc-list-item").forEach((c) => c.classList.remove("is-menu-open"));
+        if (!isOpen) {
+          menuDropdown.style.display = "block";
+          element.classList.add("is-menu-open");
+        }
       }
     });
 
@@ -1033,6 +1037,7 @@ function renderDocumentGrid(docs) {
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".card-menu-wrapper")) {
     document.querySelectorAll(".card-menu-dropdown").forEach((d) => (d.style.display = "none"));
+    document.querySelectorAll(".doc-card, .doc-list-item").forEach((c) => c.classList.remove("is-menu-open"));
   }
 });
 
@@ -3492,7 +3497,7 @@ function renderCommandPaletteResults(query) {
     !q || cmd.title.toLowerCase().includes(q) || cmd.desc.toLowerCase().includes(q)
   );
 
-  const allDocs = state.allDocs || [];
+  const allDocs = (state.allDocs || []).filter((d) => !d.exclude_from_search && !d.effective_exclude && d.parent_id !== "trash");
   const matchedDocs = q ? allDocs.filter((d) =>
     (d.visible_name || "").toLowerCase().includes(q)
   ).slice(0, 15) : allDocs.slice(0, 8);

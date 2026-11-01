@@ -325,7 +325,8 @@ main {
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
   cursor: pointer;
   transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
   display: flex;
@@ -338,6 +339,13 @@ main {
   box-shadow: var(--shadow);
 }
 
+.doc-card.is-menu-open,
+.doc-card:has(.card-menu-dropdown[style*="display: block"]) {
+  transform: none;
+  border-color: var(--accent);
+  z-index: 100;
+}
+
 .doc-card-thumb {
   height: 200px;
   background-color: var(--bg-tertiary);
@@ -346,6 +354,8 @@ main {
   justify-content: center;
   overflow: hidden;
   position: relative;
+  border-top-left-radius: calc(var(--radius-lg) - 1px);
+  border-top-right-radius: calc(var(--radius-lg) - 1px);
 }
 
 .doc-card-thumb img {
@@ -353,6 +363,8 @@ main {
   height: 100%;
   object-fit: cover;
   object-position: top;
+  border-top-left-radius: calc(var(--radius-lg) - 1px);
+  border-top-right-radius: calc(var(--radius-lg) - 1px);
 }
 
 .doc-card-thumb .folder-icon {
@@ -815,22 +827,25 @@ main {
 }
 
 .btn-card-menu {
-  background: none;
-  border: none;
-  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
   cursor: pointer;
-  padding: 3px 5px;
+  padding: 4px 7px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
 .btn-card-menu:hover,
-.btn-card-menu:focus-visible {
+.btn-card-menu:focus-visible,
+.is-menu-open .btn-card-menu {
   color: var(--text-primary);
-  background-color: var(--bg-tertiary);
+  background-color: var(--accent-dim);
+  border-color: var(--text-muted);
   outline: none;
 }
 
@@ -842,9 +857,9 @@ main {
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
-  z-index: 60;
-  min-width: 195px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  z-index: 150;
+  min-width: 205px;
   padding: 4px 0;
   animation: fadeIn 0.12s ease;
 }
@@ -2026,12 +2041,19 @@ main {
   border-radius: var(--radius-sm);
   gap: 1rem;
   cursor: pointer;
+  position: relative;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .doc-list-item:hover {
   border-color: var(--accent);
   background: var(--bg-tertiary);
+}
+
+.doc-list-item.is-menu-open,
+.doc-list-item:has(.card-menu-dropdown[style*="display: block"]) {
+  z-index: 100;
+  border-color: var(--accent);
 }
 
 .doc-list-icon {
