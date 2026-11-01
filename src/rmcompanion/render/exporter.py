@@ -201,7 +201,13 @@ class Exporter:
                         scale = max_width / max(float(p.rect.width), 1.0)
                         pix = p.get_pixmap(matrix=pymupdf.Matrix(scale, scale))
                         if dark_mode:
-                            pix.invert_irect()
+                            images = p.get_images()
+                            text_len = len(p.get_text("text").strip())
+                            page_area = float(p.rect.width * p.rect.height) if p.rect else 1.0
+                            img_area = sum(float(r.width * r.height) for im in images for r in p.get_image_rects(im[0]))
+                            is_comic = (img_area / page_area > 0.55) or (len(images) > 0 and text_len < 100) if page_area > 0 else False
+                            if not is_comic:
+                                pix.invert_irect()
                         png_bytes = pix.tobytes("png")
                     else:
                         png_bytes = self._blank_thumbnail(dark_mode, max_width)

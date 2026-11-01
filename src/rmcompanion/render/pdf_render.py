@@ -39,29 +39,35 @@ def render_pdf_page_image(
         if not dark_mode:
             return pix.tobytes("png"), width, height
 
-        # Smart dark mode inversion for PDF pages
-        # Convert pixmap buffer to numpy array (H, W, 3)
+        # 1. Structural Comic / Graphic Novel Detection
+        images = page.get_images()
+        text_len = len(page.get_text("text").strip())
+        page_area = float(page.rect.width * page.rect.height) if page.rect else 1.0
+        img_area = sum(float(r.width * r.height) for im in images for r in page.get_image_rects(im[0]))
+        image_coverage = (img_area / page_area) if page_area > 0 else 0.0
+
+        is_comic = image_coverage > 0.55 or (len(images) > 0 and text_len < 100 and image_coverage > 0.25)
+        if is_comic:
+            # Preserve authentic artwork without blanket inversion
+            return pix.tobytes("png"), width, height
+
+        # 2. Text Document Inversion
         img = np.frombuffer(pix.samples, dtype=np.uint8).reshape((height, width, 3)).copy()
 
-        # Check if the page is primarily an image/comic with high color saturation
-        # Calculate saturation: max(RGB) - min(RGB)
-        rgb_max = img.max(axis=-1)
-        rgb_min = img.min(axis=-1)
-        saturation = rgb_max - rgb_min
-        color_pixel_ratio = np.count_nonzero(saturation > 40) / (width * height)
-
-        if color_pixel_ratio > 0.35:
-            # Color-rich page (e.g. comic, photo, colored chart):
-            # Only slightly dim the background rather than inverting photos
-            dimmed = (img.astype(np.float32) * 0.9).astype(np.uint8)
-            out_pix = pymupdf.Pixmap(pymupdf.csRGB, width, height, dimmed.tobytes(), False)
-            return out_pix.tobytes("png"), width, height
-
-        # Standard document/text page: invert lightness while keeping hues
-        # Linear inversion: 255 - value, then map white paper to zinc-900 (24, 24, 27)
+        # Invert paper and text: map white paper (~255) to dark zinc (~24), black ink (~0) to light zinc (~244)
         inverted = 255 - img
-        # Scale range so bright white (now 0) becomes ~24 and black text (now 255) becomes ~244
         mapped = (inverted.astype(np.float32) * (220.0 / 255.0) + 24.0).clip(0, 255).astype(np.uint8)
+
+        # 3. Protect embedded figures/photos on text pages
+        if images:
+            for img_info in images:
+                for r in page.get_image_rects(img_info[0]):
+                    rx0 = max(0, min(int(r.x0 * zoom), width))
+                    ry0 = max(0, min(int(r.y0 * zoom), height))
+                    rx1 = max(0, min(int(r.x1 * zoom), width))
+                    ry1 = max(0, min(int(r.y1 * zoom), height))
+                    if rx1 > rx0 and ry1 > ry0:
+                        mapped[ry0:ry1, rx0:rx1] = img[ry0:ry1, rx0:rx1]
 
         out_pix = pymupdf.Pixmap(pymupdf.csRGB, width, height, mapped.tobytes(), False)
         return out_pix.tobytes("png"), width, height

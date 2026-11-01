@@ -67,3 +67,41 @@ def test_render_typed_text_styles():
     # Check that styles and text were emitted
     assert "class=\"rm-bold\"" in svg or "class=\"rm-heading\"" in svg
     assert "B is a letter of the alphabet" in svg
+
+
+def test_render_pdf_page_image_comic_vs_text():
+    import numpy as np
+    from rmcompanion.render.pdf_render import render_pdf_page_image
+
+    # 1. Text PDF (should be inverted in dark mode to dark zinc paper ~24)
+    doc_t = pymupdf.open()
+    pt = doc_t.new_page(width=200, height=200)
+    pt.insert_text((50, 50), "Hello text world", fontsize=16, color=(0, 0, 0))
+    text_pdf = doc_t.tobytes()
+    doc_t.close()
+
+    png_dark, w, h = render_pdf_page_image(text_pdf, 0, dark_mode=True)
+    pix_d = pymupdf.Pixmap(png_dark)
+    img_d = np.frombuffer(pix_d.samples, dtype=np.uint8).reshape((h, w, pix_d.n))
+    # Paper background corner should be dark zinc (20-30)
+    assert 20 <= img_d[0, 0][0] <= 30
+    assert 20 <= img_d[0, 0][1] <= 30
+    assert 20 <= img_d[0, 0][2] <= 30
+
+    # 2. Comic PDF (full-bleed artwork should NOT be inverted)
+    doc_c = pymupdf.open()
+    pc = doc_c.new_page(width=200, height=200)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 200, 200), False)
+    pix.set_rect(pix.irect, (0, 0, 255))  # pure blue comic panel
+    pc.insert_image(pc.rect, pixmap=pix)
+    comic_pdf = doc_c.tobytes()
+    doc_c.close()
+
+    c_dark, cw, ch = render_pdf_page_image(comic_pdf, 0, dark_mode=True)
+    pix_c = pymupdf.Pixmap(c_dark)
+    c_img = np.frombuffer(pix_c.samples, dtype=np.uint8).reshape((ch, cw, pix_c.n))
+    # Pixel should still be blue (B > 240, R < 10, G < 10), not inverted to yellow
+    assert c_img[50, 50][2] > 240
+    assert c_img[50, 50][0] < 20
+    assert c_img[50, 50][1] < 20
+

@@ -218,6 +218,7 @@ const el = {
   trayDocTitle: document.getElementById("tray-doc-title"),
   trayDocMeta: document.getElementById("tray-doc-meta"),
   trayBtnOpen: document.getElementById("tray-btn-open"),
+  trayBtnReadTab: document.getElementById("tray-btn-read-tab"),
   trayLabelOpen: document.getElementById("tray-label-open"),
   trayBtnType: document.getElementById("tray-btn-type"),
   trayBtnOptimize: document.getElementById("tray-btn-optimize"),
@@ -753,6 +754,7 @@ function renderDocumentGrid(docs) {
           <button class="menu-item menu-item-open">
             ${isFolder ? '📂 Open Folder' : '📖 Open & Read'}
           </button>
+          ${!isFolder ? `<a href="/?read=${doc.id}" target="_blank" rel="noopener" class="menu-item menu-item-read-tab" style="text-decoration: none; color: inherit;">↗ Read in New Tab</a>` : ""}
           <button class="menu-item menu-item-move">📁 Add to Folder...</button>
           ${!isFolder ? `<button class="menu-item menu-item-optimize">⚡ Optimize for Paper Pro</button>` : ""}
           <button class="menu-item menu-item-exclude">
@@ -867,6 +869,22 @@ function renderDocumentGrid(docs) {
       });
     }
 
+    const mReadTab = element.querySelector(".menu-item-read-tab");
+    if (mReadTab) {
+      mReadTab.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menuDropdown.style.display = "none";
+      });
+    }
+
+    const mExport = element.querySelector(".menu-item-export");
+    if (mExport) {
+      mExport.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menuDropdown.style.display = "none";
+      });
+    }
+
     const mOpt = element.querySelector(".menu-item-optimize");
     if (mOpt) {
       mOpt.addEventListener("click", (e) => {
@@ -961,6 +979,16 @@ function openMobileActionTray(doc) {
     : `${doc.file_type === "notebook" ? "Notebook" : (doc.file_type || "Document").toUpperCase()} • ${pageCount} ${pageCount === 1 ? "page" : "pages"} • ${statusStr}`;
 
   el.trayLabelOpen.textContent = isFolder ? "Open Folder" : "Open & Read";
+
+  if (el.trayBtnReadTab) {
+    if (isFolder) {
+      el.trayBtnReadTab.style.display = "none";
+    } else {
+      el.trayBtnReadTab.style.display = "flex";
+      el.trayBtnReadTab.href = `/?read=${doc.id}`;
+      el.trayBtnReadTab.onclick = () => closeMobileActionTray();
+    }
+  }
 
   if (el.trayBtnType) {
     el.trayBtnType.style.display = !isFolder && (doc.file_type === "notebook" || !doc.file_type) ? "flex" : "none";
@@ -1492,6 +1520,14 @@ async function openReader(docId, initialPageIdx = 0) {
     el.readerView.style.display = "flex";
     updatePageDarkToggle();
     loadCurrentPage();
+
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("read", docId);
+      if (initialPageIdx > 0) url.searchParams.set("page", initialPageIdx);
+      else url.searchParams.delete("page");
+      window.history.replaceState({ docId, pageIdx: initialPageIdx }, "", url.toString());
+    } catch (_) {}
   } catch (e) {
     console.error("Failed to open document", e);
   }
@@ -1540,6 +1576,13 @@ function closeReader() {
     el.btnReaderTypeToggle.textContent = "⌨ Type";
   }
   state.currentDoc = null;
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("read");
+    url.searchParams.delete("page");
+    url.searchParams.delete("doc");
+    window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
+  } catch (_) {}
 }
 
 el.btnReaderClose.addEventListener("click", closeReader);
@@ -1554,6 +1597,15 @@ async function loadCurrentPage() {
   el.readerPageIndicator.textContent = `Page ${pageIdx + 1} of ${totalPages}`;
   el.btnPagePrev.disabled = pageIdx <= 0;
   el.btnPageNext.disabled = pageIdx >= totalPages - 1;
+
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("read") === state.currentDoc.id) {
+      if (pageIdx > 0) url.searchParams.set("page", pageIdx);
+      else url.searchParams.delete("page");
+      window.history.replaceState({ docId: state.currentDoc.id, pageIdx }, "", url.toString());
+    }
+  } catch (_) {}
 
   el.readerCanvasWrapper.innerHTML = `
     <div style="color: var(--text-muted); padding: 3rem;">Loading page...</div>
@@ -3109,3 +3161,15 @@ setViewMode(state.viewMode);
 fetchStatus();
 fetchTasks();
 fetchDocuments();
+
+// Check for deep-link / read in new tab parameter
+try {
+  const urlParams = new URLSearchParams(window.location.search);
+  const readDocId = urlParams.get("read") || urlParams.get("doc");
+  if (readDocId) {
+    const pageIdx = parseInt(urlParams.get("page") || "0", 10);
+    openReader(readDocId, isNaN(pageIdx) ? 0 : pageIdx);
+  }
+} catch (e) {
+  console.error("Deep-link read error", e);
+}

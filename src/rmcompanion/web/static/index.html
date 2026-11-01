@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
-  <link rel="stylesheet" href="/style.css?v=20261101g">
+  <link rel="stylesheet" href="/style.css?v=20261101h">
 </head>
 <body>
   <!-- Header -->
@@ -705,6 +705,14 @@
           </div>
         </button>
 
+        <a id="tray-btn-read-tab" class="tray-action-btn" target="_blank" rel="noopener" style="text-decoration: none; color: inherit;">
+          <span class="tray-btn-icon">↗</span>
+          <div class="tray-btn-text">
+            <strong>Read in New Tab</strong>
+            <span>Open in separate browser window or tab</span>
+          </div>
+        </a>
+
         <button id="tray-btn-type" class="tray-action-btn">
           <span class="tray-btn-icon">⌨</span>
           <div class="tray-btn-text">
@@ -893,13 +901,13 @@
     </div>
   </div>
 
-  <script src="/app.js?v=20261101g"></script>
+  <script src="/app.js?v=20261101h"></script>
   <script>
     // Purge legacy service worker caches immediately
     if ("caches" in window) {
       caches.keys().then((keys) => {
         keys.forEach((key) => {
-          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261101g") {
+          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261101h") {
             caches.delete(key);
           }
         });
@@ -908,7 +916,7 @@
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js?v=20261101g").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=20261101h").then((reg) => {
           reg.update();
         }).catch(() => {});
       });
