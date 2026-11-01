@@ -305,3 +305,22 @@ def test_api_folder_and_move_delete_endpoints(test_env):
     assert resp_check.status_code == 200
     assert resp_check.json()["deleted"] is True
 
+
+def test_quick_capture_notes_and_tasks(test_env):
+    editor = test_env["editor"]
+    db = test_env["db"]
+
+    # 1. Quick capture task
+    res_task = editor.append_task_to_tasks_notebook("Order replacement marker tips")
+    assert res_task["visible_name"] == "Tasks"
+    tasks = db.list_tasks()
+    assert any("Order replacement marker tips" in t["clean_text"] for t in tasks)
+
+    # 2. Quick capture note
+    res_note = editor.append_note_to_notebook("Remember to calibrate color display on Paper Pro")
+    assert res_note["visible_name"] == "Quick Notes"
+    doc_id = res_note["id"]
+    text = editor.get_page_typed_text(doc_id, 0)
+    assert "calibrate color display" in text
+
+

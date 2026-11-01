@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel
 
 from rmcompanion.cloud.auth import AuthManager
@@ -77,6 +77,12 @@ class CreateTaskItemRequest(BaseModel):
 class CreateFolderRequest(BaseModel):
     name: str
     parent_id: str = ""
+
+
+class QuickCaptureRequest(BaseModel):
+    text: str
+    is_task: bool = True
+    notebook_title: str = ""
 
 
 class MoveDocumentRequest(BaseModel):
@@ -225,6 +231,45 @@ def get_router(
             raise HTTPException(status_code=404, detail="Document not found")
         new_state = not doc.get("exclude_from_search", False)
         return set_exclude_search(doc_id, ExcludeSearchRequest(exclude=new_state))
+
+    @r.get("/documents/{doc_id}/thumbnail")
+    def get_document_thumbnail(
+        doc_id: str,
+        dark: bool = False,
+        request: Request = None,
+    ) -> Response:
+        """Fast, lightweight thumbnail for document cards with ETag caching."""
+        doc = db.get_document(doc_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        doc_hash = doc.get("doc_hash", "")
+        etag = f'"{doc_hash}_{"dark" if dark else "light"}"'
+
+        if request:
+            if_none_match = request.headers.get("if-none-match")
+            if if_none_match and if_none_match == etag:
+                return Response(
+                    status_code=304,
+                    headers={
+                        "ETag": etag,
+                        "Cache-Control": "public, max-age=604800, immutable",
+                    },
+                )
+
+        try:
+            png_bytes = exporter.render_thumbnail(doc_id, dark_mode=dark)
+            return Response(
+                content=png_bytes,
+                media_type="image/png",
+                headers={
+                    "ETag": etag,
+                    "Cache-Control": "public, max-age=604800, immutable",
+                },
+            )
+        except Exception as e:
+            logger.warning("Failed to render thumbnail for %s: %s", doc_id, e)
+            raise HTTPException(status_code=500, detail=str(e))
 
     @r.get("/documents/{doc_id}/pages/{page_idx}/svg")
     def get_page_svg(doc_id: str, page_idx: int = 0, dark: bool = False) -> Response:
@@ -585,6 +630,22 @@ def get_router(
             return {"ok": True, "result": res}
         except Exception as e:
             logger.error("Failed to append task item: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @r.post("/notes/quick-capture")
+    def quick_capture_endpoint(payload: QuickCaptureRequest) -> dict[str, Any]:
+        """Instantly capture a task or quick note entry into a synchronized notebook."""
+        text = payload.text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Capture text cannot be empty")
+        try:
+            if payload.is_task:
+                res = editor.append_task_to_tasks_notebook(text, payload.notebook_title or "Tasks")
+            else:
+                res = editor.append_note_to_notebook(text, payload.notebook_title or "Quick Notes")
+            return {"ok": True, "result": res}
+        except Exception as e:
+            logger.error("Failed to process quick capture: %s", e)
             raise HTTPException(status_code=500, detail=str(e))
 
     return r

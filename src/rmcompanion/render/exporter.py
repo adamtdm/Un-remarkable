@@ -155,6 +155,111 @@ class Exporter:
         finally:
             doc.close()
 
+    def render_thumbnail(
+        self,
+        doc_id: str,
+        dark_mode: bool = False,
+        max_width: int = 320,
+    ) -> bytes:
+        """Render a fast, lightweight, disk-cached thumbnail PNG for a document card."""
+        doc = self.db.get_document(doc_id)
+        if not doc:
+            raise FileNotFoundError(f"Document {doc_id} not found")
+
+        doc_hash = doc.get("doc_hash", "")
+        cache_key = f"thumb_{doc_hash}_{max_width}_{'dark' if dark_mode else 'light'}"
+        cache_file = self._get_cache_path(cache_key, "png")
+        if cache_file.is_file():
+            return cache_file.read_bytes()
+
+        pages = doc.get("pages", [])
+        if not pages:
+            blank_png = self._blank_thumbnail(dark_mode, max_width)
+            try:
+                cache_file.write_bytes(blank_png)
+            except OSError:
+                pass
+            return blank_png
+
+        target_page = pages[0]
+        page_id = target_page.get("page_id", "")
+        redir = target_page.get("redir", -1)
+        files = {f["file_id"]: f["blob_hash"] for f in doc.get("files", [])}
+        file_type = doc.get("file_type", "notebook")
+        pdf_file_key = next((k for k in files if k.endswith(".pdf")), None)
+
+        png_bytes = b""
+
+        # Case 1: PDF document
+        if pdf_file_key and self.blob_store.has(files[pdf_file_key]):
+            try:
+                pdf_blob = self.blob_store.get(files[pdf_file_key])
+                actual_page = redir if redir >= 0 else 0
+                with pymupdf.open("pdf", pdf_blob) as pdf_doc:
+                    if 0 <= actual_page < len(pdf_doc):
+                        p = pdf_doc[actual_page]
+                        scale = max_width / max(float(p.rect.width), 1.0)
+                        pix = p.get_pixmap(matrix=pymupdf.Matrix(scale, scale))
+                        if dark_mode:
+                            pix.invert_irect()
+                        png_bytes = pix.tobytes("png")
+                    else:
+                        png_bytes = self._blank_thumbnail(dark_mode, max_width)
+            except Exception as e:
+                logger.warning("Failed to render PDF thumbnail for %s: %s", doc_id, e)
+                png_bytes = self._blank_thumbnail(dark_mode, max_width)
+
+        # Case 2: Notebook (.rm file)
+        else:
+            rm_file_key = f"{doc_id}/{page_id}.rm"
+            rm_blob_hash = files.get(rm_file_key)
+            if rm_blob_hash and self.blob_store.has(rm_blob_hash):
+                try:
+                    rm_bytes = self.blob_store.get(rm_blob_hash)
+                    target_height = int(max_width * 4 / 3)
+                    svg_content = render_rm_to_svg(
+                        rm_bytes,
+                        dark_mode=dark_mode,
+                        include_background=True,
+                        target_width=max_width,
+                        target_height=target_height,
+                    )
+                    with pymupdf.open(stream=svg_content.encode("utf-8"), filetype="svg") as svg_doc:
+                        pix = svg_doc[0].get_pixmap()
+                        png_bytes = pix.tobytes("png")
+                except Exception as e:
+                    logger.warning("Failed to render notebook thumbnail for %s: %s", doc_id, e)
+                    png_bytes = self._blank_thumbnail(dark_mode, max_width)
+            else:
+                png_bytes = self._blank_thumbnail(dark_mode, max_width)
+
+        try:
+            cache_file.write_bytes(png_bytes)
+        except OSError:
+            pass
+
+        return png_bytes
+
+    def warm_thumbnail(self, doc_id: str, doc_hash: str = "") -> None:
+        """Pre-generate light and dark thumbnails in cache."""
+        try:
+            self.render_thumbnail(doc_id, dark_mode=False)
+            self.render_thumbnail(doc_id, dark_mode=True)
+        except Exception as e:
+            logger.debug("Thumbnail warm error for %s: %s", doc_id, e)
+
+    def _blank_thumbnail(self, dark_mode: bool, max_width: int = 320) -> bytes:
+        """Generate a small placeholder thumbnail PNG."""
+        h = int(max_width * 4 / 3)
+        doc = pymupdf.open()
+        p = doc.new_page(width=max_width, height=h)
+        bg = (0.1, 0.1, 0.11) if dark_mode else (0.96, 0.96, 0.96)
+        p.draw_rect(pymupdf.Rect(0, 0, max_width, h), fill=bg)
+        pix = p.get_pixmap()
+        b = pix.tobytes("png")
+        doc.close()
+        return b
+
     def export_annotated_pdf(self, doc_id: str, dark_mode: bool = False) -> bytes:
         """Export complete document as multi-page PDF with annotations."""
         doc = self.db.get_document(doc_id)

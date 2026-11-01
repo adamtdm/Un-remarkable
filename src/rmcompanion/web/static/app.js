@@ -17,6 +17,7 @@ const state = {
   currentTaskFilter: "open",
   isFullscreen: false,
   hudTimeout: null,
+  qcMode: "task",
 };
 
 // 5-stop slider profiles
@@ -229,6 +230,18 @@ const el = {
   trayReaderExcludeLabel: document.getElementById("tray-reader-exclude-label"),
   trayReaderExport: document.getElementById("tray-reader-export"),
   trayReaderClose: document.getElementById("tray-reader-close"),
+
+  // Quick Capture elements
+  btnQuickCapture: document.getElementById("btn-quick-capture"),
+  quickCaptureModal: document.getElementById("quick-capture-modal"),
+  btnModalQcClose: document.getElementById("btn-modal-qc-close"),
+  btnModalQcCancel: document.getElementById("btn-modal-qc-cancel"),
+  btnModalQcSave: document.getElementById("btn-modal-qc-save"),
+  qcInput: document.getElementById("qc-input"),
+  qcModeTask: document.getElementById("qc-mode-task"),
+  qcModeNote: document.getElementById("qc-mode-note"),
+  qcNoteOptions: document.getElementById("qc-note-options"),
+  qcNotebookTitle: document.getElementById("qc-notebook-title"),
 };
 
 // --- Theme Management ---
@@ -580,9 +593,9 @@ function renderDocumentGrid(docs) {
         </svg>
       `;
     } else {
-      // Fast SVG rendering with browser HTTP caching
-      const thumbUrl = `/api/documents/${doc.id}/pages/0/svg?dark=${state.appTheme === "dark"}`;
-      iconHtml = `<img src="${thumbUrl}" alt="Page 1 preview" loading="lazy">`;
+      // Fast lightweight thumbnail rendering with browser HTTP ETag and content-hash caching
+      const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}&dark=${state.appTheme === "dark"}`;
+      iconHtml = `<img src="${thumbUrl}" alt="${escapeHtml(doc.visible_name)} preview" loading="lazy" width="320" height="426">`;
     }
 
     const badgeText = isFolder ? "Folder" : (doc.file_type || "Note");
@@ -1828,6 +1841,16 @@ window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeConverterModal();
     return;
   }
+  if (el.quickCaptureModal && el.quickCaptureModal.style.display === "flex") {
+    if (e.key === "Escape") closeQuickCapture();
+    return;
+  }
+
+  if ((e.key === "c" || e.key === "C") && e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA" && el.readerView.style.display !== "flex") {
+    e.preventDefault();
+    openQuickCapture();
+    return;
+  }
 
   if (el.readerView.style.display === "flex") {
     if (e.key === "Escape") {
@@ -1891,18 +1914,23 @@ async function fetchTasks() {
     if (!res.ok) return;
     const tasks = await res.json();
 
-    // Also get open tasks count for header badge
-    const openRes = await fetch("/api/tasks?status=open");
-    if (openRes.ok) {
-      const openTasks = await openRes.json();
-      const openCount = openTasks.length;
-      if (el.tasksBadge) {
-        el.tasksBadge.textContent = openCount;
-        el.tasksBadge.style.display = openCount > 0 ? "inline-block" : "none";
+    let openCount = 0;
+    if (state.currentTaskFilter === "open") {
+      openCount = tasks.length;
+    } else {
+      const openRes = await fetch("/api/tasks?status=open");
+      if (openRes.ok) {
+        const openTasks = await openRes.json();
+        openCount = openTasks.length;
       }
-      if (el.tasksCountPill) {
-        el.tasksCountPill.textContent = `${openCount} Open`;
-      }
+    }
+
+    if (el.tasksBadge) {
+      el.tasksBadge.textContent = openCount;
+      el.tasksBadge.style.display = openCount > 0 ? "inline-block" : "none";
+    }
+    if (el.tasksCountPill) {
+      el.tasksCountPill.textContent = `${openCount} Open`;
     }
 
     renderTasks(tasks);
@@ -2363,6 +2391,124 @@ if (el.btnSyncTasksNotebook) {
     } finally {
       el.btnSyncTasksNotebook.disabled = false;
       el.btnSyncTasksNotebook.textContent = "📓 Sync to 'Tasks' Notebook";
+    }
+  });
+}
+
+// --- Quick Capture Controller ---
+function openQuickCapture(mode = "task") {
+  state.qcMode = mode;
+  updateQcModeUI();
+  if (el.qcInput) {
+    el.qcInput.value = "";
+  }
+  if (el.quickCaptureModal) {
+    el.quickCaptureModal.style.display = "flex";
+    setTimeout(() => {
+      if (el.qcInput) el.qcInput.focus();
+    }, 60);
+  }
+}
+
+function closeQuickCapture() {
+  if (el.quickCaptureModal) {
+    el.quickCaptureModal.style.display = "none";
+  }
+}
+
+function updateQcModeUI() {
+  if (el.qcModeTask && el.qcModeNote) {
+    if (state.qcMode === "task") {
+      el.qcModeTask.classList.add("btn-primary");
+      el.qcModeNote.classList.remove("btn-primary");
+      if (el.qcNoteOptions) el.qcNoteOptions.style.display = "none";
+      if (el.qcInput) el.qcInput.placeholder = "What's on your mind? (Press Ctrl+Enter to save to 'Tasks' notebook)";
+    } else {
+      el.qcModeNote.classList.add("btn-primary");
+      el.qcModeTask.classList.remove("btn-primary");
+      if (el.qcNoteOptions) el.qcNoteOptions.style.display = "block";
+      if (el.qcInput) el.qcInput.placeholder = "Write a quick note... (Press Ctrl+Enter to save to 'Quick Notes')";
+    }
+  }
+}
+
+async function handleQuickCaptureSubmit() {
+  if (!el.qcInput) return;
+  const text = el.qcInput.value.trim();
+  if (!text) return;
+
+  const isTask = state.qcMode === "task";
+  const notebookTitle = isTask
+    ? "Tasks"
+    : (el.qcNotebookTitle ? el.qcNotebookTitle.value.trim() || "Quick Notes" : "Quick Notes");
+
+  if (el.btnModalQcSave) {
+    el.btnModalQcSave.disabled = true;
+    el.btnModalQcSave.textContent = "Saving...";
+  }
+
+  try {
+    const res = await fetch("/api/notes/quick-capture", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        is_task: isTask,
+        notebook_title: notebookTitle,
+      }),
+    });
+    if (res.ok) {
+      closeQuickCapture();
+      if (isTask) {
+        await fetchTasks();
+      } else {
+        await fetchDocuments();
+      }
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(`Capture failed: ${err.detail || "Server error"}`);
+    }
+  } catch (err) {
+    alert(`Capture error: ${err.message}`);
+  } finally {
+    if (el.btnModalQcSave) {
+      el.btnModalQcSave.disabled = false;
+      el.btnModalQcSave.textContent = "Save to Tablet";
+    }
+  }
+}
+
+if (el.btnQuickCapture) {
+  el.btnQuickCapture.addEventListener("click", () => openQuickCapture("task"));
+}
+if (el.btnModalQcClose) {
+  el.btnModalQcClose.addEventListener("click", closeQuickCapture);
+}
+if (el.btnModalQcCancel) {
+  el.btnModalQcCancel.addEventListener("click", closeQuickCapture);
+}
+if (el.btnModalQcSave) {
+  el.btnModalQcSave.addEventListener("click", handleQuickCaptureSubmit);
+}
+if (el.qcModeTask) {
+  el.qcModeTask.addEventListener("click", () => {
+    state.qcMode = "task";
+    updateQcModeUI();
+    if (el.qcInput) el.qcInput.focus();
+  });
+}
+if (el.qcModeNote) {
+  el.qcModeNote.addEventListener("click", () => {
+    state.qcMode = "note";
+    updateQcModeUI();
+    if (el.qcInput) el.qcInput.focus();
+  });
+}
+if (el.qcInput) {
+  el.qcInput.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      handleQuickCaptureSubmit();
     }
   });
 }

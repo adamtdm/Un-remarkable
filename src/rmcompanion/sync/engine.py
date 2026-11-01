@@ -12,6 +12,7 @@ from typing import Any
 from rmcompanion.cloud.auth import AuthManager
 from rmcompanion.cloud.client import RMCloudClient
 from rmcompanion.config import Settings, get_settings
+from rmcompanion.render.exporter import Exporter
 from rmcompanion.store.blob_store import BlobStore
 from rmcompanion.store.db import Database
 
@@ -29,6 +30,7 @@ class SyncEngine:
         auth: AuthManager | None = None,
         settings: Settings | None = None,
         on_doc_indexed: Callable[[str, str], None] | None = None,
+        exporter: Exporter | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.auth = auth or AuthManager(self.settings)
@@ -36,6 +38,7 @@ class SyncEngine:
         self.db = db or Database(settings=self.settings)
         self.blob_store = blob_store or BlobStore(settings=self.settings)
         self.on_doc_indexed = on_doc_indexed
+        self.exporter = exporter or Exporter(db=self.db, blob_store=self.blob_store, settings=self.settings)
 
         self._task: asyncio.Task[None] | None = None
         self._running = False
@@ -326,6 +329,12 @@ class SyncEngine:
             "pages": doc_record["page_count"],
             "status": "synced",
         })
+
+        if doc_record["type"] != "CollectionType" and not doc_record["deleted"]:
+            try:
+                self.exporter.warm_thumbnail(doc_id, doc_hash)
+            except Exception as e:
+                logger.debug("Failed to warm thumbnail for %s: %s", doc_id, e)
 
         if self.on_doc_indexed and not doc_record["deleted"]:
             try:

@@ -258,6 +258,27 @@ def create_mcp_server(
         return app_editor.append_task_to_tasks_notebook(task_text=text, notebook_title=notebook_title)
 
     @server.tool(
+        name="quick_capture",
+        description="Quickly capture a note entry or action item to your reMarkable tablet.",
+    )
+    def quick_capture(
+        text: str,
+        is_task: bool = True,
+        notebook_title: str = "",
+    ) -> dict[str, Any]:
+        """Instantly capture a thought or task to the tablet.
+
+        Args:
+            text: The content to capture.
+            is_task: Whether to format and append as an action item task checkbox (default True).
+            notebook_title: Target notebook title (defaults to 'Tasks' for tasks, 'Quick Notes' for notes).
+        """
+        if is_task:
+            return app_editor.append_task_to_tasks_notebook(task_text=text, notebook_title=notebook_title or "Tasks")
+        else:
+            return app_editor.append_note_to_notebook(text=text, notebook_title=notebook_title or "Quick Notes")
+
+    @server.tool(
         name="update_page_text",
         description="Update or replace typed text on a specific page of a reMarkable notebook.",
     )

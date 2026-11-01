@@ -454,6 +454,37 @@ class NotebookEditor:
             "task_line": task_line,
         }
 
+    def append_note_to_notebook(
+        self,
+        text: str,
+        notebook_title: str = "Quick Notes",
+        parent_id: str = "",
+    ) -> dict[str, Any]:
+        """Append a dated note entry to a notebook (creating it if not present)."""
+        import datetime
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        entry = f"\n\n---\n**{now_str}**\n{text.strip()}\n"
+
+        docs = self.db.list_documents(include_deleted=False)
+        target_doc = next(
+            (d for d in docs if d.get("visible_name") == notebook_title and d.get("type") == "DocumentType"),
+            None,
+        )
+
+        if not target_doc:
+            initial = f"# {notebook_title}\n{entry}"
+            return self.create_notebook(title=notebook_title, initial_text=initial, parent_id=parent_id)
+
+        doc_id = target_doc["id"]
+        current_text = self.get_page_typed_text(doc_id, 0)
+        updated_text = (current_text or f"# {notebook_title}").rstrip() + entry
+        self.update_page_typed_text(doc_id, 0, updated_text)
+        return {
+            "id": doc_id,
+            "visible_name": notebook_title,
+            "entry": entry,
+        }
+
     def sync_tasks_to_notebook(self, notebook_title: str = "Tasks") -> dict[str, Any]:
         """Consolidate all open tasks into the synced Tasks notebook."""
         open_tasks = self.db.list_tasks(status="open")

@@ -100,3 +100,35 @@ def test_api_documents_folder_filter(tmp_path):
         ids_notes = [d["id"] for d in res_notes.json()]
         assert "notebook-1" in ids_notes
         assert "folder-1" not in ids_notes
+
+
+def test_api_thumbnail_and_quick_capture(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    app = create_app(settings=settings)
+    with TestClient(app) as client:
+        # Create a document
+        create_res = client.post("/api/documents/new", json={"title": "Ideas", "initial_text": "First idea."})
+        assert create_res.status_code == 200
+        doc_id = create_res.json()["id"]
+
+        # 1. Fetch thumbnail
+        thumb_res = client.get(f"/api/documents/{doc_id}/thumbnail")
+        assert thumb_res.status_code == 200
+        assert thumb_res.headers.get("content-type") == "image/png"
+        assert "ETag" in thumb_res.headers
+        etag = thumb_res.headers["ETag"]
+
+        # ETag 304 response
+        cached_res = client.get(f"/api/documents/{doc_id}/thumbnail", headers={"If-None-Match": etag})
+        assert cached_res.status_code == 304
+
+        # 2. Quick capture task endpoint
+        qc_task_res = client.post("/api/notes/quick-capture", json={"text": "Review budget figures", "is_task": True})
+        assert qc_task_res.status_code == 200
+        assert qc_task_res.json()["ok"] is True
+
+        # 3. Quick capture note endpoint
+        qc_note_res = client.post("/api/notes/quick-capture", json={"text": "Summary of research paper", "is_task": False})
+        assert qc_note_res.status_code == 200
+        assert qc_note_res.json()["ok"] is True
+

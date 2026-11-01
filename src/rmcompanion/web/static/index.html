@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
-  <link rel="stylesheet" href="/style.css?v=20261101d">
+  <link rel="stylesheet" href="/style.css?v=20261101e">
 </head>
 <body>
   <!-- Header -->
@@ -75,6 +75,10 @@
           <path d="m6.34 17.66-1.41 1.41"></path>
           <path d="m19.07 4.93-1.41 1.41"></path>
         </svg>
+      </button>
+
+      <button id="btn-quick-capture" class="btn btn-sm" title="Quick capture a task or note (shortcut: C)" aria-label="Quick capture">
+        <span>⚡ Quick Capture</span>
       </button>
 
       <button id="btn-new-notebook" class="btn btn-primary btn-sm" title="Create a new notebook or import Markdown">
@@ -552,6 +556,40 @@
     </div>
   </div>
 
+  <!-- Quick Capture Modal -->
+  <div id="quick-capture-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="modal-qc-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-qc-title" style="display: flex; align-items: center; gap: 0.5rem;">
+          <span>⚡</span>
+          <span>Quick Capture</span>
+        </h2>
+        <button id="btn-modal-qc-close" class="btn btn-icon" aria-label="Close dialog">✕</button>
+      </div>
+      <div class="modal-body-content">
+        <p class="modal-hint" style="margin-bottom: 0.75rem;">
+          Instantly capture a thought, to-do item, or note to your reMarkable tablet.
+        </p>
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+          <button type="button" id="qc-mode-task" class="btn btn-sm btn-primary" style="flex: 1;">☑ Task</button>
+          <button type="button" id="qc-mode-note" class="btn btn-sm" style="flex: 1;">📝 Quick Note</button>
+        </div>
+        <textarea id="qc-input" class="modal-textarea" rows="4" placeholder="What's on your mind? (Press Ctrl+Enter to save)" style="width: 100%; box-sizing: border-box; resize: vertical; margin-bottom: 0.5rem;"></textarea>
+        <div id="qc-note-options" style="display: none; margin-bottom: 0.5rem;">
+          <label for="qc-notebook-title" style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Target Notebook Title:</label>
+          <input type="text" id="qc-notebook-title" class="modal-input" value="Quick Notes" placeholder="Quick Notes" style="width: 100%;">
+        </div>
+      </div>
+      <div class="modal-actions" style="margin-top: 1rem; display: flex; align-items: center; justify-content: space-between;">
+        <span style="font-size: 0.75rem; color: var(--text-muted);"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> to save</span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button type="button" id="btn-modal-qc-cancel" class="btn">Cancel</button>
+          <button type="button" id="btn-modal-qc-save" class="btn btn-primary">Save to Tablet</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Mobile Bottom Action Sheet / Tray for Documents & Folders -->
   <div id="mobile-action-tray" class="bottom-sheet-backdrop" style="display: none;">
     <div class="bottom-sheet" id="bottom-sheet-content">
@@ -685,13 +723,13 @@
     </div>
   </div>
 
-  <script src="/app.js?v=20261101d"></script>
+  <script src="/app.js?v=20261101e"></script>
   <script>
     // Purge legacy service worker caches immediately
     if ("caches" in window) {
       caches.keys().then((keys) => {
         keys.forEach((key) => {
-          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261101d") {
+          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261101e") {
             caches.delete(key);
           }
         });
@@ -700,7 +738,7 @@
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js?v=20261101d").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=20261101e").then((reg) => {
           reg.update();
         }).catch(() => {});
       });

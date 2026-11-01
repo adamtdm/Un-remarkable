@@ -131,6 +131,54 @@ Add the server to your `claude_desktop_config.json`:
 - `create_notebook`: Create a new native reMarkable notebook with initial typed text.
 - `append_task`: Add a task checkbox item to the synced "Tasks" notebook.
 - `update_page_text`: Update or replace typed text on a specific page.
+- `quick_capture`: Instantly capture an action item or dated note entry to your tablet.
+- `list_folders`: Browse nested folder hierarchies with full breadcrumb paths and depth.
+- `create_folder`: Create a new folder or nested subfolder in the library.
+- `move_document`: Move any document or folder into any destination folder (with cycle prevention).
+- `delete_document`: Delete any document or recursively delete a folder and all its contents.
+
+---
+
+## Nested Folder Management & File Organization
+
+Organize documents with an authentic reMarkable folder structure:
+- **Nested Subfolders:** Create folders inside folders to arbitrary depth (e.g. `Work > Projects > Q4`).
+- **Ellipsis Menu & Mobile Bottom Action Sheet:** Tap or click the `•••` button on any notebook, PDF, or folder card to open the actions menu. On mobile, this smoothly slides up from the bottom as a native action sheet.
+- **Move to Folder:** Select **📁 Add to Folder...** to move any item into any target folder via an interactive folder tree with real-time search. Cycle detection prevents moving a folder into itself or its own subfolders.
+- **Delete / Trash:** Safely soft-delete files or entire nested folder trees with one click.
+
+---
+
+## Fullscreen Distraction-Free Reading Mode
+
+Immerse yourself in documents and notes without toolbars or distractions:
+- **Toggle Fullscreen:** Press <kbd>F</kbd> on desktop, click **⛶ Fullscreen** in the reader toolbar, or tap **⛶ Fullscreen Reading Mode** in the mobile options tray.
+- **Auto-Hiding HUD:** The navigation header and page controls automatically glide off-screen after 2.5 seconds of inactivity. Moving your mouse or tapping the center reveals them instantly.
+- **Edge Tap Navigation:**
+  - **Left 25%:** Go to previous page.
+  - **Middle 50%:** Toggle header HUD and controls.
+  - **Right 25%:** Go to next page.
+- **Instant Exit:** Press <kbd>Esc</kbd> or click the floating **✕ Exit Fullscreen** pill.
+
+---
+
+## Quick Capture (Desktop, Mobile & AI)
+
+Never lose a fleeting thought or meeting to-do:
+- **Global Shortcut:** Press <kbd>C</kbd> anywhere in the app (or click **⚡ Quick Capture** in the header) to open the capture modal.
+- **Two Capture Modes:**
+  - **☑ Task:** Formats the entry as an action item (`- [ ] ...`), saves it in the database, and appends it to your synced tablet "Tasks" notebook.
+  - **📝 Quick Note:** Appends a timestamped note entry directly into your "Quick Notes" notebook.
+- **Quick Submission:** Press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (or <kbd>Cmd</kbd>+<kbd>Enter</kbd>) to save immediately without leaving your current view.
+- **Via MCP:** AI assistants can capture tasks and notes on your behalf using the `quick_capture` tool.
+
+---
+
+## Blazing Fast Homepage Loading & Smart Thumbnail Caching
+
+- **Dedicated Lightweight Thumbnails:** Generates ultra-compact 320×426 PNG previews (~15–25 KB) instead of downloading multi-megabyte full-resolution SVGs or high-DPI PDF pages.
+- **Pre-Warmed Cache:** Whenever the background sync engine downloads a document from the cloud, it pre-renders both light and dark mode thumbnails to disk.
+- **Immutable Content-Addressed ETags:** Thumbnails are versioned by document SHA-256 hash (`?h=...`), allowing browsers to cache them permanently (`Cache-Control: immutable`) and respond in < 1ms with HTTP 304 Not Modified.
 
 ---
 
