@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
@@ -11,6 +12,7 @@ from typing import Any
 
 from rmcompanion.cloud.auth import AuthManager
 from rmcompanion.cloud.client import RMCloudClient
+from rmcompanion.cloud.index import Entry, compute_doc_index_hash, compute_root_hash, format_index
 from rmcompanion.config import Settings, get_settings
 from rmcompanion.render.exporter import Exporter
 from rmcompanion.store.blob_store import BlobStore
@@ -341,6 +343,202 @@ class SyncEngine:
                 self.on_doc_indexed(doc_id, doc_hash)
             except Exception as e:
                 logger.warning("Error running on_doc_indexed callback for %s: %s", doc_id, e)
+
+    async def push_document(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        parent_id: str = "",
+        file_type: str = "pdf",
+    ) -> dict[str, Any]:
+        """Upload a PDF or EPUB document to reMarkable Cloud and trigger sync."""
+        if not self.auth.tokens.is_authenticated:
+            return {"status": "unauthenticated"}
+
+        try:
+            res = await self.client.upload_document(
+                file_bytes=file_bytes,
+                filename=filename,
+                parent_id=parent_id or "",
+                file_type=file_type,
+            )
+            # Schedule immediate sync cycle to ingest the new cloud document
+            asyncio.create_task(self.sync_once())
+            return {"status": "ok", "result": res}
+        except Exception as e:
+            logger.error("Failed to push document %s to reMarkable Cloud: %s", filename, e)
+            return {"status": "error", "error": str(e)}
+
+    async def create_remote_folder(self, folder_id: str, name: str, parent_id: str = "") -> bool:
+        """Create a collection folder on reMarkable Cloud and broadcast update."""
+        if not self.auth.tokens.is_authenticated:
+            return False
+
+        try:
+            now_ms = str(int(time.time() * 1000))
+            meta_dict = {
+                "createdTime": now_ms,
+                "lastModified": now_ms,
+                "new": True,
+                "parent": parent_id or "",
+                "pinned": False,
+                "source": "",
+                "type": "CollectionType",
+                "visibleName": name,
+            }
+            meta_bytes = json.dumps(meta_dict, indent=2).encode("utf-8")
+            meta_hash = hashlib.sha256(meta_bytes).hexdigest()
+
+            meta_entry = Entry(
+                hash=meta_hash,
+                type="0",
+                doc_id=f"{folder_id}.metadata",
+                subfiles=0,
+                size=len(meta_bytes),
+            )
+            folder_doc_hash = compute_doc_index_hash([meta_entry])
+            doc_schema_bytes = format_index([meta_entry], schema="3").encode("utf-8")
+
+            # 1. Upload metadata blob
+            await self.client.put_blob(meta_hash, meta_bytes, f"{folder_id}.metadata")
+
+            # 2. Upload docSchema blob
+            await self.client.put_blob(
+                folder_doc_hash,
+                doc_schema_bytes,
+                f"{folder_id}.docSchema",
+                content_type="text/plain; charset=UTF-8",
+            )
+
+            # 3. Add to cloud root index and broadcast
+            root_hash, gen, schema = await self.client.get_root()
+            entries, _, _ = await self.client.get_root_index(root_hash)
+            folder_entry = Entry(
+                hash=folder_doc_hash,
+                type="0",
+                doc_id=folder_id,
+                subfiles=1,
+                size=len(meta_bytes),
+            )
+            entries.append(folder_entry)
+
+            new_root_bytes = format_index(entries, schema=schema).encode("utf-8")
+            new_root_hash = compute_root_hash(new_root_bytes)
+            await self.client.put_blob(
+                new_root_hash,
+                new_root_bytes,
+                "root.docSchema",
+                content_type="text/plain; charset=UTF-8",
+            )
+
+            new_gen = await self.client.update_root(new_root_hash, gen, broadcast=True)
+            self.db.set_state("last_root_hash", new_root_hash)
+            self.db.set_state("last_generation", str(new_gen))
+            logger.info("Created folder %s (%s) on reMarkable Cloud", name, folder_id)
+            return True
+        except Exception as e:
+            logger.warning("Failed to create remote folder %s on cloud: %s", name, e)
+            return False
+
+    async def move_remote_document(self, doc_id: str, new_parent_id: str = "") -> bool:
+        """Update parent ID for a document or folder on reMarkable Cloud and broadcast."""
+        if not self.auth.tokens.is_authenticated:
+            return False
+
+        try:
+            root_hash, gen, schema = await self.client.get_root()
+            entries, _, _ = await self.client.get_root_index(root_hash)
+
+            doc_entry = next((e for e in entries if e.doc_id == doc_id), None)
+            if not doc_entry:
+                logger.debug("Document %s not found in cloud root; skipping remote move", doc_id)
+                return False
+
+            doc_entries, doc_schema_ver, _ = await self.client.get_doc_index(doc_entry.hash, doc_id)
+            meta_entry = next((e for e in doc_entries if e.doc_id.endswith(".metadata")), None)
+            if not meta_entry:
+                return False
+
+            # Download existing metadata blob
+            raw_meta = await self.client.get_blob(meta_entry.hash, meta_entry.doc_id)
+            meta_dict = json.loads(raw_meta.decode("utf-8"))
+            meta_dict["parent"] = new_parent_id or ""
+            meta_dict["lastModified"] = str(int(time.time() * 1000))
+            new_meta_bytes = json.dumps(meta_dict, indent=2).encode("utf-8")
+            new_meta_hash = hashlib.sha256(new_meta_bytes).hexdigest()
+
+            # Upload updated metadata blob
+            await self.client.put_blob(new_meta_hash, new_meta_bytes, meta_entry.doc_id)
+
+            # Recompute doc index
+            updated_doc_entries = [
+                Entry(hash=new_meta_hash, type=e.type, doc_id=e.doc_id, subfiles=e.subfiles, size=len(new_meta_bytes))
+                if e.doc_id == meta_entry.doc_id else e
+                for e in doc_entries
+            ]
+            new_doc_hash = compute_doc_index_hash(updated_doc_entries)
+            doc_schema_bytes = format_index(updated_doc_entries, schema=doc_schema_ver).encode("utf-8")
+            await self.client.put_blob(
+                new_doc_hash,
+                doc_schema_bytes,
+                f"{doc_id}.docSchema",
+                content_type="text/plain; charset=UTF-8",
+            )
+
+            # Update root index
+            updated_root_entries = [
+                Entry(hash=new_doc_hash, type=e.type, doc_id=e.doc_id, subfiles=e.subfiles, size=e.size)
+                if e.doc_id == doc_id else e
+                for e in entries
+            ]
+            new_root_bytes = format_index(updated_root_entries, schema=schema).encode("utf-8")
+            new_root_hash = compute_root_hash(new_root_bytes)
+            await self.client.put_blob(
+                new_root_hash,
+                new_root_bytes,
+                "root.docSchema",
+                content_type="text/plain; charset=UTF-8",
+            )
+
+            new_gen = await self.client.update_root(new_root_hash, gen, broadcast=True)
+            self.db.set_state("last_root_hash", new_root_hash)
+            self.db.set_state("last_generation", str(new_gen))
+            logger.info("Moved document %s to parent '%s' on reMarkable Cloud", doc_id, new_parent_id)
+            return True
+        except Exception as e:
+            logger.warning("Failed to move remote document %s on cloud: %s", doc_id, e)
+            return False
+
+    async def delete_remote_document(self, doc_id: str) -> bool:
+        """Remove document or folder from reMarkable Cloud root index and broadcast."""
+        if not self.auth.tokens.is_authenticated:
+            return False
+
+        try:
+            root_hash, gen, schema = await self.client.get_root()
+            entries, _, _ = await self.client.get_root_index(root_hash)
+
+            filtered = [e for e in entries if e.doc_id != doc_id]
+            if len(filtered) == len(entries):
+                return True
+
+            new_root_bytes = format_index(filtered, schema=schema).encode("utf-8")
+            new_root_hash = compute_root_hash(new_root_bytes)
+            await self.client.put_blob(
+                new_root_hash,
+                new_root_bytes,
+                "root.docSchema",
+                content_type="text/plain; charset=UTF-8",
+            )
+
+            new_gen = await self.client.update_root(new_root_hash, gen, broadcast=True)
+            self.db.set_state("last_root_hash", new_root_hash)
+            self.db.set_state("last_generation", str(new_gen))
+            logger.info("Deleted document %s from reMarkable Cloud", doc_id)
+            return True
+        except Exception as e:
+            logger.warning("Failed to delete remote document %s on cloud: %s", doc_id, e)
+            return False
 
     def start_background_loop(self) -> None:
         """Start recurring background sync task."""

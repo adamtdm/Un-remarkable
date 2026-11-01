@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "un-remarkable"
 version = "0.1.0"
-description = "Un-remarkable: Self-hosted companion for reMarkable Paper Pro: continuous cloud sync, dark mode web reader, and MCP server"
+description = "Un-remarkable: Self-hosted companion for reMarkable devices (Paper Pro, RM2, RM1): continuous cloud sync, dark mode web reader, and MCP server"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [

@@ -41,7 +41,7 @@ def create_mcp_server(
 
     server = MCPServer(
         name="remarkable-companion",
-        title="reMarkable Paper Pro Companion",
+        title="reMarkable Companion",
         description="Search, read, and inspect handwritten notebooks, PDFs, and notes mirrored from your reMarkable tablet.",
         version="0.1.0",
     )

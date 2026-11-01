@@ -435,12 +435,15 @@ class NotebookEditor:
         task_line = f"- [ ] {task_text.strip()}"
 
         if not target_doc:
-            # Create a brand new Tasks notebook
+            # Create a brand new Tasks notebook on main page (root)
             initial = f"# {notebook_title}\n\n{task_line}\n"
-            return self.create_notebook(title=notebook_title, initial_text=initial)
+            return self.create_notebook(title=notebook_title, initial_text=initial, parent_id="")
 
-        # Existing notebook: append to page 0
+        # Existing notebook: ensure it remains on the main page
         doc_id = target_doc["id"]
+        if target_doc.get("parent_id") != "":
+            self.move_document(doc_id, "")
+
         current_text = self.get_page_typed_text(doc_id, 0)
         if current_text:
             updated_text = current_text.rstrip() + f"\n{task_line}\n"
@@ -503,10 +506,12 @@ class NotebookEditor:
         )
 
         if not target_doc:
-            res = self.create_notebook(title=notebook_title, initial_text=content)
+            res = self.create_notebook(title=notebook_title, initial_text=content, parent_id="")
             doc_id = res["id"]
         else:
             doc_id = target_doc["id"]
+            if target_doc.get("parent_id") != "":
+                self.move_document(doc_id, "")
             self.update_page_typed_text(doc_id, 0, content)
 
         return {
@@ -908,6 +913,14 @@ class NotebookEditor:
         doc = self.db.get_document(doc_id)
         if not doc:
             raise FileNotFoundError(f"Document {doc_id} not found")
+
+        # The Tasks notebook must always stay on the main page (root)
+        if (
+            doc.get("type") != "CollectionType"
+            and doc.get("visible_name", "").strip().lower() == "tasks"
+            and new_parent_id != ""
+        ):
+            raise ValueError("The Tasks notebook must remain on the main page.")
 
         is_collection = doc.get("type") == "CollectionType"
         if is_collection:

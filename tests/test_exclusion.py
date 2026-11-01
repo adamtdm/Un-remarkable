@@ -48,17 +48,14 @@ def test_document_and_folder_exclusion(tmp_path):
     assert db.is_excluded_from_search(folder_id)
     assert db.is_excluded_from_search(doc_id)
 
-    # Non-title search content should have been purged upon exclusion
-    results_after_exclusion = db.search("satire", include_excluded=False)
-    assert len(results_after_exclusion) == 0
+    # Body search content should be ignored/purged upon exclusion
+    body_results_excluded = db.search("satire", include_excluded=False)
+    assert len(body_results_excluded) == 0
 
-    # Both title and content should be excluded from search when include_excluded=False
-    title_results_excluded = db.search("The Boys", include_excluded=False)
-    assert len(title_results_excluded) == 0
-
-    # Title match works if include_excluded=True
-    title_results_included = db.search("The Boys", include_excluded=True)
-    assert len(title_results_included) >= 1
+    # Title match SHOULD still work for discovery even when excluded
+    title_results = db.search("The Boys", include_excluded=False)
+    assert len(title_results) >= 1
+    assert all(r["source"] == "title" for r in title_results)
 
     # Un-exclude the folder
     affected_unexclude = db.set_exclude_from_search(folder_id, False)

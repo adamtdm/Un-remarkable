@@ -1,8 +1,8 @@
 # Un-remarkable
 
-A self-hosted, Dockerized cloud companion, dark mode web reader, and optimization engine purpose-built for the **reMarkable Paper Pro** (and reMarkable 2).
+A self-hosted, Dockerized cloud companion, dark mode web reader, and optimization engine purpose-built for **any reMarkable device** (reMarkable Paper Pro, reMarkable 2, and reMarkable 1).
 
-Mirror your entire reMarkable cloud library locally without jailbreaking, modifying, or compromising tablet warranty. Browse notes with perceptual OKLCH dark mode, optimize massive comic EPUBs/PDFs into fast single-layer 229 PPI e-ink documents, search handwritten and typed notes with SQLite FTS5, and connect AI coding assistants directly via the Model Context Protocol (MCP).
+Mirror your entire reMarkable cloud library locally without jailbreaking, modifying, or compromising tablet warranty. Browse notes with perceptual OKLCH dark mode, optimize massive comic EPUBs/PDFs into fast single-layer e-ink documents sized to your screen, search handwritten and typed notes with SQLite FTS5, and connect AI coding assistants directly via the Model Context Protocol (MCP).
 
 ---
 
@@ -10,7 +10,7 @@ Mirror your entire reMarkable cloud library locally without jailbreaking, modify
 
 - **Zero-Jailbreak Cloud Sync (`sync15`):** Continuous background synchronization with the official reMarkable cloud using WebSocket notifications and content-addressed blob storage.
 - **Detailed Live Sync Monitor:** Real-time sync drawer with stage indicators, document and file progress, data transfer metrics, and session activity logs.
-- **Paper Pro Document & Comic Converter:** 5-stop quality slider converting heavy fixed-layout EPUBs, double-spread CBZ comics, and bulky PDFs into lean, single-layer 2160×1620 PDFs sized exactly to the Paper Pro's 229 PPI screen.
+- **reMarkable Document & Comic Converter:** 5-stop quality slider converting heavy fixed-layout EPUBs, double-spread CBZ comics, and bulky PDFs into lean, single-layer PDFs sized to your device's native screen (Paper Pro Color Canvas, Paper Pro Move, RM2, RM1).
 - **Perceptual OKLCH Dark Mode Reader:** Vector SVG renderer inverting background lightness while preserving color hues and highlights for natural night-time reading.
 - **Selective Search & OCR Exclusions:** Recursive folder-level and document-level search exclusions so novels and comics don't pollute meeting notes and notebook search queries.
 - **Full-Text Search (SQLite FTS5):** Instant full-text search across titles, tags, typed notes, and PDF text with search filtering (Notes only, All documents).
@@ -22,14 +22,18 @@ Mirror your entire reMarkable cloud library locally without jailbreaking, modify
 
 ---
 
-## Paper Pro Screen Specifications
+## Supported reMarkable Devices & Specifications
 
-| Parameter | Specification | Why it matters |
-|---|---|---|
-| **Resolution** | 2160 × 1620 pixels (portrait: 1620 × 2160) | 1:1 pixel match ceiling for the converter engine |
-| **Density** | 229 PPI (Pixels Per Inch) | Crisp text and comic line art without bloated file size |
-| **Color Tech** | Canvas Color (Gallery 3 E-Ink) | Perceptual OKLCH inversion preserves colored inks and highlighters |
-| **File Format** | `.rm` v6 binary stroke trees | Stores stroke vectors and typed text blocks in a merge-friendly format |
+Un-remarkable provides native hardware profiles and screen targets across all reMarkable devices:
+
+| Device | Resolution & PPI | Display Technology | Profile Features |
+|---|---|---|---|
+| **reMarkable Paper Pro** | 2160 × 1620 (229 PPI) | Canvas Color (Gallery 3 E-Ink) | Full-color conversion, perceptual OKLCH dark mode, 1:1 pixel match |
+| **reMarkable Paper Pro (Move / Landscape)** | 1620 × 2160 (229 PPI) | Canvas Color (Gallery 3 E-Ink) | Landscape / spread split orientation |
+| **reMarkable 2** | 1872 × 1404 (226 PPI) | Canvas Monochrome E-Ink | High-contrast grayscale optimization, dithered shading, fast paging |
+| **reMarkable 1** | 1872 × 1404 (226 PPI) | Canvas Monochrome E-Ink | Lean single-layer grayscale PDFs for original hardware |
+
+All devices store notes using native `.rm` v6 binary stroke trees and typed text blocks in a merge-friendly format.
 
 ---
 
@@ -76,24 +80,25 @@ curl http://localhost:8099/api/status
 
 ---
 
-## Paper Pro Converter Guide
+## reMarkable Document & Comic Converter Guide
 
 Heavy fixed-layout EPUBs (e.g. *The Boys*) and multi-gigabyte graphic novels often load and turn pages very slowly on e-ink tablets due to on-the-fly image scaling and HTML layout overhead.
 
-The built-in converter optimizes documents into lean, single-layer PDFs matching the Paper Pro screen:
+The built-in converter optimizes documents into lean, single-layer PDFs matching the target reMarkable screen:
 
 1. Click **⚡ Convert** in the top navigation or on any document card.
 2. Select an existing library document or upload an external file (`.pdf`, `.epub`, `.cbz`).
-3. Choose your quality stop on the 5-stop slider:
+3. Select your target device profile (**reMarkable Paper Pro**, **Paper Pro Move**, **reMarkable 2**, or **reMarkable 1**).
+4. Choose your quality stop on the 5-stop slider:
    - **Stop 1 (Smallest):** Max 1600px, JPEG q65 (~75% reduction, fastest paging).
    - **Stop 2 (Compact):** Max 1920px, JPEG q72 (~65% reduction).
-   - **Stop 3 (Balanced - Recommended):** 1:1 native 2160×1620 match at 229 PPI, JPEG q82 (~50% reduction).
-   - **Stop 4 (Sharp):** Max 2560px, JPEG q88 (~40% reduction, fine line art).
-   - **Stop 5 (Best):** Max 3000px, JPEG q92 (~10% reduction, archival preservation).
-4. Configure optional toggles:
+   - **Stop 3 (Balanced - Recommended):** 1:1 native device screen match, JPEG q82 (~50% reduction).
+   - **Stop 4 (Sharp):** High-resolution rendering, JPEG q88 (~40% reduction, fine line art).
+   - **Stop 5 (Best):** Maximum fidelity, JPEG q92 (~10% reduction, archival preservation).
+5. Configure optional toggles:
    - **Split two-page spreads into separate pages:** Detects landscape double pages and splits them into two vertical portrait pages.
    - **Manga reading order (right-to-left):** Reverses split order for Japanese manga.
-5. Click **Start Conversion**. Download the result directly or send it back to your tablet.
+6. Click **Start Conversion**. Download the result directly or send it back to your tablet.
 
 ---
 

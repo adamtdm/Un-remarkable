@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
+import struct
 from typing import Any
 
 import httpx
@@ -13,6 +16,23 @@ from rmcompanion.cloud.index import Entry, parse_index
 from rmcompanion.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
+
+# Precomputed Castagnoli CRC32C table (0x82F63B78 polynomial used by Google Cloud Storage)
+_CRC32C_TABLE: list[int] = []
+for _i in range(256):
+    _curr = _i
+    for _ in range(8):
+        _curr = 0x82F63B78 ^ (_curr >> 1) if (_curr & 1) else (_curr >> 1)
+    _CRC32C_TABLE.append(_curr)
+
+
+def crc32c(data: bytes) -> str:
+    """Compute base64-encoded CRC32C checksum for Google Cloud Storage."""
+    crc = 0xFFFFFFFF
+    for b in data:
+        crc = _CRC32C_TABLE[(crc ^ b) & 0xFF] ^ (crc >> 8)
+    crc ^= 0xFFFFFFFF
+    return base64.b64encode(struct.pack(">I", crc)).decode("ascii")
 
 
 class RMCloudError(Exception):
@@ -142,3 +162,78 @@ class RMCloudClient:
         raw = await self.get_blob(doc_hash, filename=f"{doc_id}.docSchema")
         entries, schema = parse_index(raw)
         return entries, schema, raw
+
+    async def put_blob(
+        self,
+        blob_hash: str,
+        data: bytes,
+        filename: str = "",
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        """Upload a content blob to reMarkable sync storage."""
+        url = f"{self.settings.rm_sync_host}/sync/v3/files/{blob_hash}"
+        headers = {
+            "Content-Type": content_type,
+            "x-goog-hash": f"crc32c={crc32c(data)}",
+        }
+        if filename:
+            headers["rm-filename"] = filename
+
+        async with self._semaphore:
+            resp = await self._request("PUT", url, headers=headers, content=data)
+            if resp.status_code not in (200, 201):
+                raise RMCloudError(
+                    f"Failed to upload blob {blob_hash} ({filename}): status {resp.status_code} {resp.text}"
+                )
+
+    async def update_root(self, root_hash: str, generation: int, broadcast: bool = True) -> int:
+        """Update remote root index and broadcast notification to tablets.
+
+        Returns:
+            New generation integer.
+        """
+        url = f"{self.settings.rm_sync_host}/sync/v3/root"
+        headers = {
+            "rm-filename": "roothash",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "broadcast": broadcast,
+            "hash": root_hash,
+            "generation": generation,
+        }
+        resp = await self._request("PUT", url, headers=headers, json=payload)
+        if resp.status_code != 200:
+            raise RMCloudError(f"Failed to update root index ({resp.status_code}): {resp.text}")
+
+        data = resp.json()
+        return int(data.get("generation", generation + 1))
+
+    async def upload_document(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        parent_id: str = "",
+        file_type: str = "pdf",
+    ) -> dict[str, Any]:
+        """Upload a PDF or EPUB document directly to reMarkable Cloud.
+
+        Uses the official reMarkable direct document creation API.
+        """
+        url = f"{self.settings.rm_sync_host}/doc/v2/files"
+        meta_dict = {
+            "file_name": filename,
+            "parent": parent_id or "",
+        }
+        meta_b64 = base64.b64encode(json.dumps(meta_dict).encode("utf-8")).decode("ascii")
+        content_type = "application/epub+zip" if file_type.lower() == "epub" else "application/pdf"
+        headers = {
+            "rm-source": "WebLibrary",
+            "rm-meta": meta_b64,
+            "Content-Type": content_type,
+        }
+        resp = await self._request("POST", url, headers=headers, content=file_bytes)
+        if resp.status_code not in (200, 201):
+            raise RMCloudError(f"Failed to upload document {filename} ({resp.status_code}): {resp.text}")
+
+        return resp.json()

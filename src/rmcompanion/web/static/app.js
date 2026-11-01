@@ -38,7 +38,7 @@ const CONVERTER_PROFILES = {
   },
   3: {
     name: "Stop 3: Balanced - Recommended",
-    desc: "1:1 native Paper Pro pixel match (2160x1620 portrait at 229 PPI, JPEG q82). Optimal balance of razor-sharp art and smooth e-ink caching.",
+    desc: "1:1 native reMarkable pixel match. Optimal balance of razor-sharp art and smooth e-ink caching.",
   },
   4: {
     name: "Stop 4: Sharp (~40% reduction)",
@@ -73,6 +73,66 @@ const ICONS = {
   grid: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>`,
   list: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>`,
 };
+
+// --- Sleek Scandinavian Toast Notification System ---
+function showToast(message, type = "info", duration = 3500) {
+  let container = document.getElementById("toast-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toast-container";
+    container.className = "toast-container";
+    container.setAttribute("aria-live", "polite");
+    container.setAttribute("aria-atomic", "true");
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+
+  const iconMap = {
+    success: `<svg class="toast-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
+    error: `<svg class="toast-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`,
+    warning: `<svg class="toast-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`,
+    info: `<svg class="toast-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`,
+  };
+
+  const iconHtml = iconMap[type] || iconMap.info;
+
+  toast.innerHTML = `
+    <span class="toast-icon">${iconHtml}</span>
+    <span class="toast-message">${escapeHtml(String(message))}</span>
+    <button class="toast-close" aria-label="Dismiss">✕</button>
+  `;
+
+  let dismissTimeout = null;
+
+  function dismiss() {
+    if (dismissTimeout) clearTimeout(dismissTimeout);
+    toast.classList.add("toast-exiting");
+    toast.addEventListener("animationend", () => {
+      toast.remove();
+    }, { once: true });
+  }
+
+  toast.querySelector(".toast-close").addEventListener("click", (e) => {
+    e.stopPropagation();
+    dismiss();
+  });
+
+  toast.addEventListener("mouseenter", () => {
+    if (dismissTimeout) clearTimeout(dismissTimeout);
+  });
+
+  toast.addEventListener("mouseleave", () => {
+    dismissTimeout = setTimeout(dismiss, 1500);
+  });
+
+  container.appendChild(toast);
+  dismissTimeout = setTimeout(dismiss, duration);
+}
+
+// Seamlessly route standard alerts to sleek toasts
+window.alert = (msg) => showToast(String(msg), "info");
 
 // --- DOM Elements ---
 const el = {
@@ -767,6 +827,15 @@ async function fetchDocuments() {
         return isFolderA ? -1 : 1;
       }
 
+      // Always keep the Tasks notebook pinned to the top of notebooks on the main page
+      if (state.currentFolderId === "") {
+        const isTasksA = (a.visible_name || "").trim().toLowerCase() === "tasks";
+        const isTasksB = (b.visible_name || "").trim().toLowerCase() === "tasks";
+        if (isTasksA !== isTasksB) {
+          return isTasksA ? -1 : 1;
+        }
+      }
+
       switch (state.currentSort) {
         case "name-asc":
           return (a.visible_name || "").localeCompare(b.visible_name || "");
@@ -810,7 +879,7 @@ function renderDocumentGrid(docs) {
     const badgeText = isFolder ? "Folder" : (doc.file_type || "Note").toUpperCase();
     const pageText = isFolder ? "" : `${doc.page_count} ${doc.page_count === 1 ? 'page' : 'pages'}`;
     const weightSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7a3 3 0 0 1 6 0"></path><path d="M6 10h12l1.5 10a2 2 0 0 1-2 2H6.5a2 2 0 0 1-2-2L6 10z"></path><line x1="12" y1="13" x2="12" y2="16"></line><circle cx="12" cy="18.5" r="0.75" fill="currentColor"></circle></svg>`;
-    const optimizeBadge = doc.needs_optimization ? `<span class="doc-badge doc-badge-optimize" title="Heavy file (>30MB or >150 pages). Optimize for Paper Pro.">${weightSvg}</span>` : "";
+    const optimizeBadge = doc.needs_optimization ? `<span class="doc-badge doc-badge-optimize" title="Heavy file (>30MB or >150 pages). Optimize for reMarkable.">${weightSvg}</span>` : "";
 
     const element = document.createElement("div");
 
@@ -834,7 +903,7 @@ function renderDocumentGrid(docs) {
           </button>
           ${!isFolder ? `<a href="/?read=${doc.id}" target="_blank" rel="noopener" class="menu-item menu-item-read-tab" style="text-decoration: none; color: inherit;">${ICONS.readTab}<span>Read in New Tab</span></a>` : ""}
           <button class="menu-item menu-item-move">${ICONS.folder}<span>Add to Folder...</span></button>
-          ${!isFolder ? `<button class="menu-item menu-item-optimize">${ICONS.optimize}<span>Optimize for Paper Pro</span></button>` : ""}
+          ${!isFolder ? `<button class="menu-item menu-item-optimize">${ICONS.optimize}<span>Optimize for reMarkable</span></button>` : ""}
           <button class="menu-item menu-item-exclude">
             ${isExcluded ? ICONS.check : ICONS.exclude}
             <span>${isExcluded ? 'Include in Search & Tasks' : 'Exclude from Search & Tasks'}</span>
@@ -1365,14 +1434,15 @@ if (el.btnMoveFolderSubmit) {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.detail || "Failed to move item");
+        showToast(err.detail || "Failed to move item", "error");
         return;
       }
       closeMoveFolderModal();
+      showToast("Item moved successfully", "success");
       await fetchDocuments();
     } catch (err) {
       console.error("Failed to move item", err);
-      alert("Error moving item");
+      showToast("Error moving item", "error");
     } finally {
       if (el.btnMoveFolderSubmit) el.btnMoveFolderSubmit.disabled = false;
     }
@@ -1393,7 +1463,7 @@ if (el.formQuickNewFolder) {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.detail || "Failed to create folder");
+        showToast(err.detail || "Failed to create folder", "error");
         return;
       }
       const data = await res.json();
@@ -1457,13 +1527,15 @@ if (el.formNewFolder) {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.detail || "Failed to create folder");
+        showToast(err.detail || "Failed to create folder", "error");
         return;
       }
       closeNewFolderModal();
+      showToast(`Folder "${name}" created`, "success");
       await fetchDocuments();
     } catch (err) {
       console.error("Failed to create folder", err);
+      showToast("Error creating folder", "error");
     }
   });
 }
@@ -1481,13 +1553,14 @@ async function confirmDeleteDocument(doc) {
     const res = await fetch(`/api/documents/${doc.id}`, { method: "DELETE" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      alert(err.detail || "Failed to delete item");
+      showToast(err.detail || "Failed to delete item", "error");
       return;
     }
+    showToast(isFolder ? `Folder "${doc.visible_name}" deleted` : `"${doc.visible_name}" deleted`, "success");
     await fetchDocuments();
   } catch (err) {
     console.error("Failed to delete item", err);
-    alert("Error deleting item");
+    showToast("Error deleting item", "error");
   }
 }
 
@@ -2061,7 +2134,7 @@ el.btnConverterStart.addEventListener("click", async () => {
   const uploadedFile = el.converterFileInput.files[0];
 
   if (!docId && !uploadedFile) {
-    alert("Please select a document or upload a file first.");
+    showToast("Please select a document or upload a file first.", "warning");
     return;
   }
 
@@ -2145,15 +2218,16 @@ el.btnConverterStart.addEventListener("click", async () => {
             <strong>Optimized:</strong> ${resMb} MB
             (${redText})<br>
             <span style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 0.25rem; display: block;">
-              Single-layer linearized PDF formatted at 229 PPI native screen size. Loads instantly on Paper Pro.
+              Single-layer linearized PDF formatted for your screen. Loads instantly on reMarkable.
             </span>
           `;
           el.btnConverterDownload.href = `/api/converter/jobs/${jobId}/download`;
+          showToast("Document optimization complete!", "success");
         } else if (job.status === "error") {
           clearInterval(state.converterPollInterval);
           state.converterPollInterval = null;
           el.converterProgressArea.style.display = "none";
-          alert(`Conversion error: ${job.error}`);
+          showToast(`Conversion error: ${job.error}`, "error");
           el.btnConverterStart.disabled = false;
         }
       } catch (err) {
@@ -2162,7 +2236,7 @@ el.btnConverterStart.addEventListener("click", async () => {
     }, 600);
   } catch (err) {
     el.converterProgressArea.style.display = "none";
-    alert(`Failed to start job: ${err.message}`);
+    showToast(`Failed to start job: ${err.message}`, "error");
     el.btnConverterStart.disabled = false;
   }
 });
@@ -2448,11 +2522,11 @@ if (el.btnTasksScanAll) {
       const res = await fetch("/api/tasks/scan-all", { method: "POST" });
       if (res.ok) {
         const data = await res.json();
-        alert(`Task scan complete! Found ${data.tasks_found} tasks.`);
+        showToast(`Task scan complete! Found ${data.tasks_found} tasks.`, "success");
         fetchTasks();
       }
     } catch (e) {
-      alert(`Scan failed: ${e.message}`);
+      showToast(`Scan failed: ${e.message}`, "error");
     } finally {
       el.btnTasksScanAll.disabled = false;
       el.btnTasksScanAll.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 21h5v-5"></path></svg><span>Scan Documents</span>`;
@@ -2529,10 +2603,11 @@ if (el.btnSettingsSyncTrigger) {
     el.btnSettingsSyncTrigger.textContent = "Triggering...";
     try {
       await fetch("/api/sync/trigger", { method: "POST" });
+      showToast("Background sync initiated", "info");
       await fetchStatus();
       await updateSettingsSystemStats();
     } catch (e) {
-      alert(`Sync failed: ${e.message}`);
+      showToast(`Sync failed: ${e.message}`, "error");
     } finally {
       el.btnSettingsSyncTrigger.disabled = false;
       el.btnSettingsSyncTrigger.textContent = "Sync Now";
@@ -2556,14 +2631,14 @@ if (el.btnSettingsLogout) {
     try {
       const res = await fetch("/api/auth/logout", { method: "POST" });
       if (res.ok) {
-        alert("Tablet successfully unlinked from reMarkable Cloud.");
+        showToast("Tablet successfully unlinked from reMarkable Cloud.", "success");
         await fetchStatus();
         await updateSettingsSystemStats();
       } else {
-        alert("Failed to log out");
+        showToast("Failed to log out", "error");
       }
     } catch (e) {
-      alert(`Error: ${e.message}`);
+      showToast(`Error: ${e.message}`, "error");
     } finally {
       el.btnSettingsLogout.disabled = false;
       el.btnSettingsLogout.textContent = "Log Out / Unlink Tablet";
@@ -2579,14 +2654,14 @@ if (el.btnSettingsScanTasks) {
       const res = await fetch("/api/tasks/scan-all", { method: "POST" });
       if (res.ok) {
         const data = await res.json();
-        alert(`Scan complete! Extracted ${data.tasks_extracted ?? 0} tasks from ${data.documents_scanned ?? 0} documents.`);
+        showToast(`Scan complete! Extracted ${data.tasks_extracted ?? 0} tasks from ${data.documents_scanned ?? 0} documents.`, "success");
         await updateSettingsSystemStats();
         fetchTasks();
       } else {
-        alert("Scan failed");
+        showToast("Scan failed", "error");
       }
     } catch (e) {
-      alert(`Scan failed: ${e.message}`);
+      showToast(`Scan failed: ${e.message}`, "error");
     } finally {
       el.btnSettingsScanTasks.disabled = false;
       el.btnSettingsScanTasks.innerHTML = `${ICONS.tasks}<span>Scan Documents for Tasks</span>`;
@@ -2811,6 +2886,7 @@ if (el.btnSettingsSave) {
       if (res.ok) {
         if (el.settingsApiKey) el.settingsApiKey.value = "";
         await loadVisionSettings();
+        showToast("Vision OCR settings saved successfully!", "success");
         if (el.settingsTestResult) {
           el.settingsTestResult.style.display = "block";
           el.settingsTestResult.style.backgroundColor = "rgba(34, 197, 94, 0.15)";
@@ -2818,10 +2894,10 @@ if (el.btnSettingsSave) {
           el.settingsTestResult.textContent = "✓ Vision OCR settings saved successfully!";
         }
       } else {
-        alert("Failed to save settings");
+        showToast("Failed to save settings", "error");
       }
     } catch (e) {
-      alert(`Error: ${e.message}`);
+      showToast(`Error: ${e.message}`, "error");
     }
   });
 }
@@ -2939,16 +3015,17 @@ if (el.btnTypingSave) {
         // Refresh page SVG render
         await loadCurrentPage();
         fetchTasks();
+        showToast("Typed text saved and synced", "success");
         if (el.readerTypingPane) el.readerTypingPane.style.display = "none";
         if (el.btnReaderTypeToggle) {
           el.btnReaderTypeToggle.classList.remove("active");
           el.btnReaderTypeToggle.textContent = "⌨ Type";
         }
       } else {
-        alert("Failed to save typed text");
+        showToast("Failed to save typed text", "error");
       }
     } catch (e) {
-      alert(`Error saving text: ${e.message}`);
+      showToast(`Error saving text: ${e.message}`, "error");
     } finally {
       el.btnTypingSave.disabled = false;
       el.btnTypingSave.textContent = "Save & Apply";
@@ -3036,14 +3113,15 @@ if (el.btnNewNotebookSubmit) {
       if (res.ok) {
         const newDoc = await res.json();
         closeNewNotebookModal();
+        showToast(`Notebook "${title}" created`, "success");
         await fetchDocuments();
         fetchTasks();
         openReader(newDoc.id, 0);
       } else {
-        alert("Failed to create notebook");
+        showToast("Failed to create notebook", "error");
       }
     } catch (e) {
-      alert(`Error creating notebook: ${e.message}`);
+      showToast(`Error creating notebook: ${e.message}`, "error");
     } finally {
       el.btnNewNotebookSubmit.disabled = false;
       el.btnNewNotebookSubmit.textContent = "Create Notebook";
@@ -3072,12 +3150,13 @@ if (el.taskQuickAddForm) {
       });
       if (res.ok) {
         el.taskQuickInput.value = "";
+        showToast("Task added to Tasks notebook", "success");
         await fetchTasks();
       } else {
-        alert("Failed to add task");
+        showToast("Failed to add task", "error");
       }
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      showToast(`Error: ${err.message}`, "error");
     } finally {
       if (el.btnTaskQuickAdd) {
         el.btnTaskQuickAdd.disabled = false;
@@ -3101,13 +3180,13 @@ if (el.btnSyncTasksNotebook) {
       });
       if (res.ok) {
         const data = await res.json();
-        alert(`Successfully synced ${data.result.task_count} tasks to 'Tasks' notebook!`);
+        showToast(`Successfully synced ${data.result.task_count} tasks to 'Tasks' notebook!`, "success");
         fetchDocuments();
       } else {
-        alert("Failed to sync tasks to notebook");
+        showToast("Failed to sync tasks to notebook", "error");
       }
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      showToast(`Error: ${err.message}`, "error");
     } finally {
       el.btnSyncTasksNotebook.disabled = false;
       el.btnSyncTasksNotebook.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg><span>Sync to 'Tasks' Notebook</span>`;
@@ -3179,6 +3258,7 @@ async function handleQuickCaptureSubmit() {
     });
     if (res.ok) {
       closeQuickCapture();
+      showToast(isTask ? "Task captured and saved to tablet" : "Note saved to Quick Notes", "success");
       if (isTask) {
         await fetchTasks();
       } else {
@@ -3186,10 +3266,10 @@ async function handleQuickCaptureSubmit() {
       }
     } else {
       const err = await res.json().catch(() => ({}));
-      alert(`Capture failed: ${err.detail || "Server error"}`);
+      showToast(`Capture failed: ${err.detail || "Server error"}`, "error");
     }
   } catch (err) {
-    alert(`Capture error: ${err.message}`);
+    showToast(`Capture error: ${err.message}`, "error");
   } finally {
     if (el.btnModalQcSave) {
       el.btnModalQcSave.disabled = false;
@@ -3451,8 +3531,8 @@ const APP_COMMANDS = [
   {
     id: "optimize-pro",
     icon: ICONS.optimize,
-    title: "Optimize for Paper Pro",
-    desc: "Convert a comic or heavy document for Paper Pro",
+    title: "Optimize for reMarkable",
+    desc: "Convert a comic or heavy document for reMarkable",
     action: () => { if (el.btnOpenConverter) el.btnOpenConverter.click(); },
   },
   {
@@ -3497,7 +3577,7 @@ function renderCommandPaletteResults(query) {
     !q || cmd.title.toLowerCase().includes(q) || cmd.desc.toLowerCase().includes(q)
   );
 
-  const allDocs = (state.allDocs || []).filter((d) => !d.exclude_from_search && !d.effective_exclude && d.parent_id !== "trash");
+  const allDocs = (state.allDocs || []).filter((d) => d.parent_id !== "trash");
   const matchedDocs = q ? allDocs.filter((d) =>
     (d.visible_name || "").toLowerCase().includes(q)
   ).slice(0, 15) : allDocs.slice(0, 8);

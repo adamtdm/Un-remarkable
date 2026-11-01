@@ -641,7 +641,7 @@ class Database:
         fts_query = " ".join(f'"{w}"*' for w in words)
 
         note_filter = "AND d.file_type = 'notebook'" if only_notes else ""
-        exclude_filter = "" if include_excluded else "AND d.exclude_from_search = 0 AND d.parent_id != 'trash'"
+        exclude_filter = "" if include_excluded else "AND d.parent_id != 'trash' AND (d.exclude_from_search = 0 OR s.source = 'title')"
 
         sql = f"""
         SELECT
@@ -692,9 +692,8 @@ class Database:
                 excluded_ids = self.get_all_excluded_ids()
                 results = [
                     r for r in results
-                    if r["doc_id"] not in excluded_ids
-                    and not r.get("exclude_from_search")
-                    and r.get("parent_id") != "trash"
+                    if r.get("parent_id") != "trash"
+                    and (r["doc_id"] not in excluded_ids or r.get("source") == "title")
                 ]
             return results[:limit]
 

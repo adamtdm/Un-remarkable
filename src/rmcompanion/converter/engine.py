@@ -1,7 +1,7 @@
-"""Comic and oversized document converter tuned for reMarkable Paper Pro.
+"""Comic and oversized document converter tuned for reMarkable devices (Paper Pro, RM2, RM1).
 
 Converts heavy fixed-layout EPUBs, bulky PDFs, and CBZ comic archives into
-lean, single-layer PDFs sized exactly to the Paper Pro's 2160x1620 screen.
+lean, single-layer PDFs sized to the target reMarkable screen.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ QUALITY_PROFILES: dict[int, QualityProfile] = {
         max_height=2160,
         max_width=1620,
         jpeg_quality=82,
-        description="1:1 native Paper Pro pixel match (2160x1620 at 229 PPI) - Recommended",
+        description="1:1 native reMarkable pixel match (device screen target) - Recommended",
     ),
     4: QualityProfile(
         stop=4,
@@ -99,10 +99,12 @@ class ConverterEngine:
         db: Database | None = None,
         blob_store: BlobStore | None = None,
         settings: Settings | None = None,
+        sync_engine: Any = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.db = db or Database(settings=self.settings)
         self.blob_store = blob_store or BlobStore(settings=self.settings)
+        self.sync_engine = sync_engine
 
         self.output_dir = self.settings.cache_dir / "converted"
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -283,6 +285,7 @@ class ConverterEngine:
             raise ValueError(f"Blob file missing from disk: {blob_hash}")
         original_size = blob_path.stat().st_size
         title = doc.get("visible_name", "document")
+        parent_id = doc.get("parent_id", "")
         return self._launch_job(
             source_name=f"{title}.{input_type}",
             input_source=blob_path,
@@ -292,6 +295,7 @@ class ConverterEngine:
             split_spreads=split_spreads,
             manga_mode=manga_mode,
             device=device,
+            parent_id=parent_id,
         )
 
     async def start_job_from_upload(
@@ -302,6 +306,7 @@ class ConverterEngine:
         split_spreads: bool = False,
         manga_mode: bool = False,
         device: str = "paper_pro",
+        parent_id: str = "",
     ) -> str:
         """Start asynchronous conversion of an uploaded file."""
         ext = Path(filename).suffix.lstrip(".").lower()
@@ -317,6 +322,7 @@ class ConverterEngine:
             split_spreads=split_spreads,
             manga_mode=manga_mode,
             device=device,
+            parent_id=parent_id,
         )
 
     def _launch_job(
@@ -329,6 +335,7 @@ class ConverterEngine:
         split_spreads: bool,
         manga_mode: bool,
         device: str = "paper_pro",
+        parent_id: str = "",
     ) -> str:
         # Evict oldest jobs when exceeding capacity
         while len(self._jobs) >= self.MAX_CONVERSION_JOBS:
@@ -402,6 +409,20 @@ class ConverterEngine:
                     result_size,
                     job_info["reduction_percent"],
                 )
+
+                if self.sync_engine:
+                    try:
+                        clean_stem = Path(source_name).stem
+                        dest_name = f"{clean_stem} (Optimized)"
+                        await self.sync_engine.push_document(
+                            file_bytes=out_path.read_bytes(),
+                            filename=dest_name,
+                            parent_id=parent_id,
+                            file_type="pdf",
+                        )
+                        logger.info("Auto-synced optimized document %s to reMarkable Cloud", dest_name)
+                    except Exception as exc:
+                        logger.warning("Failed to auto-sync converted document to cloud: %s", exc)
             except Exception as e:
                 logger.exception("Error processing job %s: %s", job_id, e)
                 job_info["status"] = "error"

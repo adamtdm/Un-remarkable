@@ -108,6 +108,19 @@ def get_router(
     r = APIRouter(prefix="/api")
     editor = notebook_editor or NotebookEditor(db=db, blob_store=blob_store, task_extractor=task_extractor)
 
+    def _push_bg(coro: Any) -> None:
+        if sync_engine and sync_engine.auth.tokens.is_authenticated:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(coro)
+            except RuntimeError:
+                try:
+                    asyncio.run_coroutine_threadsafe(coro, asyncio.get_event_loop())
+                except Exception:
+                    coro.close()
+        else:
+            coro.close()
+
     @r.get("/status")
     async def get_status() -> dict[str, Any]:
         """System status, sync state, and auth status."""
@@ -165,23 +178,25 @@ def get_router(
         return folders
 
     @r.post("/folders")
-    def create_folder(payload: CreateFolderRequest) -> dict[str, Any]:
-        """Create a new folder in the library."""
+    async def create_folder(payload: CreateFolderRequest) -> dict[str, Any]:
+        """Create a new folder in the library and push to reMarkable Cloud."""
         if not notebook_editor:
             raise HTTPException(status_code=503, detail="Notebook editor not available")
         try:
             folder = notebook_editor.create_folder(payload.name, payload.parent_id)
+            _push_bg(sync_engine.create_remote_folder(folder["id"], payload.name, payload.parent_id))
             return {"status": "ok", "folder": folder}
         except (ValueError, FileNotFoundError) as e:
             raise HTTPException(status_code=400, detail=str(e))
 
     @r.post("/documents/{doc_id}/move")
-    def move_document(doc_id: str, payload: MoveDocumentRequest) -> dict[str, Any]:
+    async def move_document(doc_id: str, payload: MoveDocumentRequest) -> dict[str, Any]:
         """Move a document or folder to a target parent folder (or root "")."""
         if not notebook_editor:
             raise HTTPException(status_code=503, detail="Notebook editor not available")
         try:
             res = notebook_editor.move_document(doc_id, payload.parent_id)
+            _push_bg(sync_engine.move_remote_document(doc_id, payload.parent_id))
             return {"status": "ok", "result": res}
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
@@ -189,12 +204,13 @@ def get_router(
             raise HTTPException(status_code=400, detail=str(e))
 
     @r.delete("/documents/{doc_id}")
-    def delete_document(doc_id: str) -> dict[str, Any]:
-        """Soft delete a document or folder (including all nested descendants)."""
+    async def delete_document(doc_id: str) -> dict[str, Any]:
+        """Soft delete a document or folder and remove from reMarkable Cloud."""
         if not notebook_editor:
             raise HTTPException(status_code=503, detail="Notebook editor not available")
         try:
             res = notebook_editor.delete_document(doc_id)
+            _push_bg(sync_engine.delete_remote_document(doc_id))
             return {"status": "ok", "result": res}
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
@@ -455,6 +471,7 @@ def get_router(
         split_spreads: bool = Form(False),
         manga_mode: bool = Form(False),
         device: str = Form("paper_pro"),
+        parent_id: str = Form(""),
     ) -> dict[str, Any]:
         """Upload and convert an external file (PDF, EPUB, CBZ)."""
         if not converter_engine:
@@ -468,6 +485,7 @@ def get_router(
                 split_spreads=split_spreads,
                 manga_mode=manga_mode,
                 device=device,
+                parent_id=parent_id,
             )
             return {"ok": True, "job_id": job_id}
         except ValueError as e:
@@ -842,14 +860,23 @@ def get_router(
             raise HTTPException(status_code=500, detail=str(e))
 
     @r.put("/documents/{doc_id}/pages/{page_idx}/text")
-    def update_page_text_endpoint(
+    async def update_page_text_endpoint(
         doc_id: str,
         page_idx: int,
         payload: UpdatePageTextRequest,
     ) -> dict[str, Any]:
-        """Update typed text of a notebook page."""
+        """Update typed text of a notebook page and push to cloud."""
         try:
             res = editor.update_page_typed_text(doc_id, page_idx, payload.text)
+            target_doc = db.get_document(doc_id)
+            if target_doc:
+                try:
+                    pdf_bytes = exporter.export_annotated_pdf(doc_id)
+                    title = target_doc.get("visible_name", "document")
+                    pid = "" if title.strip().lower() == "tasks" else target_doc.get("parent_id", "")
+                    _push_bg(sync_engine.push_document(pdf_bytes, title, parent_id=pid))
+                except Exception as ex:
+                    logger.warning("Failed to queue document PDF push to cloud: %s", ex)
             return {"ok": True, "result": res}
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Document not found")
@@ -874,38 +901,62 @@ def get_router(
             raise HTTPException(status_code=500, detail=str(e))
 
     @r.post("/tasks/export-to-notebook")
-    def export_tasks_to_notebook_endpoint(payload: ExportTasksNotebookRequest) -> dict[str, Any]:
-        """Consolidate open tasks into the synced Tasks notebook."""
+    async def export_tasks_to_notebook_endpoint(payload: ExportTasksNotebookRequest) -> dict[str, Any]:
+        """Consolidate open tasks into the synced Tasks notebook and push to cloud."""
         try:
             res = editor.sync_tasks_to_notebook(payload.notebook_title)
+            doc_id = res["id"]
+            try:
+                pdf_bytes = exporter.export_annotated_pdf(doc_id)
+                _push_bg(sync_engine.push_document(pdf_bytes, payload.notebook_title, parent_id=""))
+            except Exception as ex:
+                logger.warning("Failed to queue Tasks PDF push to cloud: %s", ex)
             return {"ok": True, "result": res}
         except Exception as e:
             logger.error("Failed to export tasks to notebook: %s", e)
             raise HTTPException(status_code=500, detail=str(e))
 
     @r.post("/tasks/create-item")
-    def create_task_item_endpoint(payload: CreateTaskItemRequest) -> dict[str, Any]:
-        """Append a single task checkbox to the Tasks notebook."""
+    async def create_task_item_endpoint(payload: CreateTaskItemRequest) -> dict[str, Any]:
+        """Append a single task checkbox to the Tasks notebook and push to cloud."""
         if not payload.text.strip():
             raise HTTPException(status_code=400, detail="Task text cannot be empty")
         try:
             res = editor.append_task_to_tasks_notebook(payload.text, payload.notebook_title)
+            doc_id = res["id"]
+            try:
+                pdf_bytes = exporter.export_annotated_pdf(doc_id)
+                _push_bg(sync_engine.push_document(pdf_bytes, payload.notebook_title, parent_id=""))
+            except Exception as ex:
+                logger.warning("Failed to queue Tasks PDF push to cloud: %s", ex)
             return {"ok": True, "result": res}
         except Exception as e:
             logger.error("Failed to append task item: %s", e)
             raise HTTPException(status_code=500, detail=str(e))
 
     @r.post("/notes/quick-capture")
-    def quick_capture_endpoint(payload: QuickCaptureRequest) -> dict[str, Any]:
-        """Instantly capture a task or quick note entry into a synchronized notebook."""
+    async def quick_capture_endpoint(payload: QuickCaptureRequest) -> dict[str, Any]:
+        """Instantly capture a task or quick note entry into a synchronized notebook and push to cloud."""
         text = payload.text.strip()
         if not text:
             raise HTTPException(status_code=400, detail="Capture text cannot be empty")
         try:
             if payload.is_task:
-                res = editor.append_task_to_tasks_notebook(text, payload.notebook_title or "Tasks")
+                target_title = payload.notebook_title or "Tasks"
+                res = editor.append_task_to_tasks_notebook(text, target_title)
+                try:
+                    pdf_bytes = exporter.export_annotated_pdf(res["id"])
+                    _push_bg(sync_engine.push_document(pdf_bytes, target_title, parent_id=""))
+                except Exception as ex:
+                    logger.warning("Failed to queue Tasks PDF push to cloud: %s", ex)
             else:
-                res = editor.append_note_to_notebook(text, payload.notebook_title or "Quick Notes")
+                target_title = payload.notebook_title or "Quick Notes"
+                res = editor.append_note_to_notebook(text, target_title)
+                try:
+                    pdf_bytes = exporter.export_annotated_pdf(res["id"])
+                    _push_bg(sync_engine.push_document(pdf_bytes, target_title, parent_id=""))
+                except Exception as ex:
+                    logger.warning("Failed to queue Quick Notes PDF push to cloud: %s", ex)
             return {"ok": True, "result": res}
         except Exception as e:
             logger.error("Failed to process quick capture: %s", e)
@@ -918,7 +969,7 @@ def get_router(
         parent_id: str = Form(""),
         quality_stop: int = Form(3),
     ) -> dict[str, Any]:
-        """Bulk import documents (PDF, EPUB, Markdown, Text) with optional device optimization."""
+        """Bulk import documents (PDF, EPUB, Markdown, Text) with optional device optimization and cloud sync."""
         imported: list[dict[str, Any]] = []
         errors: list[dict[str, str]] = []
 
@@ -942,16 +993,24 @@ def get_router(
                     )
                     res = await asyncio.to_thread(editor.import_pdf_file, title=stem, pdf_bytes=opt_pdf, parent_id=parent_id)
                     imported.append({"file": orig_name, "id": res["id"], "type": "pdf", "optimized": True})
+                    _push_bg(sync_engine.push_document(opt_pdf, filename=stem, parent_id=parent_id, file_type="pdf"))
                 elif ext == "pdf":
                     res = await asyncio.to_thread(editor.import_pdf_file, title=stem, pdf_bytes=content, parent_id=parent_id)
                     imported.append({"file": orig_name, "id": res["id"], "type": "pdf", "optimized": False})
+                    _push_bg(sync_engine.push_document(content, filename=stem, parent_id=parent_id, file_type="pdf"))
                 elif ext == "epub":
                     res = await asyncio.to_thread(editor.import_epub_file, title=stem, epub_bytes=content, parent_id=parent_id)
                     imported.append({"file": orig_name, "id": res["id"], "type": "epub", "optimized": False})
+                    _push_bg(sync_engine.push_document(content, filename=stem, parent_id=parent_id, file_type="epub"))
                 elif ext in {"md", "markdown", "txt"}:
                     text_str = content.decode("utf-8", errors="replace")
                     res = await asyncio.to_thread(editor.import_markdown, title=stem, markdown_content=text_str, parent_id=parent_id)
                     imported.append({"file": orig_name, "id": res["id"], "type": "notebook", "optimized": False})
+                    try:
+                        pdf_bytes = exporter.export_annotated_pdf(res["id"])
+                        _push_bg(sync_engine.push_document(pdf_bytes, filename=stem, parent_id=parent_id, file_type="pdf"))
+                    except Exception as e:
+                        logger.debug("Could not export imported note %s to PDF: %s", stem, e)
                 else:
                     errors.append({"file": orig_name, "error": f"Unsupported file type .{ext}"})
             except Exception as e:
