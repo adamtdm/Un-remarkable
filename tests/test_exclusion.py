@@ -208,3 +208,56 @@ def test_task_exclusion_with_document_and_folder(tmp_path):
     assert db.count_open_tasks() == 0
     assert len(db.list_tasks()) == 0
 
+
+def test_hierarchical_subfolder_exclusion(tmp_path):
+    """Excluding a root folder must exclude subfolders and deep nested documents."""
+    db_file = tmp_path / "test.db"
+    db = Database(db_path=db_file)
+
+    root_id = "folder-root"
+    sub_id = "folder-sub"
+    doc_id = "doc-nested"
+
+    db.upsert_document({"id": root_id, "visible_name": "Root", "type": "CollectionType", "parent_id": ""})
+    db.upsert_document({"id": sub_id, "visible_name": "Sub", "type": "CollectionType", "parent_id": root_id})
+    db.upsert_document({"id": doc_id, "visible_name": "Doc", "type": "DocumentType", "file_type": "pdf", "parent_id": sub_id})
+
+    # Initially none are excluded
+    assert not db.is_excluded_from_search(root_id)
+    assert not db.is_excluded_from_search(sub_id)
+    assert not db.is_excluded_from_search(doc_id)
+
+    # Exclude root folder
+    affected = db.set_exclude_from_search(root_id, True)
+    assert root_id in affected
+    assert sub_id in affected
+    assert doc_id in affected
+
+    # Check that all are marked excluded
+    assert db.is_excluded_from_search(root_id)
+    assert db.is_excluded_from_search(sub_id)
+    assert db.is_excluded_from_search(doc_id)
+
+    # Database records must have exclude_from_search = 1
+    assert db.get_document(root_id)["exclude_from_search"] is True
+    assert db.get_document(sub_id)["exclude_from_search"] is True
+    assert db.get_document(doc_id)["exclude_from_search"] is True
+
+    # list_documents must report effective_exclude
+    docs = db.list_documents(parent_id=sub_id)
+    assert len(docs) == 1
+    assert docs[0]["effective_exclude"] is True
+
+    # get_folder_tree must report effective_exclude
+    tree = db.get_folder_tree()
+    sub_folder_item = next(f for f in tree if f["id"] == sub_id)
+    assert sub_folder_item["effective_exclude"] is True
+    assert sub_folder_item["exclude_from_search"] is True
+
+    # Un-excluding root folder restores all
+    db.set_exclude_from_search(root_id, False)
+    assert not db.is_excluded_from_search(root_id)
+    assert not db.is_excluded_from_search(sub_id)
+    assert not db.is_excluded_from_search(doc_id)
+
+

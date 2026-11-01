@@ -536,6 +536,21 @@ main {
   user-select: none;
 }
 
+.reader-page-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  margin-left: 0.25rem;
+  animation: spin-sync 1s linear infinite;
+}
+
+.reader-canvas-wrapper.is-page-loading svg {
+  opacity: 0.45;
+  filter: grayscale(0.2);
+  transition: opacity 0.15s ease;
+}
+
 .reader-content {
   flex: 1;
   overflow: auto;
@@ -1403,10 +1418,19 @@ main {
 }
 
 .tray-btn-icon {
-  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   width: 28px;
-  text-align: center;
+  height: 28px;
+  color: var(--text-primary);
+}
+
+.tray-btn-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
 }
 
 .tray-btn-text {
@@ -2619,6 +2643,77 @@ main {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: 1rem 1.25rem;
+}
+
+.menu-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  stroke: currentColor;
+}
+
+.split-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.split-item-icon svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+}
+
+.command-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.command-item-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+
+/* MCP Tabs */
+.mcp-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.mcp-tab-btn {
+  background: none;
+  border: none;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mcp-tab-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.mcp-tab-btn.active {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  font-weight: 600;
 }
 
 

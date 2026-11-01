@@ -160,3 +160,12 @@ def test_bulk_import_and_zip_export(tmp_path):
         names = zf.namelist()
         assert len(names) >= 1
 
+
+def test_rescan_endpoint(test_client):
+    res = test_client.post("/api/settings/rescan")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert "rescanned_count" in data
+    assert "excluded_count" in data
+

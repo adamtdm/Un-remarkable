@@ -748,6 +748,73 @@ def get_router(
             "default_model": default_model,
         }
 
+    @r.post("/settings/rescan")
+    async def rescan_library() -> dict[str, Any]:
+        """Rescan and re-index all documents in the library, strictly respecting excluded folders and documents."""
+        docs = db.list_documents(include_deleted=False)
+        excluded_ids = db.get_all_excluded_ids()
+
+        rescanned_count = 0
+        excluded_count = 0
+        tasks_count = 0
+
+        # Purge search index and tasks for any documents that are in excluded_ids
+        if excluded_ids:
+            placeholders = ",".join("?" for _ in excluded_ids)
+            with db.connect() as conn:
+                conn.execute(
+                    f"DELETE FROM search_index WHERE doc_id IN ({placeholders}) AND source NOT IN ('title')",
+                    list(excluded_ids),
+                )
+                conn.execute(
+                    f"DELETE FROM tasks WHERE doc_id IN ({placeholders})",
+                    list(excluded_ids),
+                )
+
+        for d in docs:
+            doc_id = d["id"]
+            if d.get("type") == "CollectionType":
+                continue
+
+            if doc_id in excluded_ids or d.get("exclude_from_search"):
+                excluded_count += 1
+                continue
+
+            doc_hash = d.get("doc_hash", "")
+            # Re-index text and handwriting OCR
+            if text_indexer:
+                try:
+                    await asyncio.to_thread(text_indexer.index_document, doc_id, doc_hash)
+                except Exception as e:
+                    logger.warning("Error re-indexing %s during rescan: %s", doc_id, e)
+
+            # Warm thumbnail in authentic colors
+            if exporter:
+                try:
+                    await asyncio.to_thread(exporter.warm_thumbnail, doc_id, doc_hash)
+                except Exception as e:
+                    logger.debug("Failed warming thumbnail for %s: %s", doc_id, e)
+
+            # Re-extract tasks
+            if task_extractor:
+                try:
+                    found = await task_extractor.scan_document_for_tasks(doc_id)
+                    tasks_count += len(found)
+                except Exception as e:
+                    logger.warning("Error scanning tasks for %s: %s", doc_id, e)
+
+            rescanned_count += 1
+            await asyncio.sleep(0)
+
+        return {
+            "ok": True,
+            "total_documents": len([d for d in docs if d.get("type") != "CollectionType"]),
+            "rescanned_count": rescanned_count,
+            "excluded_count": excluded_count,
+            "tasks_found": tasks_count,
+            "message": f"Rescan complete: {rescanned_count} documents indexed, {excluded_count} excluded documents skipped, {tasks_count} tasks found.",
+        }
+
     # Phase 4: Typed notebook editor and markdown import endpoints
     @r.post("/documents/new")
     def create_notebook_endpoint(payload: CreateNotebookRequest) -> dict[str, Any]:

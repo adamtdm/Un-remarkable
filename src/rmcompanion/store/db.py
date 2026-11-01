@@ -406,12 +406,14 @@ class Database:
 
         with self.connect() as conn:
             rows = conn.execute(query, params).fetchall()
+            excluded_ids = self.get_all_excluded_ids()
             results = []
             for r in rows:
                 d = dict(r)
                 d["pinned"] = bool(d.get("pinned", False))
                 d["deleted"] = bool(d.get("deleted", False))
                 d["exclude_from_search"] = bool(d.get("exclude_from_search", False))
+                d["effective_exclude"] = bool(d["id"] in excluded_ids or d["exclude_from_search"])
                 size = int(d.get("total_size") or 0)
                 d["total_size"] = size
                 d["needs_optimization"] = (
@@ -493,10 +495,11 @@ class Database:
         """Get all non-deleted folders with hierarchical path, depth, and child counts."""
         with self.connect() as conn:
             rows = conn.execute(
-                "SELECT id, visible_name, parent_id, last_modified FROM documents WHERE type = 'CollectionType' AND deleted = 0"
+                "SELECT id, visible_name, parent_id, last_modified, exclude_from_search FROM documents WHERE type = 'CollectionType' AND deleted = 0"
             ).fetchall()
 
         folder_map = {r["id"]: dict(r) for r in rows}
+        excluded_ids = self.get_all_excluded_ids()
 
         def get_path_info(fid: str) -> tuple[str, int]:
             curr = folder_map.get(fid)
@@ -517,12 +520,15 @@ class Database:
         result = []
         for fid, f in folder_map.items():
             path_str, depth = get_path_info(fid)
+            is_exc = bool(f.get("exclude_from_search", False))
             result.append({
                 "id": f["id"],
                 "visible_name": f["visible_name"],
                 "parent_id": f.get("parent_id", ""),
                 "path": path_str,
                 "depth": depth,
+                "exclude_from_search": is_exc,
+                "effective_exclude": bool(fid in excluded_ids or is_exc),
             })
 
         result.sort(key=lambda x: x["path"].lower())
@@ -566,20 +572,21 @@ class Database:
         return affected_ids
 
     def set_exclude_from_search(self, doc_id: str, exclude: bool) -> list[str]:
-        """Toggle exclusion for a document or folder. Purges non-title search index entries if excluded."""
+        """Toggle exclusion for a document or folder. Recursively excludes all descendants. Purges non-title search index entries if excluded."""
         with self.connect() as conn:
-            conn.execute(
-                "UPDATE documents SET exclude_from_search = ? WHERE id = ?",
-                (1 if exclude else 0, doc_id),
-            )
             affected_ids = [doc_id]
             row = conn.execute("SELECT type FROM documents WHERE id = ?", (doc_id,)).fetchone()
             if row and row["type"] == "CollectionType":
                 descendants = self.get_descendant_ids(doc_id)
                 affected_ids.extend(descendants)
 
+            placeholders = ",".join("?" for _ in affected_ids)
+            conn.execute(
+                f"UPDATE documents SET exclude_from_search = ? WHERE id IN ({placeholders})",
+                [1 if exclude else 0, *affected_ids],
+            )
+
             if exclude:
-                placeholders = ",".join("?" for _ in affected_ids)
                 conn.execute(
                     f"DELETE FROM search_index WHERE doc_id IN ({placeholders}) AND source NOT IN ('title')",
                     affected_ids,

@@ -50,6 +50,30 @@ const CONVERTER_PROFILES = {
   },
 };
 
+// Crisp monochrome vector icons
+const ICONS = {
+  notebook: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`,
+  pdf: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="15" x2="15" y2="15"></line></svg>`,
+  epub: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>`,
+  folder: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`,
+  open: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>`,
+  readTab: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`,
+  move: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><polyline points="12 11 12 17"></polyline><polyline points="9 14 15 14"></polyline></svg>`,
+  optimize: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><circle cx="12" cy="18" r="1"></circle></svg>`,
+  exclude: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>`,
+  check: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
+  download: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`,
+  copy: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`,
+  delete: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`,
+  quickCapture: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`,
+  sync: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 21h5v-5"></path></svg>`,
+  tasks: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`,
+  settings: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`,
+  theme: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"></path></svg>`,
+  grid: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>`,
+  list: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>`,
+};
+
 // --- DOM Elements ---
 const el = {
   btnSyncStatus: document.getElementById("btn-sync-status"),
@@ -99,6 +123,12 @@ const el = {
   themeChoiceLight: document.getElementById("theme-choice-light"),
   btnCopyMcpConfig: document.getElementById("btn-copy-mcp-config"),
   btnCopyMcpUrl: document.getElementById("btn-copy-mcp-url"),
+  btnCopyMcpLocal: document.getElementById("btn-copy-mcp-local"),
+  btnCopyMcpSse: document.getElementById("btn-copy-mcp-sse"),
+  btnCopyMcpSsh: document.getElementById("btn-copy-mcp-ssh"),
+  btnCopyMcpProxy: document.getElementById("btn-copy-mcp-proxy"),
+  btnSettingsRescanLibrary: document.getElementById("btn-settings-rescan-library"),
+  settingsRescanStatus: document.getElementById("settings-rescan-status"),
 
   btnThemeToggle: document.getElementById("btn-theme-toggle"),
   authBanner: document.getElementById("auth-banner"),
@@ -136,6 +166,7 @@ const el = {
   readerTitle: document.getElementById("reader-title"),
   readerExcludeBadge: document.getElementById("reader-exclude-badge"),
   readerPageIndicator: document.getElementById("reader-page-indicator"),
+  readerPageSpinner: document.getElementById("reader-page-spinner"),
   btnPagePrev: document.getElementById("btn-page-prev"),
   btnPageNext: document.getElementById("btn-page-next"),
   btnReaderClose: document.getElementById("btn-reader-close"),
@@ -631,9 +662,10 @@ async function updateFolderExclusionButton() {
     const isExcluded = folder.exclude_from_search || folder.effective_exclude;
 
     if (el.menuFolderExclude) {
-      el.menuFolderExclude.textContent = isExcluded
-        ? "✓ Include Folder in Search & Tasks"
-        : "🚫 Exclude Folder from Search & Tasks";
+      el.menuFolderExclude.innerHTML = `
+        ${isExcluded ? ICONS.check : ICONS.exclude}
+        <span>${isExcluded ? "Include Folder in Search & Tasks" : "Exclude Folder from Search & Tasks"}</span>
+      `;
     }
   } catch (e) {
     console.debug("Failed to check folder state", e);
@@ -797,17 +829,19 @@ function renderDocumentGrid(docs) {
             <span>Status: ${isExcluded ? 'Excluded' : 'Indexed'}</span>
           </div>
           <button class="menu-item menu-item-open">
-            ${isFolder ? '📂 Open Folder' : '📖 Open & Read'}
+            ${isFolder ? ICONS.folder : ICONS.open}
+            <span>${isFolder ? 'Open Folder' : 'Open & Read'}</span>
           </button>
-          ${!isFolder ? `<a href="/?read=${doc.id}" target="_blank" rel="noopener" class="menu-item menu-item-read-tab" style="text-decoration: none; color: inherit;">↗ Read in New Tab</a>` : ""}
-          <button class="menu-item menu-item-move">📁 Add to Folder...</button>
-          ${!isFolder ? `<button class="menu-item menu-item-optimize">⚡ Optimize for Paper Pro</button>` : ""}
+          ${!isFolder ? `<a href="/?read=${doc.id}" target="_blank" rel="noopener" class="menu-item menu-item-read-tab" style="text-decoration: none; color: inherit;">${ICONS.readTab}<span>Read in New Tab</span></a>` : ""}
+          <button class="menu-item menu-item-move">${ICONS.folder}<span>Add to Folder...</span></button>
+          ${!isFolder ? `<button class="menu-item menu-item-optimize">${ICONS.optimize}<span>Optimize for Paper Pro</span></button>` : ""}
           <button class="menu-item menu-item-exclude">
-            ${isExcluded ? '✓ Include in Search & Tasks' : '🚫 Exclude from Search & Tasks'}
+            ${isExcluded ? ICONS.check : ICONS.exclude}
+            <span>${isExcluded ? 'Include in Search & Tasks' : 'Exclude from Search & Tasks'}</span>
           </button>
-          ${isFolder ? `<a href="/api/documents/${doc.id}/export/zip" download class="menu-item menu-item-export" style="text-decoration: none; color: inherit;">📥 Download Folder (ZIP)</a>` : `<a href="/api/documents/${doc.id}/export/pdf?dark=${state.appTheme === 'dark'}" download class="menu-item menu-item-export" style="text-decoration: none; color: inherit;">📥 Download PDF</a>`}
-          <button class="menu-item menu-item-copy-id">📋 Copy ID</button>
-          <button class="menu-item menu-item-delete">🗑 Delete</button>
+          ${isFolder ? `<a href="/api/documents/${doc.id}/export/zip" download class="menu-item menu-item-export" style="text-decoration: none; color: inherit;">${ICONS.download}<span>Download Folder (ZIP)</span></a>` : `<a href="/api/documents/${doc.id}/export/pdf?dark=${state.appTheme === 'dark'}" download class="menu-item menu-item-export" style="text-decoration: none; color: inherit;">${ICONS.download}<span>Download PDF</span></a>`}
+          <button class="menu-item menu-item-copy-id">${ICONS.copy}<span>Copy ID</span></button>
+          <button class="menu-item menu-item-delete" style="color: var(--danger);">${ICONS.delete}<span>Delete</span></button>
         </div>
       </div>
     `;
@@ -965,9 +999,9 @@ function renderDocumentGrid(docs) {
         e.stopPropagation();
         menuDropdown.style.display = "none";
         navigator.clipboard.writeText(doc.id).then(() => {
-          mCopy.textContent = "✓ Copied!";
+          mCopy.innerHTML = `${ICONS.check}<span>Copied!</span>`;
           setTimeout(() => {
-            mCopy.textContent = "📋 Copy ID";
+            mCopy.innerHTML = `${ICONS.copy}<span>Copy ID</span>`;
           }, 1500);
         });
       });
@@ -1014,13 +1048,13 @@ function openMobileActionTray(doc) {
   const pageCount = doc.page_count || 0;
 
   if (isFolder) {
-    el.trayDocIcon.textContent = "📁";
+    el.trayDocIcon.innerHTML = ICONS.folder;
   } else if (doc.file_type === "pdf") {
-    el.trayDocIcon.textContent = "📄";
+    el.trayDocIcon.innerHTML = ICONS.pdf;
   } else if (doc.file_type === "epub") {
-    el.trayDocIcon.textContent = "📚";
+    el.trayDocIcon.innerHTML = ICONS.epub;
   } else {
-    el.trayDocIcon.textContent = "📓";
+    el.trayDocIcon.innerHTML = ICONS.notebook;
   }
 
   el.trayDocTitle.textContent = doc.visible_name;
@@ -1066,11 +1100,11 @@ function openMobileActionTray(doc) {
 
   if (el.trayBtnExclude) {
     if (isExcluded) {
-      el.trayIconExclude.textContent = "✓";
+      el.trayIconExclude.innerHTML = ICONS.check;
       el.trayLabelExclude.textContent = "Include in Search & Tasks";
       el.trayDescExclude.textContent = "Include in search and task aggregation";
     } else {
-      el.trayIconExclude.textContent = "🚫";
+      el.trayIconExclude.innerHTML = ICONS.exclude;
       el.trayLabelExclude.textContent = "Exclude from Search & Tasks";
       el.trayDescExclude.textContent = "Hide from search and exclude tasks from task list";
     }
@@ -1267,7 +1301,7 @@ function renderFolderTree() {
     const indentPx = Math.min(item.depth * 18, 120);
     row.style.paddingLeft = `${indentPx + 12}px`;
 
-    const icon = item.id === "" ? "🏠" : "📁";
+    const icon = item.id === "" ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>` : ICONS.folder;
     let badge = "";
     if (isCurrent) {
       badge = `<span class="folder-tree-badge">Current Location</span>`;
@@ -1464,7 +1498,7 @@ function openReaderOptionsTray() {
   }
   if (el.trayReaderExcludeLabel) {
     const isExcluded = state.currentDoc.exclude_from_search || state.currentDoc.effective_exclude;
-    el.trayReaderExcludeLabel.textContent = isExcluded ? "✓ Include in Search" : "🚫 Exclude from Search";
+    el.trayReaderExcludeLabel.textContent = isExcluded ? "Include in Search" : "Exclude from Search";
   }
 
   el.readerOptionsTray.style.display = "flex";
@@ -1628,7 +1662,10 @@ function updateReaderExclusionState() {
     el.readerExcludeBadge.style.display = "none";
   }
   if (el.btnReaderExcludeToggle) {
-    el.btnReaderExcludeToggle.textContent = isExcluded ? "✓ Include in Search & Tasks" : "🚫 Exclude from Search & Tasks";
+    el.btnReaderExcludeToggle.innerHTML = `
+      ${isExcluded ? ICONS.check : ICONS.exclude}
+      <span>${isExcluded ? "Include in Search & Tasks" : "Exclude from Search & Tasks"}</span>
+    `;
   }
   if (el.trayReaderExcludeLabel) {
     el.trayReaderExcludeLabel.textContent = isExcluded ? "Include in Search & Tasks" : "Exclude from Search & Tasks";
@@ -1726,16 +1763,24 @@ async function loadCurrentPage() {
 
   const cacheKey = `${state.currentDoc.id}_${pageIdx}_${state.pageDarkMode}`;
   if (pageSvgCache.has(cacheKey)) {
+    if (el.readerPageSpinner) el.readerPageSpinner.style.display = "none";
+    if (el.readerCanvasWrapper) el.readerCanvasWrapper.classList.remove("is-page-loading");
     renderSvgContent(pageSvgCache.get(cacheKey));
     preloadAdjacentPages(state.currentDoc.id, pageIdx, totalPages, state.pageDarkMode);
     return;
   }
 
-  // Pre-load / loading indicator
+  // Pre-load / loading indicator feedback in navigation pill & canvas
+  if (el.readerPageSpinner) el.readerPageSpinner.style.display = "inline-flex";
+  if (el.readerCanvasWrapper) el.readerCanvasWrapper.classList.add("is-page-loading");
+  if (state.isFullscreen && el.readerNav) {
+    el.readerNav.classList.add("flash-visible");
+  }
+
   const existingSvg = el.readerCanvasWrapper.querySelector("svg");
   if (!existingSvg) {
     el.readerCanvasWrapper.innerHTML = `
-      <div style="color: var(--text-muted); padding: 3rem;">Loading page...</div>
+      <div style="color: var(--text-muted); padding: 3rem; text-align: center;">Loading page...</div>
     `;
   }
 
@@ -1750,8 +1795,11 @@ async function loadCurrentPage() {
     preloadAdjacentPages(state.currentDoc.id, pageIdx, totalPages, state.pageDarkMode);
   } catch (e) {
     el.readerCanvasWrapper.innerHTML = `
-      <div style="color: var(--danger); padding: 2rem;">Error loading page: ${e.message}</div>
+      <div style="color: var(--danger); padding: 2rem; text-align: center;">Error loading page: ${e.message}</div>
     `;
+  } finally {
+    if (el.readerPageSpinner) el.readerPageSpinner.style.display = "none";
+    if (el.readerCanvasWrapper) el.readerCanvasWrapper.classList.remove("is-page-loading");
   }
 }
 
@@ -2340,7 +2388,9 @@ function renderTasks(tasks) {
     const item = document.createElement("div");
     item.className = `task-item ${isDone ? "task-completed" : ""}`;
 
-    const markerIcon = t.marker_type === "star" ? "★" : (t.marker_type === "todo" ? "⚡" : "☐");
+    const markerIcon = t.marker_type === "star" 
+      ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>` 
+      : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`;
 
     item.innerHTML = `
       <input type="checkbox" class="task-checkbox" ${isDone ? "checked" : ""} aria-label="Toggle task completion">
@@ -2400,7 +2450,7 @@ if (el.btnTasksScanAll) {
       alert(`Scan failed: ${e.message}`);
     } finally {
       el.btnTasksScanAll.disabled = false;
-      el.btnTasksScanAll.textContent = "⚡ Scan Documents for Tasks";
+      el.btnTasksScanAll.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 21h5v-5"></path></svg><span>Scan Documents</span>`;
     }
   });
 }
@@ -2462,7 +2512,9 @@ if (el.btnToggleKeyVisibility && el.settingsApiKey) {
   el.btnToggleKeyVisibility.addEventListener("click", () => {
     const isPass = el.settingsApiKey.type === "password";
     el.settingsApiKey.type = isPass ? "text" : "password";
-    el.btnToggleKeyVisibility.textContent = isPass ? "🔒" : "👁";
+    el.btnToggleKeyVisibility.innerHTML = isPass 
+      ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>' 
+      : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
   });
 }
 
@@ -2532,14 +2584,59 @@ if (el.btnSettingsScanTasks) {
       alert(`Scan failed: ${e.message}`);
     } finally {
       el.btnSettingsScanTasks.disabled = false;
-      el.btnSettingsScanTasks.textContent = "⚡ Scan Documents for Tasks";
+      el.btnSettingsScanTasks.innerHTML = `${ICONS.tasks}<span>Scan Documents for Tasks</span>`;
     }
   });
 }
 
 async function updateSettingsSystemStats() {
+  const origin = window.location.origin;
+  const host = window.location.hostname || "127.0.0.1";
+
   if (el.mcpHttpUrl) {
-    el.mcpHttpUrl.textContent = `${window.location.origin}/mcp/sse`;
+    el.mcpHttpUrl.textContent = `${origin}/mcp/sse`;
+  }
+
+  const sseSnippet = document.getElementById("mcp-config-sse-snippet");
+  if (sseSnippet) {
+    sseSnippet.textContent = JSON.stringify({
+      mcpServers: {
+        remarkable: {
+          url: `${origin}/mcp/sse`
+        }
+      }
+    }, null, 2);
+  }
+
+  const sshSnippet = document.getElementById("mcp-config-ssh-snippet");
+  if (sshSnippet) {
+    sshSnippet.textContent = JSON.stringify({
+      mcpServers: {
+        "remarkable-remote": {
+          command: "ssh",
+          args: [
+            `user@${host}`,
+            "docker", "exec", "-i", "rmcompanion", "python", "-m", "rmcompanion.mcp.server"
+          ]
+        }
+      }
+    }, null, 2);
+  }
+
+  const proxySnippet = document.getElementById("mcp-config-proxy-snippet");
+  if (proxySnippet) {
+    proxySnippet.textContent = JSON.stringify({
+      mcpServers: {
+        "remarkable-remote": {
+          command: "npx",
+          args: [
+            "-y",
+            "mcp-proxy",
+            `${origin}/mcp/sse`
+          ]
+        }
+      }
+    }, null, 2);
   }
 
   // Update cloud sync status
@@ -2867,7 +2964,7 @@ function openNewNotebookModal() {
     for (const f of folders) {
       const opt = document.createElement("option");
       opt.value = f.id;
-      opt.textContent = `📁 ${f.visible_name}`;
+      opt.textContent = f.visible_name;
       if (f.id === state.currentFolderId) {
         opt.selected = true;
       }
@@ -3008,7 +3105,7 @@ if (el.btnSyncTasksNotebook) {
       alert(`Error: ${err.message}`);
     } finally {
       el.btnSyncTasksNotebook.disabled = false;
-      el.btnSyncTasksNotebook.textContent = "📓 Sync to 'Tasks' Notebook";
+      el.btnSyncTasksNotebook.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg><span>Sync to 'Tasks' Notebook</span>`;
     }
   });
 }
@@ -3292,77 +3389,77 @@ if (el.btnBulkImportSubmit) {
 const APP_COMMANDS = [
   {
     id: "new-note",
-    icon: "📝",
+    icon: ICONS.notebook,
     title: "New Notebook",
     desc: "Create a blank note or import Markdown",
     action: () => { if (el.btnNewNotebook) el.btnNewNotebook.click(); },
   },
   {
     id: "new-folder",
-    icon: "📁",
+    icon: ICONS.folder,
     title: "New Folder",
     desc: "Create a new folder in current location",
     action: () => { if (el.btnNewFolder) el.btnNewFolder.click(); },
   },
   {
     id: "bulk-import",
-    icon: "📥",
+    icon: ICONS.download,
     title: "Bulk Import Files",
     desc: "Upload multiple PDF, EPUB, or Markdown files",
     action: () => openBulkImportModal(),
   },
   {
     id: "quick-capture",
-    icon: "⚡",
+    icon: ICONS.quickCapture,
     title: "Quick Capture",
     desc: "Instantly capture an action item or note",
     action: () => { if (el.btnQuickCapture) el.btnQuickCapture.click(); },
   },
   {
     id: "sync-now",
-    icon: "🔄",
+    icon: ICONS.sync,
     title: "Sync with Cloud",
     desc: "Trigger live background synchronization",
     action: () => { if (el.btnSyncNow) el.btnSyncNow.click(); },
   },
   {
     id: "open-tasks",
-    icon: "📋",
+    icon: ICONS.tasks,
     title: "Open Tasks",
     desc: "View consolidated action items across notebooks",
     action: () => { if (el.btnTasksToggle) el.btnTasksToggle.click(); },
   },
   {
     id: "settings",
-    icon: "⚙️",
+    icon: ICONS.settings,
     title: "Settings & AI OCR",
     desc: "Configure Vision providers and MCP integrations",
     action: () => { if (el.btnSettingsToggle) el.btnSettingsToggle.click(); },
   },
   {
     id: "toggle-theme",
-    icon: "🌓",
+    icon: ICONS.theme,
     title: "Toggle Theme (Dark / Light / Auto)",
     desc: "Switch between dark, light, or auto system theme",
     action: () => { if (el.btnThemeToggle) el.btnThemeToggle.click(); },
   },
   {
     id: "optimize-pro",
-    icon: "⚡",
+    icon: ICONS.optimize,
     title: "Optimize for Paper Pro",
     desc: "Convert a comic or heavy document for Paper Pro",
     action: () => { if (el.btnOpenConverter) el.btnOpenConverter.click(); },
   },
   {
     id: "view-grid",
-    icon: "⊞",
+    icon: ICONS.grid,
     title: "Grid View",
     desc: "Switch library display to grid view",
     action: () => setViewMode("grid"),
   },
   {
     id: "view-list",
-    icon: "☰",
+    icon: ICONS.list,
     title: "List View",
     desc: "Switch library display to compact list view",
     action: () => setViewMode("list"),
@@ -3411,7 +3508,7 @@ function renderCommandPaletteResults(query) {
       html += `
         <div class="command-item ${idx === 0 ? 'selected' : ''}" data-idx="${idx}">
           <div class="command-item-left">
-            <span style="font-size: 1.1rem;">${cmd.icon}</span>
+            <span class="command-item-icon">${cmd.icon}</span>
             <div style="display: flex; flex-direction: column;">
               <span class="command-item-title">${escapeHtml(cmd.title)}</span>
               <span class="command-item-desc">${escapeHtml(cmd.desc)}</span>
@@ -3429,12 +3526,12 @@ function renderCommandPaletteResults(query) {
       const idx = commandPaletteItems.length;
       commandPaletteItems.push({ type: "doc", data: doc });
       const isFolder = doc.type === "CollectionType";
-      const icon = isFolder ? "📁" : (doc.file_type === "pdf" ? "📄" : (doc.file_type === "epub" ? "📚" : "📓"));
+      const icon = isFolder ? ICONS.folder : (doc.file_type === "pdf" ? ICONS.pdf : (doc.file_type === "epub" ? ICONS.epub : ICONS.notebook));
       const meta = isFolder ? "Folder" : `${doc.page_count || 1} pages`;
       html += `
         <div class="command-item ${idx === 0 && matchedCommands.length === 0 ? 'selected' : ''}" data-idx="${idx}">
           <div class="command-item-left">
-            <span style="font-size: 1.1rem;">${icon}</span>
+            <span class="command-item-icon">${icon}</span>
             <div style="display: flex; flex-direction: column;">
               <span class="command-item-title">${escapeHtml(doc.visible_name)}</span>
               <span class="command-item-desc">${meta}</span>
@@ -3536,24 +3633,77 @@ if (el.commandPaletteModal) {
   });
 }
 
-// --- MCP Copy Buttons ---
-if (el.btnCopyMcpConfig) {
-  el.btnCopyMcpConfig.addEventListener("click", () => {
-    const snippet = document.getElementById("mcp-config-snippet").innerText;
-    navigator.clipboard.writeText(snippet).then(() => {
-      el.btnCopyMcpConfig.textContent = "✓ Copied!";
-      setTimeout(() => { el.btnCopyMcpConfig.textContent = "📋 Copy Config"; }, 1500);
+// --- MCP Tabs & Copy Buttons ---
+document.querySelectorAll(".mcp-tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".mcp-tab-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.tab;
+    const panelLocal = document.getElementById("mcp-panel-local");
+    const panelSse = document.getElementById("mcp-panel-network-sse");
+    const panelClaude = document.getElementById("mcp-panel-network-claude");
+    if (panelLocal) panelLocal.style.display = tab === "local" ? "block" : "none";
+    if (panelSse) panelSse.style.display = tab === "network-sse" ? "block" : "none";
+    if (panelClaude) panelClaude.style.display = tab === "network-claude" ? "block" : "none";
+  });
+});
+
+function setupCopyBtn(btn, textSourceId) {
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const elTarget = document.getElementById(textSourceId);
+    if (!elTarget) return;
+    const text = elTarget.innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      const origHtml = btn.innerHTML;
+      btn.innerHTML = `${ICONS.check}<span>Copied!</span>`;
+      setTimeout(() => { btn.innerHTML = origHtml; }, 1500);
     });
   });
 }
 
-if (el.btnCopyMcpUrl) {
-  el.btnCopyMcpUrl.addEventListener("click", () => {
-    const url = document.getElementById("mcp-http-url").innerText;
-    navigator.clipboard.writeText(url).then(() => {
-      el.btnCopyMcpUrl.textContent = "✓ Copied!";
-      setTimeout(() => { el.btnCopyMcpUrl.textContent = "📋 Copy URL"; }, 1500);
-    });
+setupCopyBtn(el.btnCopyMcpConfig, "mcp-config-snippet");
+setupCopyBtn(el.btnCopyMcpLocal, "mcp-config-snippet");
+setupCopyBtn(el.btnCopyMcpSse, "mcp-config-sse-snippet");
+setupCopyBtn(el.btnCopyMcpSsh, "mcp-config-ssh-snippet");
+setupCopyBtn(el.btnCopyMcpProxy, "mcp-config-proxy-snippet");
+setupCopyBtn(el.btnCopyMcpUrl, "mcp-http-url");
+
+// --- Settings: Rescan & Re-index Library ---
+if (el.btnSettingsRescanLibrary) {
+  el.btnSettingsRescanLibrary.addEventListener("click", async () => {
+    el.btnSettingsRescanLibrary.disabled = true;
+    const origHtml = el.btnSettingsRescanLibrary.innerHTML;
+    el.btnSettingsRescanLibrary.innerHTML = `<span class="reader-page-spinner" style="margin-right: 0.25rem;">${ICONS.sync}</span><span>Rescanning...</span>`;
+    if (el.settingsRescanStatus) {
+      el.settingsRescanStatus.style.display = "block";
+      el.settingsRescanStatus.style.color = "var(--text-muted)";
+      el.settingsRescanStatus.textContent = "Scanning documents and rebuilding index (respecting excluded folders)...";
+    }
+
+    try {
+      const res = await fetch("/api/settings/rescan", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (el.settingsRescanStatus) {
+          el.settingsRescanStatus.style.color = "var(--accent)";
+          el.settingsRescanStatus.textContent = `✓ ${data.message}`;
+        }
+        await fetchDocuments();
+        await fetchTasks();
+        await updateSettingsSystemStats();
+      } else {
+        throw new Error(data.detail || "Rescan failed");
+      }
+    } catch (e) {
+      if (el.settingsRescanStatus) {
+        el.settingsRescanStatus.style.color = "var(--danger)";
+        el.settingsRescanStatus.textContent = `✕ Rescan error: ${e.message}`;
+      }
+    } finally {
+      el.btnSettingsRescanLibrary.disabled = false;
+      el.btnSettingsRescanLibrary.innerHTML = origHtml;
+    }
   });
 }
 
