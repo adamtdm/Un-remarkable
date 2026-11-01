@@ -288,6 +288,20 @@ class Database:
                 ],
             )
 
+    def get_document_files(self, doc_id_or_hash: str) -> list[dict[str, Any]]:
+        """Get document files for a document ID or doc_hash."""
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                SELECT DISTINCT df.file_id, df.blob_hash, df.file_type, df.size 
+                FROM document_files df
+                LEFT JOIN documents d ON d.doc_hash = df.doc_hash
+                WHERE (d.id = ? AND d.doc_hash != '') OR df.doc_hash = ?
+                """,
+                (doc_id_or_hash, doc_id_or_hash),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
     def set_document_pages(self, doc_hash: str, pages: list[dict[str, Any]]) -> None:
         with self.connect() as conn:
             conn.execute("DELETE FROM document_pages WHERE doc_hash = ?", (doc_hash,))
@@ -367,8 +381,9 @@ class Database:
         LEFT JOIN (
             SELECT doc_hash, SUM(size) AS total_size
             FROM document_files
+            WHERE doc_hash != ''
             GROUP BY doc_hash
-        ) df ON d.doc_hash = df.doc_hash
+        ) df ON d.doc_hash = df.doc_hash AND d.doc_hash != ''
         WHERE 1=1
         """
         params: list[Any] = []
@@ -427,6 +442,35 @@ class Database:
                     return True
                 current_id = row["parent_id"]
         return False
+
+    def get_all_excluded_ids(self) -> set[str]:
+        """Return a set of all document and folder IDs that are excluded (explicitly or via parent)."""
+        with self.connect() as conn:
+            cur = conn.execute("SELECT id, parent_id, exclude_from_search FROM documents WHERE deleted = 0")
+            rows = cur.fetchall()
+
+        parents: dict[str, str] = {}
+        explicitly_excluded: set[str] = set()
+        for r in rows:
+            doc_id = r["id"]
+            parents[doc_id] = r["parent_id"] or ""
+            if r["exclude_from_search"]:
+                explicitly_excluded.add(doc_id)
+
+        if not explicitly_excluded:
+            return set()
+
+        all_excluded: set[str] = set(explicitly_excluded)
+        for doc_id in parents:
+            curr = doc_id
+            visited: set[str] = set()
+            while curr and curr not in visited:
+                visited.add(curr)
+                if curr in explicitly_excluded:
+                    all_excluded.add(doc_id)
+                    break
+                curr = parents.get(curr, "")
+        return all_excluded
 
     def get_descendant_ids(self, folder_id: str) -> list[str]:
         """Get all descendant document and collection IDs under folder_id."""
@@ -636,9 +680,10 @@ class Database:
                 results = [dict(r) for r in cur.fetchall()]
 
             if not include_excluded:
+                excluded_ids = self.get_all_excluded_ids()
                 results = [
                     r for r in results
-                    if r["source"] == "title" or not self.is_excluded_from_search(r["doc_id"])
+                    if r["source"] == "title" or r["doc_id"] not in excluded_ids
                 ]
             return results[:limit]
 
@@ -694,14 +739,13 @@ class Database:
 
         with self.connect() as conn:
             rows = conn.execute(query, params).fetchall()
-            valid_tasks: list[dict[str, Any]] = []
-            for r in rows:
-                t = dict(r)
-                did = t.get("doc_id")
-                if did and self.is_excluded_from_search(did):
-                    continue
-                valid_tasks.append(t)
-            return valid_tasks
+            if not rows:
+                return []
+            excluded_ids = self.get_all_excluded_ids()
+            return [
+                dict(r) for r in rows
+                if not (r["doc_id"] and r["doc_id"] in excluded_ids)
+            ]
 
     def set_task_status(self, task_id: str, status: str) -> bool:
         now = time.time() if status == "completed" else None

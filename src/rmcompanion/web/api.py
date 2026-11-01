@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -353,16 +354,32 @@ def get_router(
                     for child in children:
                         _add_to_zip(child, folder_prefix)
                 else:
+                    # Check for direct PDF or EPUB blob first for instant archival export
+                    doc_files = db.get_document_files(d["id"])
+                    pdf_file = next((df for df in doc_files if df.get("file_id", "").endswith(".pdf")), None)
+                    epub_file = next((df for df in doc_files if df.get("file_id", "").endswith(".epub")), None)
+
+                    if pdf_file and blob_store.has(pdf_file["blob_hash"]):
+                        p = blob_store.get_path(pdf_file["blob_hash"])
+                        if p and p.is_file():
+                            zf.write(p, arcname=f"{prefix}{clean_name}.pdf")
+                            return
+                    elif epub_file and blob_store.has(epub_file["blob_hash"]):
+                        p = blob_store.get_path(epub_file["blob_hash"])
+                        if p and p.is_file():
+                            zf.write(p, arcname=f"{prefix}{clean_name}.epub")
+                            return
+
+                    # Handwritten notebook or document needing vector stroke rendering
                     try:
                         pdf_bytes = exporter.export_annotated_pdf(d["id"])
                         zf.writestr(f"{prefix}{clean_name}.pdf", pdf_bytes)
                     except Exception as err:
                         logger.warning("Could not render PDF for %s: %s", d["id"], err)
-                        doc_files = db.get_document_files(d["id"])
                         for df in doc_files:
                             p = blob_store.get_path(df["blob_hash"])
                             if p and p.is_file():
-                                zf.writestr(f"{prefix}{clean_name}_{df['file_id']}", p.read_bytes())
+                                zf.write(p, arcname=f"{prefix}{clean_name}_{df['file_id']}")
 
             if root_doc.get("type") == "CollectionType":
                 children = db.list_documents(parent_id=root_doc["id"])
@@ -732,23 +749,24 @@ def get_router(
                     continue
 
                 if device in {"paper_pro", "rm2", "rm1"} and ext in {"pdf", "epub", "cbz"} and converter_engine:
-                    opt_pdf = converter_engine.convert_sync(
+                    opt_pdf = await asyncio.to_thread(
+                        converter_engine.convert_sync,
                         input_source=content,
                         input_type=ext,
                         quality_stop=quality_stop,
                         device=device,
                     )
-                    res = editor.import_pdf_file(title=stem, pdf_bytes=opt_pdf, parent_id=parent_id)
+                    res = await asyncio.to_thread(editor.import_pdf_file, title=stem, pdf_bytes=opt_pdf, parent_id=parent_id)
                     imported.append({"file": orig_name, "id": res["id"], "type": "pdf", "optimized": True})
                 elif ext == "pdf":
-                    res = editor.import_pdf_file(title=stem, pdf_bytes=content, parent_id=parent_id)
+                    res = await asyncio.to_thread(editor.import_pdf_file, title=stem, pdf_bytes=content, parent_id=parent_id)
                     imported.append({"file": orig_name, "id": res["id"], "type": "pdf", "optimized": False})
                 elif ext == "epub":
-                    res = editor.import_epub_file(title=stem, epub_bytes=content, parent_id=parent_id)
+                    res = await asyncio.to_thread(editor.import_epub_file, title=stem, epub_bytes=content, parent_id=parent_id)
                     imported.append({"file": orig_name, "id": res["id"], "type": "epub", "optimized": False})
                 elif ext in {"md", "markdown", "txt"}:
                     text_str = content.decode("utf-8", errors="replace")
-                    res = editor.import_markdown(title=stem, markdown_content=text_str, parent_id=parent_id)
+                    res = await asyncio.to_thread(editor.import_markdown, title=stem, markdown_content=text_str, parent_id=parent_id)
                     imported.append({"file": orig_name, "id": res["id"], "type": "notebook", "optimized": False})
                 else:
                     errors.append({"file": orig_name, "error": f"Unsupported file type .{ext}"})

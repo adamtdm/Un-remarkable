@@ -9,7 +9,11 @@ const state = {
   pageDarkMode: true,
   fitMode: "fit-page",
   appTheme: localStorage.getItem("rmc_theme") || "dark",
-  searchOnlyNotes: true,
+  themePreference: localStorage.getItem("rmc_theme_pref") || "auto",
+  viewMode: localStorage.getItem("rmc_view_mode") || "grid",
+  allDocs: [],
+  currentRenderedDocs: [],
+  searchOnlyNotes: false,
   syncDrawerOpen: false,
   activeConverterJobId: null,
   converterPollInterval: null,
@@ -46,6 +50,9 @@ const CONVERTER_PROFILES = {
 
 // --- DOM Elements ---
 const el = {
+  btnSyncStatus: document.getElementById("btn-sync-status"),
+  syncStatusDot: document.getElementById("sync-status-dot"),
+  syncIconSvg: document.getElementById("sync-icon-svg"),
   syncBadge: document.getElementById("sync-badge"),
   syncText: document.getElementById("sync-text"),
   btnSyncNow: document.getElementById("btn-sync-now"),
@@ -59,6 +66,36 @@ const el = {
   syncActiveFile: document.getElementById("sync-active-file"),
   syncUpdatedCounter: document.getElementById("sync-updated-counter"),
   syncActivityList: document.getElementById("sync-activity-list"),
+
+  btnNewNotebook: document.getElementById("btn-new-notebook"),
+  btnNewDropdownToggle: document.getElementById("btn-new-dropdown-toggle"),
+  newItemDropdown: document.getElementById("new-item-dropdown"),
+  menuNewNote: document.getElementById("menu-new-note"),
+  menuNewFolder: document.getElementById("menu-new-folder"),
+  menuBulkImport: document.getElementById("menu-bulk-import"),
+
+  btnViewGrid: document.getElementById("btn-view-grid"),
+  btnViewList: document.getElementById("btn-view-list"),
+
+  commandPaletteModal: document.getElementById("command-palette-modal"),
+  commandPaletteInput: document.getElementById("command-palette-input"),
+  commandPaletteResults: document.getElementById("command-palette-results"),
+
+  bulkImportModal: document.getElementById("bulk-import-modal"),
+  btnBulkImportClose: document.getElementById("btn-bulk-import-close"),
+  btnBulkImportCancel: document.getElementById("btn-bulk-import-cancel"),
+  btnBulkImportSubmit: document.getElementById("btn-bulk-import-submit"),
+  bulkImportFiles: document.getElementById("bulk-import-files"),
+  bulkImportDevice: document.getElementById("bulk-import-device"),
+  bulkImportFolder: document.getElementById("bulk-import-folder"),
+  bulkImportFileCount: document.getElementById("bulk-import-file-count"),
+  bulkImportStatus: document.getElementById("bulk-import-status"),
+
+  themeChoiceAuto: document.getElementById("theme-choice-auto"),
+  themeChoiceDark: document.getElementById("theme-choice-dark"),
+  themeChoiceLight: document.getElementById("theme-choice-light"),
+  btnCopyMcpConfig: document.getElementById("btn-copy-mcp-config"),
+  btnCopyMcpUrl: document.getElementById("btn-copy-mcp-url"),
 
   btnThemeToggle: document.getElementById("btn-theme-toggle"),
   authBanner: document.getElementById("auth-banner"),
@@ -81,8 +118,6 @@ const el = {
   searchInput: document.getElementById("search-input"),
   btnSearchClear: document.getElementById("btn-search-clear"),
   searchDropdown: document.getElementById("search-dropdown"),
-  pillSearchNotes: document.getElementById("pill-search-notes"),
-  pillSearchAll: document.getElementById("pill-search-all"),
   brandHome: document.getElementById("brand-home"),
   selectSort: document.getElementById("select-sort"),
 
@@ -245,26 +280,65 @@ const el = {
 };
 
 // --- Theme Management ---
-function applyAppTheme(theme) {
-  state.appTheme = theme;
-  document.documentElement.setAttribute("data-theme", theme);
-  localStorage.setItem("rmc_theme", theme);
+function getEffectiveTheme(pref) {
+  if (pref === "auto") {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return pref === "light" ? "light" : "dark";
 }
 
-el.btnThemeToggle.addEventListener("click", () => {
-  applyAppTheme(state.appTheme === "dark" ? "light" : "dark");
-});
-applyAppTheme(state.appTheme);
+function applyAppTheme(pref) {
+  state.themePreference = pref;
+  localStorage.setItem("rmc_theme_pref", pref);
+  const effectiveTheme = getEffectiveTheme(pref);
+  state.appTheme = effectiveTheme;
+  document.documentElement.setAttribute("data-theme", effectiveTheme);
+  localStorage.setItem("rmc_theme", effectiveTheme);
+
+  if (el.themeChoiceAuto) el.themeChoiceAuto.checked = pref === "auto";
+  if (el.themeChoiceDark) el.themeChoiceDark.checked = pref === "dark";
+  if (el.themeChoiceLight) el.themeChoiceLight.checked = pref === "light";
+}
+
+if (window.matchMedia) {
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (state.themePreference === "auto") {
+      applyAppTheme("auto");
+    }
+  });
+}
+
+if (el.themeChoiceAuto) el.themeChoiceAuto.addEventListener("change", () => applyAppTheme("auto"));
+if (el.themeChoiceDark) el.themeChoiceDark.addEventListener("change", () => applyAppTheme("dark"));
+if (el.themeChoiceLight) el.themeChoiceLight.addEventListener("change", () => applyAppTheme("light"));
+
+if (el.btnThemeToggle) {
+  el.btnThemeToggle.addEventListener("click", () => {
+    // Cycle auto -> dark -> light -> auto
+    const next = state.themePreference === "auto" ? "dark" : (state.themePreference === "dark" ? "light" : "auto");
+    applyAppTheme(next);
+  });
+}
+applyAppTheme(state.themePreference);
 
 // --- Sync Progress Drawer ---
 function setSyncDrawer(open) {
   state.syncDrawerOpen = open;
-  el.syncDrawer.style.display = open ? "block" : "none";
+  if (el.syncDrawer) el.syncDrawer.style.display = open ? "block" : "none";
 }
 
-el.btnSyncDrawerToggle.addEventListener("click", () => setSyncDrawer(!state.syncDrawerOpen));
-el.syncBadge.addEventListener("click", () => setSyncDrawer(!state.syncDrawerOpen));
-el.btnSyncDrawerClose.addEventListener("click", () => setSyncDrawer(false));
+if (el.btnSyncStatus) {
+  el.btnSyncStatus.addEventListener("click", () => setSyncDrawer(!state.syncDrawerOpen));
+}
+if (el.btnSyncDrawerToggle) {
+  el.btnSyncDrawerToggle.addEventListener("click", () => setSyncDrawer(!state.syncDrawerOpen));
+}
+if (el.syncBadge) {
+  el.syncBadge.addEventListener("click", () => setSyncDrawer(!state.syncDrawerOpen));
+}
+if (el.btnSyncDrawerClose) {
+  el.btnSyncDrawerClose.addEventListener("click", () => setSyncDrawer(false));
+}
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return "0 MB";
@@ -279,54 +353,58 @@ function renderSyncProgress(sync) {
   const p = sync.progress || {};
   const isSyncing = sync.status === "syncing" || p.is_syncing;
 
-  el.syncDrawerStage.textContent = p.stage || sync.status || "idle";
+  if (el.syncDrawerStage) el.syncDrawerStage.textContent = p.stage || sync.status || "idle";
 
   if (isSyncing) {
     const total = p.total_docs || 0;
     const current = p.current_doc_idx || 0;
     const pct = total > 0 ? Math.round((current / total) * 100) : 0;
 
-    el.syncProgressBar.style.width = `${pct}%`;
-    el.syncProgressText.textContent = total > 0 ? `${current} of ${total} items (${pct}%)` : "Checking cloud...";
-    el.syncBytesText.textContent = `Transferred: ${formatBytes(p.bytes_downloaded)}`;
+    if (el.syncProgressBar) el.syncProgressBar.style.width = `${pct}%`;
+    if (el.syncProgressText) el.syncProgressText.textContent = total > 0 ? `${current} of ${total} items (${pct}%)` : "Checking cloud...";
+    if (el.syncBytesText) el.syncBytesText.textContent = `Transferred: ${formatBytes(p.bytes_downloaded)}`;
 
     if (p.current_file || p.current_doc_name) {
-      el.syncActiveFile.style.display = "block";
-      el.syncActiveFile.textContent = `Syncing: ${p.current_doc_name || ""} ${p.current_file ? `(${p.current_file})` : ""}`;
+      if (el.syncActiveFile) {
+        el.syncActiveFile.style.display = "block";
+        el.syncActiveFile.textContent = `Syncing: ${p.current_doc_name || ""} ${p.current_file ? `(${p.current_file})` : ""}`;
+      }
     } else {
-      el.syncActiveFile.style.display = "none";
+      if (el.syncActiveFile) el.syncActiveFile.style.display = "none";
     }
   } else {
-    el.syncProgressBar.style.width = "100%";
-    el.syncProgressText.textContent = `Completed (Gen ${sync.last_generation})`;
-    el.syncBytesText.textContent = `Transferred: ${formatBytes(p.bytes_downloaded)}`;
-    el.syncActiveFile.style.display = "none";
+    if (el.syncProgressBar) el.syncProgressBar.style.width = "100%";
+    if (el.syncProgressText) el.syncProgressText.textContent = `Completed (Gen ${sync.last_generation})`;
+    if (el.syncBytesText) el.syncBytesText.textContent = `Transferred: ${formatBytes(p.bytes_downloaded)}`;
+    if (el.syncActiveFile) el.syncActiveFile.style.display = "none";
   }
 
-  el.syncUpdatedCounter.textContent = `${p.docs_updated || 0} items updated`;
+  if (el.syncUpdatedCounter) el.syncUpdatedCounter.textContent = `${p.docs_updated || 0} items updated`;
 
   // Render recent activity feed
   const activity = p.recent_activity || [];
-  if (activity.length === 0) {
-    el.syncActivityList.innerHTML = `<div class="sync-empty-log">No sync events in this session</div>`;
-  } else {
-    el.syncActivityList.innerHTML = activity
-      .slice(0, 15)
-      .map((item) => {
-        const timeStr = new Date(item.timestamp * 1000).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        });
-        const pageText = item.pages > 0 ? `(${item.pages} p)` : "";
-        return `
-          <div class="sync-activity-item">
-            <span class="item-name" title="${escapeHtml(item.name)}">✓ ${escapeHtml(item.name)} ${pageText}</span>
-            <span class="item-meta">${timeStr}</span>
-          </div>
-        `;
-      })
-      .join("");
+  if (el.syncActivityList) {
+    if (activity.length === 0) {
+      el.syncActivityList.innerHTML = `<div class="sync-empty-log">No sync events in this session</div>`;
+    } else {
+      el.syncActivityList.innerHTML = activity
+        .slice(0, 15)
+        .map((item) => {
+          const timeStr = new Date(item.timestamp * 1000).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          });
+          const pageText = item.pages > 0 ? `(${item.pages} p)` : "";
+          return `
+            <div class="sync-activity-item">
+              <span class="item-name" title="${escapeHtml(item.name)}">✓ ${escapeHtml(item.name)} ${pageText}</span>
+              <span class="item-meta">${timeStr}</span>
+            </div>
+          `;
+        })
+        .join("");
+    }
   }
 }
 
@@ -340,23 +418,43 @@ async function fetchStatus() {
     const data = await res.json();
     const sync = data.sync;
 
-    el.syncBadge.className = `sync-badge ${sync.status}`;
+    if (el.syncBadge) el.syncBadge.className = `sync-badge ${sync.status}`;
     if (!sync.is_authenticated) {
-      el.syncBadge.className = "sync-badge unauth";
-      el.syncText.textContent = "Unlinked";
-      el.authBanner.style.display = "flex";
-      el.btnAuthOpen.style.display = "inline-flex";
+      if (el.syncBadge) el.syncBadge.className = "sync-badge unauth";
+      if (el.syncText) el.syncText.textContent = "Unlinked";
+      if (el.authBanner) el.authBanner.style.display = "flex";
+      if (el.btnAuthOpen) el.btnAuthOpen.style.display = "inline-flex";
+      if (el.syncStatusDot) el.syncStatusDot.className = "sync-status-dot unauth";
+      if (el.btnSyncStatus) {
+        el.btnSyncStatus.classList.remove("is-syncing");
+        el.btnSyncStatus.title = "Not connected to reMarkable Cloud (Click to view logs)";
+      }
     } else {
-      el.authBanner.style.display = "none";
-      el.btnAuthOpen.style.display = "none";
+      if (el.authBanner) el.authBanner.style.display = "none";
+      if (el.btnAuthOpen) el.btnAuthOpen.style.display = "none";
       if (sync.status === "syncing") {
         const p = sync.progress || {};
         const pct = p.total_docs > 0 ? Math.round((p.current_doc_idx / p.total_docs) * 100) : 0;
-        el.syncText.textContent = `Syncing (${pct}%)`;
+        if (el.syncText) el.syncText.textContent = `Syncing (${pct}%)`;
+        if (el.syncStatusDot) el.syncStatusDot.className = "sync-status-dot syncing";
+        if (el.btnSyncStatus) {
+          el.btnSyncStatus.classList.add("is-syncing");
+          el.btnSyncStatus.title = `Syncing with reMarkable Cloud (${pct}%) - Click for logs`;
+        }
       } else if (sync.status === "error") {
-        el.syncText.textContent = "Sync Error";
+        if (el.syncText) el.syncText.textContent = "Sync Error";
+        if (el.syncStatusDot) el.syncStatusDot.className = "sync-status-dot error";
+        if (el.btnSyncStatus) {
+          el.btnSyncStatus.classList.remove("is-syncing");
+          el.btnSyncStatus.title = "Sync Error (Click to view logs)";
+        }
       } else {
-        el.syncText.textContent = `Synced (Gen ${sync.last_generation})`;
+        if (el.syncText) el.syncText.textContent = `Synced (Gen ${sync.last_generation})`;
+        if (el.syncStatusDot) el.syncStatusDot.className = "sync-status-dot synced";
+        if (el.btnSyncStatus) {
+          el.btnSyncStatus.classList.remove("is-syncing");
+          el.btnSyncStatus.title = `Synced with reMarkable Cloud (Gen ${sync.last_generation}) - Click for logs`;
+        }
       }
     }
 
@@ -374,20 +472,27 @@ async function fetchStatus() {
 }
 
 // --- Sync Trigger ---
-el.btnSyncNow.addEventListener("click", async () => {
-  el.btnSyncNow.disabled = true;
-  el.syncBadge.className = "sync-badge syncing";
-  el.syncText.textContent = "Syncing...";
-  setSyncDrawer(true);
-  try {
-    await fetch("/api/sync/trigger", { method: "POST" });
-    await fetchDocuments();
-  } catch (e) {
-    console.error("Sync error", e);
-  } finally {
-    el.btnSyncNow.disabled = false;
-    await fetchStatus();
-  }
+if (el.btnSyncNow) {
+  el.btnSyncNow.addEventListener("click", async () => {
+    el.btnSyncNow.disabled = true;
+    if (el.syncBadge) {
+      el.syncBadge.className = "sync-badge syncing";
+      if (el.syncText) el.syncText.textContent = "Syncing...";
+    }
+    if (el.syncStatusDot) el.syncStatusDot.className = "sync-status-dot syncing";
+    if (el.btnSyncStatus) el.btnSyncStatus.classList.add("is-syncing");
+    setSyncDrawer(true);
+    try {
+      await fetch("/api/sync/trigger", { method: "POST" });
+      await fetchDocuments();
+    } catch (e) {
+      console.error("Sync error", e);
+    } finally {
+      el.btnSyncNow.disabled = false;
+      await fetchStatus();
+    }
+  });
+}
 });
 
 // --- Auth Modal ---
@@ -519,7 +624,39 @@ el.btnFolderExclude.addEventListener("click", async () => {
   }
 });
 
-// --- Document Listing ---
+function formatModifiedDate(ts) {
+  if (!ts) return "";
+  const num = Number(ts);
+  const d = isNaN(num) ? new Date(ts) : new Date(num > 1e11 ? num : num * 1000);
+  if (isNaN(d.getTime())) return "";
+  const now = new Date();
+  const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } else if (diffDays === 1) {
+    return "Yesterday";
+  } else if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  } else {
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+}
+
+// --- Document Listing & View Modes ---
+function setViewMode(mode) {
+  state.viewMode = mode;
+  localStorage.setItem("rmc_view_mode", mode);
+  if (el.btnViewGrid) el.btnViewGrid.classList.toggle("active", mode === "grid");
+  if (el.btnViewList) el.btnViewList.classList.toggle("active", mode === "list");
+  if (el.docGrid) {
+    el.docGrid.className = mode === "grid" ? "doc-grid" : "doc-list";
+  }
+  renderDocumentGrid(state.currentRenderedDocs || []);
+}
+
+if (el.btnViewGrid) el.btnViewGrid.addEventListener("click", () => setViewMode("grid"));
+if (el.btnViewList) el.btnViewList.addEventListener("click", () => setViewMode("list"));
+
 async function fetchDocuments() {
   try {
     const url = new URL("/api/documents", window.location.origin);
@@ -531,6 +668,14 @@ async function fetchDocuments() {
     const res = await fetch(url);
     if (!res.ok) return;
     let docs = await res.json();
+
+    // Cache items for command palette search
+    if (state.currentFolder === "" && (!state.currentFilter || state.currentFilter === "all")) {
+      state.allDocs = docs;
+    } else if (state.allDocs.length === 0) {
+      // Lazy fetch all documents for command palette
+      fetch("/api/documents").then(r => r.json()).then(all => { state.allDocs = all; }).catch(() => {});
+    }
 
     // Filter by excluded if that tab is active
     if (state.currentFilter === "excluded") {
@@ -560,6 +705,7 @@ async function fetchDocuments() {
       }
     });
 
+    state.currentRenderedDocs = docs;
     renderDocumentGrid(docs);
   } catch (e) {
     console.error("Failed to load documents", e);
@@ -567,7 +713,9 @@ async function fetchDocuments() {
 }
 
 function renderDocumentGrid(docs) {
+  if (!el.docGrid) return;
   el.docGrid.innerHTML = "";
+  el.docGrid.className = state.viewMode === "list" ? "doc-list" : "doc-grid";
 
   if (docs.length === 0) {
     el.docGrid.innerHTML = `
@@ -581,65 +729,94 @@ function renderDocumentGrid(docs) {
 
   docs.forEach((doc) => {
     const isFolder = doc.type === "CollectionType";
-    const isExcluded = doc.exclude_from_search;
-    const card = document.createElement("div");
-    card.className = "doc-card";
-
-    let iconHtml = "";
-    if (isFolder) {
-      iconHtml = `
-        <svg class="folder-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-        </svg>
-      `;
-    } else {
-      // Fast lightweight thumbnail rendering with browser HTTP ETag and content-hash caching
-      const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}&dark=${state.appTheme === "dark"}`;
-      iconHtml = `<img src="${thumbUrl}" alt="${escapeHtml(doc.visible_name)} preview" loading="lazy" width="320" height="426">`;
-    }
-
-    const badgeText = isFolder ? "Folder" : (doc.file_type || "Note");
+    const isExcluded = Boolean(doc.exclude_from_search || doc.effective_exclude);
+    const badgeText = isFolder ? "Folder" : (doc.file_type || "Note").toUpperCase();
     const pageText = isFolder ? "" : `${doc.page_count} ${doc.page_count === 1 ? 'page' : 'pages'}`;
-    const excludePill = isExcluded ? `<span class="doc-badge doc-badge-excluded" title="Excluded from full-text search & OCR">Excluded</span>` : "";
+    const optimizeBadge = doc.needs_optimization ? `<span class="doc-badge doc-badge-optimize" title="Large file (>30MB or >150 pages). Optimize for Paper Pro.">⚡ Heavy File</span>` : "";
 
-    card.innerHTML = `
-      <div class="doc-card-thumb">${iconHtml}</div>
-      <div class="doc-card-body">
-        <div class="card-header-row">
-          <div class="doc-card-title" title="${escapeHtml(doc.visible_name)}">${escapeHtml(doc.visible_name)}</div>
-          <div class="card-menu-wrapper">
-            <button class="btn-card-menu" title="Card options" aria-label="Card options">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="1.5"></circle>
-                <circle cx="12" cy="5" r="1.5"></circle>
-                <circle cx="12" cy="19" r="1.5"></circle>
-              </svg>
-            </button>
-            <div class="card-menu-dropdown" style="display: none;">
-              <button class="menu-item menu-item-open">
-                ${isFolder ? '📂 Open Folder' : '📖 Open & Read'}
-              </button>
-              <button class="menu-item menu-item-move">📁 Add to Folder...</button>
-              ${!isFolder ? `<button class="menu-item menu-item-optimize">⚡ Optimize for Paper Pro</button>` : ""}
-              <button class="menu-item menu-item-exclude">
-                ${isExcluded ? '✓ Include in Search' : '🚫 Exclude from Search'}
-              </button>
-              ${!isFolder ? `<a href="/api/documents/${doc.id}/export/pdf?dark=${state.appTheme === 'dark'}" download class="menu-item menu-item-export" style="text-decoration: none; color: inherit;">📥 Export PDF</a>` : ""}
-              <button class="menu-item menu-item-copy-id">📋 Copy ID</button>
-              <button class="menu-item menu-item-delete">🗑 Delete</button>
-            </div>
+    const element = document.createElement("div");
+
+    const menuHtml = `
+      <div class="card-menu-wrapper">
+        <button class="btn-card-menu" title="Options" aria-label="Options">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="1.5"></circle>
+            <circle cx="12" cy="5" r="1.5"></circle>
+            <circle cx="12" cy="19" r="1.5"></circle>
+          </svg>
+        </button>
+        <div class="card-menu-dropdown" style="display: none;">
+          <div class="menu-status-badge ${isExcluded ? 'status-excluded' : 'status-indexed'}">
+            <span class="status-indicator"></span>
+            <span>Status: ${isExcluded ? 'Excluded' : 'Indexed'}</span>
           </div>
-        </div>
-        <div class="doc-card-meta">
-          <span class="doc-badge">${badgeText}</span>
-          ${excludePill}
-          <span>${pageText}</span>
+          <button class="menu-item menu-item-open">
+            ${isFolder ? '📂 Open Folder' : '📖 Open & Read'}
+          </button>
+          <button class="menu-item menu-item-move">📁 Add to Folder...</button>
+          ${!isFolder ? `<button class="menu-item menu-item-optimize">⚡ Optimize for Paper Pro</button>` : ""}
+          <button class="menu-item menu-item-exclude">
+            ${isExcluded ? '✓ Include in Search & Tasks' : '🚫 Exclude from Search & Tasks'}
+          </button>
+          ${isFolder ? `<a href="/api/documents/${doc.id}/export/zip" download class="menu-item menu-item-export" style="text-decoration: none; color: inherit;">📥 Download Folder (ZIP)</a>` : `<a href="/api/documents/${doc.id}/export/pdf?dark=${state.appTheme === 'dark'}" download class="menu-item menu-item-export" style="text-decoration: none; color: inherit;">📥 Download PDF</a>`}
+          <button class="menu-item menu-item-copy-id">📋 Copy ID</button>
+          <button class="menu-item menu-item-delete">🗑 Delete</button>
         </div>
       </div>
     `;
 
-    // Click on card body opens folder / document
-    card.addEventListener("click", (e) => {
+    if (state.viewMode === "list") {
+      element.className = "doc-list-item";
+      let listIcon = "📓";
+      if (isFolder) listIcon = "📁";
+      else if (doc.file_type === "pdf") listIcon = "📄";
+      else if (doc.file_type === "epub") listIcon = "📚";
+
+      element.innerHTML = `
+        <div class="doc-list-icon">${listIcon}</div>
+        <div class="doc-list-title-col">
+          <div class="doc-list-title" title="${escapeHtml(doc.visible_name)}">${escapeHtml(doc.visible_name)}</div>
+        </div>
+        <div class="doc-list-meta-col">
+          <span class="doc-badge">${badgeText}</span>
+          ${optimizeBadge}
+          <span>${pageText}</span>
+          <span class="doc-list-date">${formatModifiedDate(doc.last_modified)}</span>
+          ${menuHtml}
+        </div>
+      `;
+    } else {
+      element.className = "doc-card";
+      let iconHtml = "";
+      if (isFolder) {
+        iconHtml = `
+          <svg class="folder-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+        `;
+      } else {
+        const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}&dark=${state.appTheme === "dark"}`;
+        iconHtml = `<img src="${thumbUrl}" alt="${escapeHtml(doc.visible_name)} preview" loading="lazy" width="320" height="426">`;
+      }
+
+      element.innerHTML = `
+        <div class="doc-card-thumb">${iconHtml}</div>
+        <div class="doc-card-body">
+          <div class="card-header-row">
+            <div class="doc-card-title" title="${escapeHtml(doc.visible_name)}">${escapeHtml(doc.visible_name)}</div>
+            ${menuHtml}
+          </div>
+          <div class="doc-card-meta">
+            <span class="doc-badge">${badgeText}</span>
+            ${optimizeBadge}
+            <span>${pageText}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // Click on item body opens folder / document
+    element.addEventListener("click", (e) => {
       if (e.target.closest(".card-menu-wrapper")) return;
       if (isFolder) {
         state.folderPath.push({ id: doc.id, name: doc.visible_name });
@@ -650,8 +827,8 @@ function renderDocumentGrid(docs) {
     });
 
     // Ellipsis Menu Toggle
-    const btnMenu = card.querySelector(".btn-card-menu");
-    const menuDropdown = card.querySelector(".card-menu-dropdown");
+    const btnMenu = element.querySelector(".btn-card-menu");
+    const menuDropdown = element.querySelector(".card-menu-dropdown");
     btnMenu.addEventListener("click", (e) => {
       e.stopPropagation();
       if (window.innerWidth <= 768) {
@@ -663,20 +840,20 @@ function renderDocumentGrid(docs) {
       }
     });
 
-    // Long-press affordance on mobile cards
+    // Long-press affordance on touch devices
     let touchTimer = null;
-    card.addEventListener("touchstart", (e) => {
+    element.addEventListener("touchstart", (e) => {
       if (e.target.closest(".card-menu-wrapper")) return;
       touchTimer = setTimeout(() => {
         if (navigator.vibrate) navigator.vibrate(25);
         openMobileActionTray(doc);
       }, 500);
     }, { passive: true });
-    card.addEventListener("touchend", () => clearTimeout(touchTimer));
-    card.addEventListener("touchmove", () => clearTimeout(touchTimer));
+    element.addEventListener("touchend", () => clearTimeout(touchTimer));
+    element.addEventListener("touchmove", () => clearTimeout(touchTimer));
 
     // Menu Actions
-    const mOpen = card.querySelector(".menu-item-open");
+    const mOpen = element.querySelector(".menu-item-open");
     if (mOpen) {
       mOpen.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -690,7 +867,7 @@ function renderDocumentGrid(docs) {
       });
     }
 
-    const mOpt = card.querySelector(".menu-item-optimize");
+    const mOpt = element.querySelector(".menu-item-optimize");
     if (mOpt) {
       mOpt.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -699,7 +876,7 @@ function renderDocumentGrid(docs) {
       });
     }
 
-    const mEx = card.querySelector(".menu-item-exclude");
+    const mEx = element.querySelector(".menu-item-exclude");
     if (mEx) {
       mEx.addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -713,7 +890,7 @@ function renderDocumentGrid(docs) {
       });
     }
 
-    const mCopy = card.querySelector(".menu-item-copy-id");
+    const mCopy = element.querySelector(".menu-item-copy-id");
     if (mCopy) {
       mCopy.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -727,7 +904,7 @@ function renderDocumentGrid(docs) {
       });
     }
 
-    const mMove = card.querySelector(".menu-item-move");
+    const mMove = element.querySelector(".menu-item-move");
     if (mMove) {
       mMove.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -736,7 +913,7 @@ function renderDocumentGrid(docs) {
       });
     }
 
-    const mDelete = card.querySelector(".menu-item-delete");
+    const mDelete = element.querySelector(".menu-item-delete");
     if (mDelete) {
       mDelete.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -745,7 +922,7 @@ function renderDocumentGrid(docs) {
       });
     }
 
-    el.docGrid.appendChild(card);
+    el.docGrid.appendChild(element);
   });
 }
 
@@ -778,9 +955,10 @@ function openMobileActionTray(doc) {
   }
 
   el.trayDocTitle.textContent = doc.visible_name;
+  const statusStr = isExcluded ? "Excluded from Search" : "Indexed";
   el.trayDocMeta.textContent = isFolder 
-    ? "Folder" 
-    : `${doc.file_type === "notebook" ? "Notebook" : (doc.file_type || "Document").toUpperCase()} • ${pageCount} ${pageCount === 1 ? "page" : "pages"}`;
+    ? `Folder • ${statusStr}` 
+    : `${doc.file_type === "notebook" ? "Notebook" : (doc.file_type || "Document").toUpperCase()} • ${pageCount} ${pageCount === 1 ? "page" : "pages"} • ${statusStr}`;
 
   el.trayLabelOpen.textContent = isFolder ? "Open Folder" : "Open & Read";
 
@@ -793,18 +971,29 @@ function openMobileActionTray(doc) {
   }
 
   if (el.trayBtnExport) {
-    el.trayBtnExport.style.display = !isFolder ? "flex" : "none";
+    el.trayBtnExport.style.display = "flex";
+    const exportLabel = el.trayBtnExport.querySelector(".tray-btn-text strong");
+    const exportDesc = el.trayBtnExport.querySelector(".tray-btn-text span");
+    if (exportLabel && exportDesc) {
+      if (isFolder) {
+        exportLabel.textContent = "Download Folder (ZIP)";
+        exportDesc.textContent = "Download complete folder contents recursively";
+      } else {
+        exportLabel.textContent = "Download Annotated PDF";
+        exportDesc.textContent = "Download vector PDF with handwriting";
+      }
+    }
   }
 
   if (el.trayBtnExclude) {
     if (isExcluded) {
       el.trayIconExclude.textContent = "✓";
-      el.trayLabelExclude.textContent = "Include in Search";
-      el.trayDescExclude.textContent = "Include in full-text search and OCR indexing";
+      el.trayLabelExclude.textContent = "Include in Search & Tasks";
+      el.trayDescExclude.textContent = "Include in search and task aggregation";
     } else {
       el.trayIconExclude.textContent = "🚫";
-      el.trayLabelExclude.textContent = "Exclude from Search";
-      el.trayDescExclude.textContent = "Hide from full-text search and OCR indexing";
+      el.trayLabelExclude.textContent = "Exclude from Search & Tasks";
+      el.trayDescExclude.textContent = "Hide from search and exclude tasks from task list";
     }
   }
 
@@ -876,7 +1065,11 @@ if (el.trayBtnExport) {
     if (!selectedMobileDoc) return;
     const doc = selectedMobileDoc;
     closeMobileActionTray();
-    window.open(`/api/documents/${doc.id}/export/pdf?dark=${state.appTheme === "dark"}`, "_blank");
+    if (doc.type === "CollectionType") {
+      window.open(`/api/documents/${doc.id}/export/zip`, "_blank");
+    } else {
+      window.open(`/api/documents/${doc.id}/export/pdf?dark=${state.appTheme === "dark"}`, "_blank");
+    }
   });
 }
 
@@ -1726,21 +1919,6 @@ el.btnConverterStart.addEventListener("click", async () => {
   }
 });
 
-// --- Search Filter Pills ---
-el.pillSearchNotes.addEventListener("click", () => {
-  state.searchOnlyNotes = true;
-  el.pillSearchNotes.classList.add("active");
-  el.pillSearchAll.classList.remove("active");
-  triggerSearch();
-});
-
-el.pillSearchAll.addEventListener("click", () => {
-  state.searchOnlyNotes = false;
-  el.pillSearchAll.classList.add("active");
-  el.pillSearchNotes.classList.remove("active");
-  triggerSearch();
-});
-
 // --- Search Implementation ---
 let searchDebounce = null;
 
@@ -2513,7 +2691,421 @@ if (el.qcInput) {
   });
 }
 
+// --- Split Button for Creation ---
+if (el.btnNewDropdownToggle && el.newItemDropdown) {
+  el.btnNewDropdownToggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isVisible = el.newItemDropdown.style.display === "flex";
+    el.newItemDropdown.style.display = isVisible ? "none" : "flex";
+  });
+}
+
+document.addEventListener("click", (e) => {
+  if (el.newItemDropdown && !e.target.closest("#new-item-split-btn")) {
+    el.newItemDropdown.style.display = "none";
+  }
+});
+
+if (el.menuNewNote) {
+  el.menuNewNote.addEventListener("click", () => {
+    if (el.newItemDropdown) el.newItemDropdown.style.display = "none";
+    if (el.btnNewNotebook) el.btnNewNotebook.click();
+  });
+}
+
+if (el.menuNewFolder) {
+  el.menuNewFolder.addEventListener("click", () => {
+    if (el.newItemDropdown) el.newItemDropdown.style.display = "none";
+    if (el.btnNewFolder) el.btnNewFolder.click();
+  });
+}
+
+if (el.menuBulkImport) {
+  el.menuBulkImport.addEventListener("click", () => {
+    if (el.newItemDropdown) el.newItemDropdown.style.display = "none";
+    openBulkImportModal();
+  });
+}
+
+// --- Bulk Import Controller ---
+async function openBulkImportModal() {
+  if (!el.bulkImportModal) return;
+  if (el.bulkImportFiles) el.bulkImportFiles.value = "";
+  if (el.bulkImportFileCount) el.bulkImportFileCount.textContent = "0 files selected";
+  if (el.bulkImportStatus) el.bulkImportStatus.style.display = "none";
+  if (el.btnBulkImportSubmit) el.btnBulkImportSubmit.disabled = true;
+
+  if (el.bulkImportFolder) {
+    el.bulkImportFolder.innerHTML = `<option value="">(Home / Root)</option>`;
+    try {
+      const res = await fetch("/api/folders");
+      if (res.ok) {
+        const folders = await res.json();
+        folders.forEach((f) => {
+          const opt = document.createElement("option");
+          opt.value = f.id;
+          const prefix = f.depth > 0 ? "— ".repeat(f.depth) : "";
+          opt.textContent = `${prefix}${f.name}`;
+          if (f.id === state.currentFolder) opt.selected = true;
+          el.bulkImportFolder.appendChild(opt);
+        });
+      }
+    } catch (err) {
+      console.debug("Failed to load folders for bulk import", err);
+    }
+  }
+
+  el.bulkImportModal.style.display = "flex";
+}
+
+function closeBulkImportModal() {
+  if (!el.bulkImportModal) return;
+  el.bulkImportModal.style.display = "none";
+}
+
+if (el.btnBulkImportClose) el.btnBulkImportClose.addEventListener("click", closeBulkImportModal);
+if (el.btnBulkImportCancel) el.btnBulkImportCancel.addEventListener("click", closeBulkImportModal);
+if (el.bulkImportModal) {
+  el.bulkImportModal.addEventListener("click", (e) => {
+    if (e.target === el.bulkImportModal) closeBulkImportModal();
+  });
+}
+
+if (el.bulkImportFiles) {
+  el.bulkImportFiles.addEventListener("change", () => {
+    const count = el.bulkImportFiles.files ? el.bulkImportFiles.files.length : 0;
+    if (el.bulkImportFileCount) {
+      el.bulkImportFileCount.textContent = count === 1 ? "1 file selected" : `${count} files selected`;
+    }
+    if (el.btnBulkImportSubmit) {
+      el.btnBulkImportSubmit.disabled = count === 0;
+    }
+  });
+}
+
+if (el.btnBulkImportSubmit) {
+  el.btnBulkImportSubmit.addEventListener("click", async () => {
+    const files = el.bulkImportFiles.files;
+    if (!files || files.length === 0) return;
+
+    el.btnBulkImportSubmit.disabled = true;
+    if (el.bulkImportStatus) {
+      el.bulkImportStatus.style.display = "block";
+      el.bulkImportStatus.style.color = "var(--text-primary)";
+      el.bulkImportStatus.textContent = `Importing ${files.length} file(s)... This may take a moment for conversions.`;
+    }
+
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
+    }
+    formData.append("device", el.bulkImportDevice ? el.bulkImportDevice.value : "none");
+    formData.append("parent_id", el.bulkImportFolder ? el.bulkImportFolder.value : "");
+
+    try {
+      const res = await fetch("/api/documents/bulk-import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (el.bulkImportStatus) {
+          el.bulkImportStatus.style.color = "var(--accent)";
+          el.bulkImportStatus.textContent = `✓ Successfully imported ${data.imported_count} file(s)!`;
+        }
+        await fetchDocuments();
+        setTimeout(() => {
+          closeBulkImportModal();
+        }, 1200);
+      } else {
+        const errMsg = data.detail || (data.errors && data.errors[0]?.error) || "Import failed";
+        if (el.bulkImportStatus) {
+          el.bulkImportStatus.style.color = "var(--danger)";
+          el.bulkImportStatus.textContent = `Error: ${errMsg}`;
+        }
+        el.btnBulkImportSubmit.disabled = false;
+      }
+    } catch (err) {
+      if (el.bulkImportStatus) {
+        el.bulkImportStatus.style.color = "var(--danger)";
+        el.bulkImportStatus.textContent = `Network error: ${err.message}`;
+      }
+      el.btnBulkImportSubmit.disabled = false;
+    }
+  });
+}
+
+// --- Command Palette Controller (Cmd+K / Ctrl+K) ---
+const APP_COMMANDS = [
+  {
+    id: "new-note",
+    icon: "📝",
+    title: "New Notebook",
+    desc: "Create a blank note or import Markdown",
+    action: () => { if (el.btnNewNotebook) el.btnNewNotebook.click(); },
+  },
+  {
+    id: "new-folder",
+    icon: "📁",
+    title: "New Folder",
+    desc: "Create a new folder in current location",
+    action: () => { if (el.btnNewFolder) el.btnNewFolder.click(); },
+  },
+  {
+    id: "bulk-import",
+    icon: "📥",
+    title: "Bulk Import Files",
+    desc: "Upload multiple PDF, EPUB, or Markdown files",
+    action: () => openBulkImportModal(),
+  },
+  {
+    id: "quick-capture",
+    icon: "⚡",
+    title: "Quick Capture",
+    desc: "Instantly capture an action item or note",
+    action: () => { if (el.btnQuickCapture) el.btnQuickCapture.click(); },
+  },
+  {
+    id: "sync-now",
+    icon: "🔄",
+    title: "Sync with Cloud",
+    desc: "Trigger live background synchronization",
+    action: () => { if (el.btnSyncNow) el.btnSyncNow.click(); },
+  },
+  {
+    id: "open-tasks",
+    icon: "📋",
+    title: "Open Tasks",
+    desc: "View consolidated action items across notebooks",
+    action: () => { if (el.btnTasksToggle) el.btnTasksToggle.click(); },
+  },
+  {
+    id: "settings",
+    icon: "⚙️",
+    title: "Settings & AI OCR",
+    desc: "Configure Vision providers and MCP integrations",
+    action: () => { if (el.btnSettingsToggle) el.btnSettingsToggle.click(); },
+  },
+  {
+    id: "toggle-theme",
+    icon: "🌓",
+    title: "Toggle Theme (Dark / Light / Auto)",
+    desc: "Switch between dark, light, or auto system theme",
+    action: () => { if (el.btnThemeToggle) el.btnThemeToggle.click(); },
+  },
+  {
+    id: "optimize-pro",
+    icon: "⚡",
+    title: "Optimize for Paper Pro",
+    desc: "Convert a comic or heavy document for Paper Pro",
+    action: () => { if (el.btnOpenConverter) el.btnOpenConverter.click(); },
+  },
+  {
+    id: "view-grid",
+    icon: "⊞",
+    title: "Grid View",
+    desc: "Switch library display to grid view",
+    action: () => setViewMode("grid"),
+  },
+  {
+    id: "view-list",
+    icon: "☰",
+    title: "List View",
+    desc: "Switch library display to compact list view",
+    action: () => setViewMode("list"),
+  },
+];
+
+let commandPaletteItems = [];
+let commandPaletteSelectedIndex = 0;
+
+function openCommandPalette() {
+  if (!el.commandPaletteModal) return;
+  el.commandPaletteModal.style.display = "flex";
+  if (el.commandPaletteInput) {
+    el.commandPaletteInput.value = "";
+    el.commandPaletteInput.focus();
+  }
+  renderCommandPaletteResults("");
+}
+
+function closeCommandPalette() {
+  if (!el.commandPaletteModal) return;
+  el.commandPaletteModal.style.display = "none";
+}
+
+function renderCommandPaletteResults(query) {
+  if (!el.commandPaletteResults) return;
+  const q = (query || "").trim().toLowerCase();
+
+  const matchedCommands = APP_COMMANDS.filter((cmd) =>
+    !q || cmd.title.toLowerCase().includes(q) || cmd.desc.toLowerCase().includes(q)
+  );
+
+  const allDocs = state.allDocs || [];
+  const matchedDocs = q ? allDocs.filter((d) =>
+    (d.visible_name || "").toLowerCase().includes(q)
+  ).slice(0, 15) : allDocs.slice(0, 8);
+
+  commandPaletteItems = [];
+  let html = "";
+
+  if (matchedCommands.length > 0) {
+    html += `<div class="command-section-title">Commands & Actions</div>`;
+    matchedCommands.forEach((cmd) => {
+      const idx = commandPaletteItems.length;
+      commandPaletteItems.push({ type: "command", data: cmd });
+      html += `
+        <div class="command-item ${idx === 0 ? 'selected' : ''}" data-idx="${idx}">
+          <div class="command-item-left">
+            <span style="font-size: 1.1rem;">${cmd.icon}</span>
+            <div style="display: flex; flex-direction: column;">
+              <span class="command-item-title">${escapeHtml(cmd.title)}</span>
+              <span class="command-item-desc">${escapeHtml(cmd.desc)}</span>
+            </div>
+          </div>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">Action</span>
+        </div>
+      `;
+    });
+  }
+
+  if (matchedDocs.length > 0) {
+    html += `<div class="command-section-title">Documents & Notebooks</div>`;
+    matchedDocs.forEach((doc) => {
+      const idx = commandPaletteItems.length;
+      commandPaletteItems.push({ type: "doc", data: doc });
+      const isFolder = doc.type === "CollectionType";
+      const icon = isFolder ? "📁" : (doc.file_type === "pdf" ? "📄" : (doc.file_type === "epub" ? "📚" : "📓"));
+      const meta = isFolder ? "Folder" : `${doc.page_count || 1} pages`;
+      html += `
+        <div class="command-item ${idx === 0 && matchedCommands.length === 0 ? 'selected' : ''}" data-idx="${idx}">
+          <div class="command-item-left">
+            <span style="font-size: 1.1rem;">${icon}</span>
+            <div style="display: flex; flex-direction: column;">
+              <span class="command-item-title">${escapeHtml(doc.visible_name)}</span>
+              <span class="command-item-desc">${meta}</span>
+            </div>
+          </div>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">${isFolder ? 'Open Folder' : 'Open Reader'}</span>
+        </div>
+      `;
+    });
+  }
+
+  if (commandPaletteItems.length === 0) {
+    html = `<div style="padding: 2rem 1rem; text-align: center; color: var(--text-muted); font-size: 0.88rem;">No matching commands or files found</div>`;
+  }
+
+  el.commandPaletteResults.innerHTML = html;
+  commandPaletteSelectedIndex = 0;
+
+  el.commandPaletteResults.querySelectorAll(".command-item").forEach((itemEl) => {
+    itemEl.addEventListener("click", () => {
+      const idx = parseInt(itemEl.getAttribute("data-idx"), 10);
+      executeCommandPaletteItem(idx);
+    });
+  });
+}
+
+function updateCommandPaletteHighlight() {
+  if (!el.commandPaletteResults) return;
+  const items = el.commandPaletteResults.querySelectorAll(".command-item");
+  items.forEach((itemEl, idx) => {
+    itemEl.classList.toggle("selected", idx === commandPaletteSelectedIndex);
+    if (idx === commandPaletteSelectedIndex) {
+      itemEl.scrollIntoView({ block: "nearest" });
+    }
+  });
+}
+
+function executeCommandPaletteItem(idx) {
+  const item = commandPaletteItems[idx];
+  if (!item) return;
+  closeCommandPalette();
+  if (item.type === "command") {
+    item.data.action();
+  } else if (item.type === "doc") {
+    const doc = item.data;
+    if (doc.type === "CollectionType") {
+      state.folderPath.push({ id: doc.id, name: doc.visible_name });
+      navigateToFolder(doc.id);
+    } else {
+      openReader(doc.id);
+    }
+  }
+}
+
+// Global keyboard shortcut
+window.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    if (el.commandPaletteModal && el.commandPaletteModal.style.display === "flex") {
+      closeCommandPalette();
+    } else {
+      openCommandPalette();
+    }
+    return;
+  }
+
+  if (el.commandPaletteModal && el.commandPaletteModal.style.display === "flex") {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeCommandPalette();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (commandPaletteItems.length > 0) {
+        commandPaletteSelectedIndex = (commandPaletteSelectedIndex + 1) % commandPaletteItems.length;
+        updateCommandPaletteHighlight();
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (commandPaletteItems.length > 0) {
+        commandPaletteSelectedIndex = (commandPaletteSelectedIndex - 1 + commandPaletteItems.length) % commandPaletteItems.length;
+        updateCommandPaletteHighlight();
+      }
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      executeCommandPaletteItem(commandPaletteSelectedIndex);
+    }
+  }
+});
+
+if (el.commandPaletteInput) {
+  el.commandPaletteInput.addEventListener("input", (e) => {
+    renderCommandPaletteResults(e.target.value);
+  });
+}
+
+if (el.commandPaletteModal) {
+  el.commandPaletteModal.addEventListener("click", (e) => {
+    if (e.target === el.commandPaletteModal) closeCommandPalette();
+  });
+}
+
+// --- MCP Copy Buttons ---
+if (el.btnCopyMcpConfig) {
+  el.btnCopyMcpConfig.addEventListener("click", () => {
+    const snippet = document.getElementById("mcp-config-snippet").innerText;
+    navigator.clipboard.writeText(snippet).then(() => {
+      el.btnCopyMcpConfig.textContent = "✓ Copied!";
+      setTimeout(() => { el.btnCopyMcpConfig.textContent = "📋 Copy Config"; }, 1500);
+    });
+  });
+}
+
+if (el.btnCopyMcpUrl) {
+  el.btnCopyMcpUrl.addEventListener("click", () => {
+    const url = document.getElementById("mcp-http-url").innerText;
+    navigator.clipboard.writeText(url).then(() => {
+      el.btnCopyMcpUrl.textContent = "✓ Copied!";
+      setTimeout(() => { el.btnCopyMcpUrl.textContent = "📋 Copy URL"; }, 1500);
+    });
+  });
+}
+
 // --- Initialization ---
+setViewMode(state.viewMode);
 fetchStatus();
 fetchTasks();
 fetchDocuments();

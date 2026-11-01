@@ -174,6 +174,40 @@ Never lose a fleeting thought or meeting to-do:
 
 ---
 
+## Creation Split Button & Multi-File Bulk Import
+
+Quickly create or upload content into your library:
+- **Consolidated Creation Split Button:** Click **New Note** directly to start typing, or open the split arrow dropdown for **New Folder** and **Bulk Import Files**.
+- **Multi-File Bulk Import:** Upload batches of PDF, EPUB, CBZ, and Markdown documents at once.
+- **Hardware Optimization Target:** Choose your destination device profile during bulk import:
+  - **reMarkable Paper Pro:** 2160×1620, Color Canvas canvas with 229 PPI resolution.
+  - **reMarkable 2:** 1872×1404, Monochrome high-contrast grayscale.
+  - **reMarkable 1:** 1872×1404, Monochrome.
+  - **No conversion:** Preserves original file untouched.
+- **Target Destination:** Choose any root or nested folder for the imported files.
+
+---
+
+## Universal Command Palette (Cmd+K / Ctrl+K)
+
+Navigate and operate your companion with keyboard speed:
+- Press <kbd>Cmd</kbd>+<kbd>K</kbd> (macOS) or <kbd>Ctrl</kbd>+<kbd>K</kbd> (Linux/Windows) anywhere in the application.
+- **Instant Actions:** Trigger New Note, New Folder, Bulk Import, Quick Capture, Task Drawer, Sync Logs, Dark/Light Theme toggle, or Settings.
+- **Real-Time Library Search:** Type any file or folder name to jump straight to it.
+- **Keyboard Navigation:** Navigate results with <kbd>↑</kbd> and <kbd>↓</kbd>, hit <kbd>Enter</kbd> to execute, or press <kbd>Esc</kbd> to dismiss.
+
+---
+
+## Grid & List Views, Sorting and Folder Exports
+
+- **View Mode Switching:** Toggle between thumbnail **Grid View** (`[ ⊞ ]`) and dense **List View** (`[ ☰ ]`) from the main toolbar.
+- **List View Details:** View document type icons, titles, page counts, file sizes, last modified timestamps, and optimization badges in a clean responsive row layout.
+- **Heavy File Indicators:** Files larger than 30MB or 150 pages display a `⚡ Needs Optimization` badge.
+- **Folder ZIP Export:** Click the ellipsis `•••` on any folder (or tap on mobile) and select **Download Folder (ZIP)**. The companion recursively packages the folder and all subfolders into an archival ZIP archive in seconds.
+- **Document PDF Export:** Download annotated vector PDFs with handwritten strokes or original documents directly.
+
+---
+
 ## Blazing Fast Homepage Loading & Smart Thumbnail Caching
 
 - **Dedicated Lightweight Thumbnails:** Generates ultra-compact 320×426 PNG previews (~15–25 KB) instead of downloading multi-megabyte full-resolution SVGs or high-DPI PDF pages.
