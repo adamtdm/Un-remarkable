@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
-  <link rel="stylesheet" href="/style.css?v=20261101c">
+  <link rel="stylesheet" href="/style.css?v=20261101d">
 </head>
 <body>
   <!-- Header -->
@@ -212,6 +212,12 @@
       </div>
 
       <div class="reader-actions-desktop" style="display: flex; align-items: center; gap: 0.5rem;">
+        <button id="btn-reader-fullscreen" class="btn" title="Toggle Fullscreen Reading Mode (F)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+          </svg>
+          <span id="btn-fullscreen-label">Fullscreen</span>
+        </button>
         <button id="btn-reader-type-toggle" class="btn btn-sm btn-primary" title="Open distraction-free typed text editor">⌨ Type</button>
         <button id="btn-reader-exclude-toggle" class="btn btn-sm" title="Exclude/Include in search index">🚫 Exclude</button>
         <button id="btn-reader-convert" class="btn btn-sm btn-accent" title="Convert or optimize this document for Paper Pro">⚡ Optimize</button>
@@ -220,6 +226,11 @@
         <button id="btn-export-pdf" class="btn" title="Export annotated PDF">Export PDF</button>
       </div>
       <div class="reader-actions-mobile" style="display: none;">
+        <button id="btn-reader-fullscreen-mobile" class="btn btn-icon" title="Toggle Fullscreen" aria-label="Toggle Fullscreen">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+          </svg>
+        </button>
         <button id="btn-reader-type-mobile" class="btn btn-sm btn-primary" title="Type notes">⌨ Type</button>
         <button id="btn-reader-more-mobile" class="btn btn-icon" title="Reader options" aria-label="Reader options">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -231,7 +242,21 @@
       </div>
     </div>
 
+    <!-- Floating Fullscreen Exit Pill -->
+    <button id="btn-fullscreen-exit" class="btn-fullscreen-exit" title="Exit Fullscreen (Esc or F)" style="display: none;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
+      </svg>
+      <span>Exit Fullscreen</span>
+    </button>
+
     <div class="reader-content" id="reader-content">
+      <!-- Interactive tap/click zones in fullscreen -->
+      <div id="reader-click-zones" class="reader-click-zones" style="display: none;">
+        <div id="zone-prev" class="reader-zone reader-zone-prev" title="Previous Page"></div>
+        <div id="zone-center" class="reader-zone reader-zone-center" title="Toggle Controls"></div>
+        <div id="zone-next" class="reader-zone reader-zone-next" title="Next Page"></div>
+      </div>
       <div id="reader-canvas-wrapper">
         <!-- SVG will be loaded here -->
       </div>
@@ -611,6 +636,13 @@
         <h3 class="tray-doc-title">Reader Options</h3>
       </div>
       <div class="bottom-sheet-actions">
+        <button id="tray-reader-fullscreen" class="tray-action-btn">
+          <span class="tray-btn-icon">⛶</span>
+          <div class="tray-btn-text">
+            <strong id="tray-reader-fullscreen-label">Fullscreen Reading Mode</strong>
+            <span>Distraction-free reading without bars</span>
+          </div>
+        </button>
         <button id="tray-reader-dark-toggle" class="tray-action-btn">
           <span class="tray-btn-icon">🌓</span>
           <div class="tray-btn-text">
@@ -653,13 +685,13 @@
     </div>
   </div>
 
-  <script src="/app.js?v=20261101c"></script>
+  <script src="/app.js?v=20261101d"></script>
   <script>
     // Purge legacy service worker caches immediately
     if ("caches" in window) {
       caches.keys().then((keys) => {
         keys.forEach((key) => {
-          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261101c") {
+          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261101d") {
             caches.delete(key);
           }
         });
@@ -668,7 +700,7 @@
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js?v=20261101c").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=20261101d").then((reg) => {
           reg.update();
         }).catch(() => {});
       });

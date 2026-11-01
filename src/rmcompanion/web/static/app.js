@@ -15,6 +15,8 @@ const state = {
   converterPollInterval: null,
   currentSort: "modified-desc",
   currentTaskFilter: "open",
+  isFullscreen: false,
+  hudTimeout: null,
 };
 
 // 5-stop slider profiles
@@ -96,7 +98,14 @@ const el = {
   btnFitToggle: document.getElementById("btn-fit-toggle"),
   btnPageDarkToggle: document.getElementById("btn-page-dark-toggle"),
   btnExportPdf: document.getElementById("btn-export-pdf"),
+  btnReaderFullscreen: document.getElementById("btn-reader-fullscreen"),
+  btnFullscreenLabel: document.getElementById("btn-fullscreen-label"),
+  btnFullscreenExit: document.getElementById("btn-fullscreen-exit"),
   readerCanvasWrapper: document.getElementById("reader-canvas-wrapper"),
+  readerClickZones: document.getElementById("reader-click-zones"),
+  zonePrev: document.getElementById("zone-prev"),
+  zoneCenter: document.getElementById("zone-center"),
+  zoneNext: document.getElementById("zone-next"),
 
   // Converter elements
   converterModal: document.getElementById("converter-modal"),
@@ -207,7 +216,10 @@ const el = {
   // Mobile Reader Options elements
   btnReaderTypeMobile: document.getElementById("btn-reader-type-mobile"),
   btnReaderMoreMobile: document.getElementById("btn-reader-more-mobile"),
+  btnReaderFullscreenMobile: document.getElementById("btn-reader-fullscreen-mobile"),
   readerOptionsTray: document.getElementById("reader-options-tray"),
+  trayReaderFullscreen: document.getElementById("tray-reader-fullscreen"),
+  trayReaderFullscreenLabel: document.getElementById("tray-reader-fullscreen-label"),
   trayReaderDarkToggle: document.getElementById("tray-reader-dark-toggle"),
   trayReaderDarkLabel: document.getElementById("tray-reader-dark-label"),
   trayReaderFitToggle: document.getElementById("tray-reader-fit-toggle"),
@@ -1312,6 +1324,9 @@ el.btnReaderConvert.addEventListener("click", () => {
 });
 
 function closeReader() {
+  if (state.isFullscreen) {
+    toggleFullscreenMode(false);
+  }
   el.readerView.style.display = "none";
   if (el.readerTypingPane) el.readerTypingPane.style.display = "none";
   if (el.btnReaderTypeToggle) {
@@ -1402,6 +1417,134 @@ el.btnExportPdf.addEventListener("click", () => {
   if (!state.currentDoc) return;
   const url = `/api/documents/${state.currentDoc.id}/export/pdf?dark=${state.pageDarkMode}`;
   window.open(url, "_blank");
+});
+
+// --- Fullscreen Reading Mode Controller ---
+function toggleFullscreenMode(forceState = null) {
+  const next = forceState !== null ? forceState : !state.isFullscreen;
+  state.isFullscreen = next;
+
+  if (state.isFullscreen) {
+    el.readerView.classList.add("is-fullscreen", "show-hud");
+    if (el.btnFullscreenExit) el.btnFullscreenExit.style.display = "inline-flex";
+    if (el.readerClickZones) el.readerClickZones.style.display = "flex";
+
+    try {
+      if (!document.fullscreenElement && el.readerView.requestFullscreen) {
+        el.readerView.requestFullscreen().catch(() => {});
+      }
+    } catch (_) {}
+
+    scheduleHudHide();
+  } else {
+    el.readerView.classList.remove("is-fullscreen", "show-hud");
+    if (el.btnFullscreenExit) el.btnFullscreenExit.style.display = "none";
+    if (el.readerClickZones) el.readerClickZones.style.display = "none";
+
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    } catch (_) {}
+
+    if (state.hudTimeout) {
+      clearTimeout(state.hudTimeout);
+      state.hudTimeout = null;
+    }
+  }
+
+  if (el.btnFullscreenLabel) {
+    el.btnFullscreenLabel.textContent = state.isFullscreen ? "Exit Fullscreen" : "Fullscreen";
+  }
+  if (el.trayReaderFullscreenLabel) {
+    el.trayReaderFullscreenLabel.textContent = state.isFullscreen ? "Exit Fullscreen" : "Fullscreen Reading Mode";
+  }
+}
+
+function showHud() {
+  if (!state.isFullscreen) return;
+  el.readerView.classList.add("show-hud");
+  scheduleHudHide();
+}
+
+function scheduleHudHide() {
+  if (state.hudTimeout) clearTimeout(state.hudTimeout);
+  state.hudTimeout = setTimeout(() => {
+    if (state.isFullscreen && el.readerView) {
+      el.readerView.classList.remove("show-hud");
+    }
+  }, 2500);
+}
+
+function toggleHud() {
+  if (!state.isFullscreen) return;
+  if (el.readerView.classList.contains("show-hud")) {
+    el.readerView.classList.remove("show-hud");
+    if (state.hudTimeout) clearTimeout(state.hudTimeout);
+  } else {
+    showHud();
+  }
+}
+
+if (el.btnReaderFullscreen) {
+  el.btnReaderFullscreen.addEventListener("click", () => toggleFullscreenMode());
+}
+
+if (el.btnReaderFullscreenMobile) {
+  el.btnReaderFullscreenMobile.addEventListener("click", () => toggleFullscreenMode());
+}
+
+if (el.btnFullscreenExit) {
+  el.btnFullscreenExit.addEventListener("click", () => toggleFullscreenMode(false));
+}
+
+if (el.trayReaderFullscreen) {
+  el.trayReaderFullscreen.addEventListener("click", () => {
+    closeReaderOptionsTray();
+    toggleFullscreenMode();
+  });
+}
+
+if (el.readerView) {
+  el.readerView.addEventListener("mousemove", () => {
+    if (state.isFullscreen) {
+      showHud();
+    }
+  });
+}
+
+if (el.zonePrev) {
+  el.zonePrev.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (state.currentPageIdx > 0) {
+      state.currentPageIdx--;
+      loadCurrentPage();
+    }
+  });
+}
+
+if (el.zoneNext) {
+  el.zoneNext.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const pages = (state.currentDoc?.pages || []).filter((p) => !p.deleted);
+    if (state.currentPageIdx < pages.length - 1) {
+      state.currentPageIdx++;
+      loadCurrentPage();
+    }
+  });
+}
+
+if (el.zoneCenter) {
+  el.zoneCenter.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleHud();
+  });
+}
+
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && state.isFullscreen) {
+    toggleFullscreenMode(false);
+  }
 });
 
 // --- Converter Modal ---
@@ -1688,7 +1831,16 @@ window.addEventListener("keydown", (e) => {
 
   if (el.readerView.style.display === "flex") {
     if (e.key === "Escape") {
-      closeReader();
+      if (state.isFullscreen) {
+        toggleFullscreenMode(false);
+      } else {
+        closeReader();
+      }
+    } else if (e.key === "f" || e.key === "F") {
+      if (e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA") {
+        e.preventDefault();
+        toggleFullscreenMode();
+      }
     } else if (e.key === "ArrowLeft" || e.key === "k" || e.key === "p") {
       el.btnPagePrev.click();
     } else if (e.key === "ArrowRight" || e.key === "j" || e.key === "n" || e.key === " ") {
