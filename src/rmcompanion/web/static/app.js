@@ -73,6 +73,7 @@ const el = {
   btnNewDropdownToggle: document.getElementById("btn-new-dropdown-toggle"),
   newItemDropdown: document.getElementById("new-item-dropdown"),
   menuNewNote: document.getElementById("menu-new-note"),
+  menuQuickCapture: document.getElementById("menu-quick-capture"),
   menuNewFolder: document.getElementById("menu-new-folder"),
   menuBulkImport: document.getElementById("menu-bulk-import"),
 
@@ -112,6 +113,11 @@ const el = {
   breadcrumbs: document.getElementById("breadcrumbs"),
   docGrid: document.getElementById("doc-grid"),
   filterTabs: document.querySelectorAll(".filter-tab"),
+  folderOptionsContainer: document.getElementById("folder-options-container"),
+  btnFolderOptions: document.getElementById("btn-folder-options"),
+  folderOptionsMenu: document.getElementById("folder-options-menu"),
+  menuFolderExclude: document.getElementById("menu-folder-exclude"),
+  menuFolderNewSubfolder: document.getElementById("menu-folder-new-subfolder"),
   btnFolderExclude: document.getElementById("btn-folder-exclude"),
   folderExcludeLabel: document.getElementById("folder-exclude-label"),
   folderExcludeIcon: document.getElementById("folder-exclude-icon"),
@@ -141,6 +147,9 @@ const el = {
   btnExportPdf: document.getElementById("btn-export-pdf"),
   btnReaderFullscreen: document.getElementById("btn-reader-fullscreen"),
   btnFullscreenLabel: document.getElementById("btn-fullscreen-label"),
+  btnReaderMoreDesktop: document.getElementById("btn-reader-more-desktop"),
+  readerMoreMenuDesktop: document.getElementById("reader-more-menu-desktop"),
+  btnReaderOpenTab: document.getElementById("btn-reader-open-tab"),
   readerCanvasWrapper: document.getElementById("reader-canvas-wrapper"),
   readerClickZones: document.getElementById("reader-click-zones"),
   zonePrev: document.getElementById("zone-prev"),
@@ -149,6 +158,7 @@ const el = {
 
   // Converter elements
   converterModal: document.getElementById("converter-modal"),
+  converterDevice: document.getElementById("converter-device"),
   btnConverterClose: document.getElementById("btn-converter-close"),
   btnConverterCancel: document.getElementById("btn-converter-cancel"),
   btnConverterStart: document.getElementById("btn-converter-start"),
@@ -199,6 +209,7 @@ const el = {
   mcpHttpUrl: document.getElementById("mcp-http-url"),
   btnSettingsSyncTrigger: document.getElementById("btn-settings-sync-trigger"),
   btnSettingsSyncDrawerToggle: document.getElementById("btn-settings-sync-drawer-toggle"),
+  btnSettingsLogout: document.getElementById("btn-settings-logout"),
   btnSettingsScanTasks: document.getElementById("btn-settings-scan-tasks"),
   settingsCloudStatusTitle: document.getElementById("settings-cloud-status-title"),
   settingsCloudStatusDesc: document.getElementById("settings-cloud-status-desc"),
@@ -603,47 +614,60 @@ el.brandHome.addEventListener("click", (e) => {
   navigateToFolder("", 0);
 });
 
-// --- Folder Exclusion Toolbar Button ---
+// --- Folder Options & Exclusion Controller ---
 async function updateFolderExclusionButton() {
   if (!state.currentFolder) {
-    el.btnFolderExclude.style.display = "none";
+    if (el.folderOptionsContainer) el.folderOptionsContainer.style.display = "none";
+    if (el.btnFolderExclude) el.btnFolderExclude.style.display = "none";
     return;
   }
 
+  if (el.folderOptionsContainer) el.folderOptionsContainer.style.display = "inline-block";
+
   try {
     const res = await fetch(`/api/documents/${state.currentFolder}`);
-    if (!res.ok) {
-      el.btnFolderExclude.style.display = "none";
-      return;
-    }
+    if (!res.ok) return;
     const folder = await res.json();
     const isExcluded = folder.exclude_from_search || folder.effective_exclude;
 
-    el.btnFolderExclude.style.display = "inline-flex";
-    if (isExcluded) {
-      el.folderExcludeIcon.textContent = "✓";
-      el.folderExcludeLabel.textContent = "Folder Excluded (Click to Include)";
-      el.btnFolderExclude.classList.add("btn-accent");
-    } else {
-      el.folderExcludeIcon.textContent = "🚫";
-      el.folderExcludeLabel.textContent = "Exclude Folder from Search";
-      el.btnFolderExclude.classList.remove("btn-accent");
+    if (el.menuFolderExclude) {
+      el.menuFolderExclude.textContent = isExcluded
+        ? "✓ Include Folder in Search & Tasks"
+        : "🚫 Exclude Folder from Search & Tasks";
     }
   } catch (e) {
-    el.btnFolderExclude.style.display = "none";
+    console.debug("Failed to check folder state", e);
   }
 }
 
-el.btnFolderExclude.addEventListener("click", async () => {
-  if (!state.currentFolder) return;
-  try {
-    await fetch(`/api/documents/${state.currentFolder}/indexing-toggle`, { method: "POST" });
-    await updateFolderExclusionButton();
-    await fetchDocuments();
-  } catch (e) {
-    console.error("Failed to toggle folder exclusion", e);
-  }
-});
+if (el.btnFolderOptions) {
+  el.btnFolderOptions.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isOpen = el.folderOptionsMenu.style.display === "flex" || el.folderOptionsMenu.style.display === "block";
+    el.folderOptionsMenu.style.display = isOpen ? "none" : "flex";
+  });
+}
+
+if (el.menuFolderExclude) {
+  el.menuFolderExclude.addEventListener("click", async () => {
+    if (!state.currentFolder) return;
+    if (el.folderOptionsMenu) el.folderOptionsMenu.style.display = "none";
+    try {
+      await fetch(`/api/documents/${state.currentFolder}/indexing-toggle`, { method: "POST" });
+      await updateFolderExclusionButton();
+      await fetchDocuments();
+    } catch (e) {
+      console.error("Failed to toggle folder exclusion", e);
+    }
+  });
+}
+
+if (el.menuFolderNewSubfolder) {
+  el.menuFolderNewSubfolder.addEventListener("click", () => {
+    if (el.folderOptionsMenu) el.folderOptionsMenu.style.display = "none";
+    if (el.btnNewFolder) el.btnNewFolder.click();
+  });
+}
 
 function formatModifiedDate(ts) {
   if (!ts) return "";
@@ -753,7 +777,8 @@ function renderDocumentGrid(docs) {
     const isExcluded = Boolean(doc.exclude_from_search || doc.effective_exclude);
     const badgeText = isFolder ? "Folder" : (doc.file_type || "Note").toUpperCase();
     const pageText = isFolder ? "" : `${doc.page_count} ${doc.page_count === 1 ? 'page' : 'pages'}`;
-    const optimizeBadge = doc.needs_optimization ? `<span class="doc-badge doc-badge-optimize" title="Large file (>30MB or >150 pages). Optimize for Paper Pro.">⚡ Heavy File</span>` : "";
+    const weightSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7a3 3 0 0 1 6 0"></path><path d="M6 10h12l1.5 10a2 2 0 0 1-2 2H6.5a2 2 0 0 1-2-2L6 10z"></path><line x1="12" y1="13" x2="12" y2="16"></line><circle cx="12" cy="18.5" r="0.75" fill="currentColor"></circle></svg>`;
+    const optimizeBadge = doc.needs_optimization ? `<span class="doc-badge doc-badge-optimize" title="Heavy file (>30MB or >150 pages). Optimize for Paper Pro.">${weightSvg}</span>` : "";
 
     const element = document.createElement("div");
 
@@ -789,10 +814,16 @@ function renderDocumentGrid(docs) {
 
     if (state.viewMode === "list") {
       element.className = "doc-list-item";
-      let listIcon = "📓";
-      if (isFolder) listIcon = "📁";
-      else if (doc.file_type === "pdf") listIcon = "📄";
-      else if (doc.file_type === "epub") listIcon = "📚";
+      let listIcon = "";
+      if (isFolder) {
+        listIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`;
+      } else if (doc.file_type === "pdf") {
+        listIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="15" x2="15" y2="15"></line></svg>`;
+      } else if (doc.file_type === "epub") {
+        listIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>`;
+      } else {
+        listIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><line x1="8" y1="7" x2="16" y2="7"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>`;
+      }
 
       element.innerHTML = `
         <div class="doc-list-icon">${listIcon}</div>
@@ -817,7 +848,7 @@ function renderDocumentGrid(docs) {
           </svg>
         `;
       } else {
-        const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}&dark=${state.appTheme === "dark"}`;
+        const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}`;
         iconHtml = `<img src="${thumbUrl}" alt="${escapeHtml(doc.visible_name)} preview" loading="lazy" width="320" height="426">`;
       }
 
@@ -1525,7 +1556,41 @@ el.filterTabs.forEach((tab) => {
   });
 });
 
-// --- Reader View ---
+// --- Reader View & Page Preloading ---
+const pageSvgCache = new Map();
+
+function preloadAdjacentPages(docId, currentPageIdx, totalPages, darkMode) {
+  if (!docId || totalPages <= 1) return;
+  const targets = [
+    currentPageIdx + 1,
+    currentPageIdx + 2,
+    currentPageIdx + 3,
+    currentPageIdx + 4,
+    currentPageIdx - 1,
+  ];
+  for (const pIdx of targets) {
+    if (pIdx >= 0 && pIdx < totalPages) {
+      const key = `${docId}_${pIdx}_${darkMode}`;
+      if (!pageSvgCache.has(key)) {
+        fetch(`/api/documents/${docId}/pages/${pIdx}/svg?dark=${darkMode}`)
+          .then((res) => (res.ok ? res.text() : null))
+          .then((svg) => {
+            if (svg) pageSvgCache.set(key, svg);
+          })
+          .catch(() => {});
+      }
+    }
+  }
+}
+
+function renderSvgContent(svgText) {
+  el.readerCanvasWrapper.innerHTML = svgText;
+  const svgEl = el.readerCanvasWrapper.querySelector("svg");
+  if (svgEl) {
+    svgEl.classList.add("reader-canvas");
+  }
+}
+
 async function openReader(docId, initialPageIdx = 0) {
   try {
     const res = await fetch(`/api/documents/${docId}`);
@@ -1537,6 +1602,9 @@ async function openReader(docId, initialPageIdx = 0) {
     el.readerTitle.textContent = doc.visible_name;
 
     updateReaderExclusionState();
+    if (el.btnReaderOpenTab) {
+      el.btnReaderOpenTab.href = `/?read=${docId}&page=${initialPageIdx}`;
+    }
     el.readerView.style.display = "flex";
     updatePageDarkToggle();
     loadCurrentPage();
@@ -1556,17 +1624,30 @@ async function openReader(docId, initialPageIdx = 0) {
 function updateReaderExclusionState() {
   if (!state.currentDoc) return;
   const isExcluded = state.currentDoc.exclude_from_search || state.currentDoc.effective_exclude;
-  if (isExcluded) {
-    el.readerExcludeBadge.style.display = "inline-block";
-    el.btnReaderExcludeToggle.textContent = "✓ Include in Search";
-  } else {
+  if (el.readerExcludeBadge) {
     el.readerExcludeBadge.style.display = "none";
-    el.btnReaderExcludeToggle.textContent = "🚫 Exclude from Search";
   }
+  if (el.btnReaderExcludeToggle) {
+    el.btnReaderExcludeToggle.textContent = isExcluded ? "✓ Include in Search & Tasks" : "🚫 Exclude from Search & Tasks";
+  }
+  if (el.trayReaderExcludeLabel) {
+    el.trayReaderExcludeLabel.textContent = isExcluded ? "Include in Search & Tasks" : "Exclude from Search & Tasks";
+  }
+}
+
+if (el.btnReaderMoreDesktop) {
+  el.btnReaderMoreDesktop.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (el.readerMoreMenuDesktop) {
+      const isOpen = el.readerMoreMenuDesktop.style.display === "flex" || el.readerMoreMenuDesktop.style.display === "block";
+      el.readerMoreMenuDesktop.style.display = isOpen ? "none" : "flex";
+    }
+  });
 }
 
 el.btnReaderExcludeToggle.addEventListener("click", async () => {
   if (!state.currentDoc) return;
+  if (el.readerMoreMenuDesktop) el.readerMoreMenuDesktop.style.display = "none";
   try {
     const res = await fetch(`/api/documents/${state.currentDoc.id}/indexing-toggle`, { method: "POST" });
     if (res.ok) {
@@ -1582,6 +1663,7 @@ el.btnReaderExcludeToggle.addEventListener("click", async () => {
 
 el.btnReaderConvert.addEventListener("click", () => {
   if (!state.currentDoc) return;
+  if (el.readerMoreMenuDesktop) el.readerMoreMenuDesktop.style.display = "none";
   openConverterModal(state.currentDoc.id, state.currentDoc.visible_name);
 });
 
@@ -1589,6 +1671,7 @@ function closeReader() {
   if (state.isFullscreen) {
     toggleFullscreenMode(false);
   }
+  if (el.readerMoreMenuDesktop) el.readerMoreMenuDesktop.style.display = "none";
   el.readerView.style.display = "none";
   if (el.readerTypingPane) el.readerTypingPane.style.display = "none";
   if (el.btnReaderTypeToggle) {
@@ -1628,6 +1711,10 @@ async function loadCurrentPage() {
     flashPageIndicator();
   }
 
+  if (el.btnReaderOpenTab) {
+    el.btnReaderOpenTab.href = `/?read=${state.currentDoc.id}&page=${pageIdx}`;
+  }
+
   try {
     const url = new URL(window.location.href);
     if (url.searchParams.get("read") === state.currentDoc.id) {
@@ -1637,9 +1724,20 @@ async function loadCurrentPage() {
     }
   } catch (_) {}
 
-  el.readerCanvasWrapper.innerHTML = `
-    <div style="color: var(--text-muted); padding: 3rem;">Loading page...</div>
-  `;
+  const cacheKey = `${state.currentDoc.id}_${pageIdx}_${state.pageDarkMode}`;
+  if (pageSvgCache.has(cacheKey)) {
+    renderSvgContent(pageSvgCache.get(cacheKey));
+    preloadAdjacentPages(state.currentDoc.id, pageIdx, totalPages, state.pageDarkMode);
+    return;
+  }
+
+  // Pre-load / loading indicator
+  const existingSvg = el.readerCanvasWrapper.querySelector("svg");
+  if (!existingSvg) {
+    el.readerCanvasWrapper.innerHTML = `
+      <div style="color: var(--text-muted); padding: 3rem;">Loading page...</div>
+    `;
+  }
 
   try {
     const res = await fetch(
@@ -1647,12 +1745,9 @@ async function loadCurrentPage() {
     );
     if (!res.ok) throw new Error("Failed to render page");
     const svgText = await res.text();
-
-    el.readerCanvasWrapper.innerHTML = svgText;
-    const svgEl = el.readerCanvasWrapper.querySelector("svg");
-    if (svgEl) {
-      svgEl.classList.add("reader-canvas");
-    }
+    pageSvgCache.set(cacheKey, svgText);
+    renderSvgContent(svgText);
+    preloadAdjacentPages(state.currentDoc.id, pageIdx, totalPages, state.pageDarkMode);
   } catch (e) {
     el.readerCanvasWrapper.innerHTML = `
       <div style="color: var(--danger); padding: 2rem;">Error loading page: ${e.message}</div>
@@ -1908,6 +2003,7 @@ el.btnConverterStart.addEventListener("click", async () => {
   const qualityStop = parseInt(el.qualitySlider.value, 10);
   const splitSpreads = el.chkSplitSpreads.checked;
   const mangaMode = el.chkMangaMode.checked;
+  const device = el.converterDevice ? el.converterDevice.value : "paper_pro";
   const docId = el.converterDocId.value;
   const uploadedFile = el.converterFileInput.files[0];
 
@@ -1933,6 +2029,7 @@ el.btnConverterStart.addEventListener("click", async () => {
           quality_stop: qualityStop,
           split_spreads: splitSpreads,
           manga_mode: mangaMode,
+          device: device,
         }),
       });
       if (!res.ok) {
@@ -1949,6 +2046,7 @@ el.btnConverterStart.addEventListener("click", async () => {
       formData.append("quality_stop", qualityStop);
       formData.append("split_spreads", splitSpreads);
       formData.append("manga_mode", mangaMode);
+      formData.append("device", device);
 
       const res = await fetch("/api/converter/upload", {
         method: "POST",
@@ -2391,6 +2489,31 @@ if (el.btnSettingsSyncDrawerToggle) {
   });
 }
 
+if (el.btnSettingsLogout) {
+  el.btnSettingsLogout.addEventListener("click", async () => {
+    if (!confirm("Are you sure you want to log out and unlink your reMarkable tablet? Local cached files will remain, but cloud syncing will pause until reconnected.")) {
+      return;
+    }
+    el.btnSettingsLogout.disabled = true;
+    el.btnSettingsLogout.textContent = "Unlinking...";
+    try {
+      const res = await fetch("/api/auth/logout", { method: "POST" });
+      if (res.ok) {
+        alert("Tablet successfully unlinked from reMarkable Cloud.");
+        await fetchStatus();
+        await updateSettingsSystemStats();
+      } else {
+        alert("Failed to log out");
+      }
+    } catch (e) {
+      alert(`Error: ${e.message}`);
+    } finally {
+      el.btnSettingsLogout.disabled = false;
+      el.btnSettingsLogout.textContent = "Log Out / Unlink Tablet";
+    }
+  });
+}
+
 if (el.btnSettingsScanTasks) {
   el.btnSettingsScanTasks.addEventListener("click", async () => {
     el.btnSettingsScanTasks.disabled = true;
@@ -2472,15 +2595,71 @@ async function updateSettingsSystemStats() {
   }
 }
 
+let modelFetchDebounce = null;
+async function fetchAndPopulateVisionModels(currentSelected = null) {
+  if (!el.settingsModel) return;
+  const payload = {
+    provider: el.settingsProvider ? el.settingsProvider.value : "gemini",
+    api_key: el.settingsApiKey ? el.settingsApiKey.value.trim() : "",
+    base_url: el.settingsBaseUrl ? el.settingsBaseUrl.value.trim() : "",
+  };
+
+  try {
+    const res = await fetch("/api/settings/vision/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const models = data.models || [];
+    el.settingsModel.innerHTML = "";
+
+    const targetModel = currentSelected || el.settingsModel.value || data.default_model;
+
+    models.forEach((m) => {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.name;
+      if (m.id === targetModel || (!targetModel && m.is_recommended)) {
+        opt.selected = true;
+      }
+      el.settingsModel.appendChild(opt);
+    });
+
+    if (targetModel && !models.some((m) => m.id === targetModel)) {
+      const customOpt = document.createElement("option");
+      customOpt.value = targetModel;
+      customOpt.textContent = `${targetModel} (Current)`;
+      customOpt.selected = true;
+      el.settingsModel.appendChild(customOpt);
+    }
+  } catch (e) {
+    console.debug("Failed to query vision models", e);
+  }
+}
+
 if (el.settingsProvider) {
   el.settingsProvider.addEventListener("change", () => {
     const isOllama = el.settingsProvider.value === "openai";
     if (el.settingsBaseUrlGroup) {
       el.settingsBaseUrlGroup.style.display = isOllama ? "block" : "none";
     }
-    if (el.settingsModel && !el.settingsModel.value) {
-      el.settingsModel.value = isOllama ? "gpt-4o-mini" : "gemini-2.0-flash";
-    }
+    fetchAndPopulateVisionModels();
+  });
+}
+
+if (el.settingsApiKey) {
+  el.settingsApiKey.addEventListener("input", () => {
+    clearTimeout(modelFetchDebounce);
+    modelFetchDebounce = setTimeout(() => fetchAndPopulateVisionModels(), 600);
+  });
+}
+
+if (el.settingsBaseUrl) {
+  el.settingsBaseUrl.addEventListener("input", () => {
+    clearTimeout(modelFetchDebounce);
+    modelFetchDebounce = setTimeout(() => fetchAndPopulateVisionModels(), 600);
   });
 }
 
@@ -2491,11 +2670,12 @@ async function loadVisionSettings() {
     const conf = await res.json();
 
     if (el.settingsProvider) el.settingsProvider.value = conf.provider || "gemini";
-    if (el.settingsModel) el.settingsModel.value = conf.model || "gemini-2.0-flash";
     if (el.settingsBaseUrl) el.settingsBaseUrl.value = conf.base_url || "";
     if (el.settingsBaseUrlGroup) {
       el.settingsBaseUrlGroup.style.display = conf.provider === "openai" ? "block" : "none";
     }
+
+    await fetchAndPopulateVisionModels(conf.model || "gemini-2.0-flash");
 
     if (el.settingsKeyStatus) {
       if (conf.api_key_set) {
@@ -2964,12 +3144,25 @@ document.addEventListener("click", (e) => {
   if (el.newItemDropdown && !e.target.closest("#new-item-split-btn")) {
     el.newItemDropdown.style.display = "none";
   }
+  if (el.folderOptionsMenu && !e.target.closest("#folder-options-container")) {
+    el.folderOptionsMenu.style.display = "none";
+  }
+  if (el.readerMoreMenuDesktop && !e.target.closest(".reader-more-container")) {
+    el.readerMoreMenuDesktop.style.display = "none";
+  }
 });
 
 if (el.menuNewNote) {
   el.menuNewNote.addEventListener("click", () => {
     if (el.newItemDropdown) el.newItemDropdown.style.display = "none";
     if (el.btnNewNotebook) el.btnNewNotebook.click();
+  });
+}
+
+if (el.menuQuickCapture) {
+  el.menuQuickCapture.addEventListener("click", () => {
+    if (el.newItemDropdown) el.newItemDropdown.style.display = "none";
+    openQuickCapture();
   });
 }
 
@@ -3005,7 +3198,7 @@ async function openBulkImportModal() {
           const opt = document.createElement("option");
           opt.value = f.id;
           const prefix = f.depth > 0 ? "— ".repeat(f.depth) : "";
-          opt.textContent = `${prefix}${f.name}`;
+          opt.textContent = `${prefix}${f.visible_name || f.name || "Untitled Folder"}`;
           if (f.id === state.currentFolder) opt.selected = true;
           el.bulkImportFolder.appendChild(opt);
         });

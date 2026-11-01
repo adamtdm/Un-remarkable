@@ -40,8 +40,9 @@ class QualityProfile:
 # Paper Pro physical screen is 1620 x 2160 portrait (2160 x 1620 landscape) at 229 PPI
 DEVICE_SPECS: dict[str, dict[str, Any]] = {
     "paper_pro": {"name": "reMarkable Paper Pro (2160×1620, Color Canvas)", "max_w": 1620, "max_h": 2160, "grayscale": False},
+    "paper_pro_move": {"name": "reMarkable Paper Pro - Move / Landscape (1620×2160)", "max_w": 2160, "max_h": 1620, "grayscale": False},
     "rm2": {"name": "reMarkable 2 (1872×1404, Monochrome Canvas)", "max_w": 1404, "max_h": 1872, "grayscale": True},
-    "rm1": {"name": "reMarkable 1 (1872×1404, Monochrome)", "max_w": 1404, "max_h": 1872, "grayscale": True},
+    "rm1": {"name": "reMarkable 1 (1872×1404, Monochrome Canvas)", "max_w": 1404, "max_h": 1872, "grayscale": True},
 }
 
 QUALITY_PROFILES: dict[int, QualityProfile] = {

@@ -161,20 +161,21 @@ class Exporter:
         dark_mode: bool = False,
         max_width: int = 320,
     ) -> bytes:
-        """Render a fast, lightweight, disk-cached thumbnail PNG for a document card."""
+        """Render a fast, lightweight, disk-cached thumbnail PNG in authentic cover colors."""
         doc = self.db.get_document(doc_id)
         if not doc:
             raise FileNotFoundError(f"Document {doc_id} not found")
 
         doc_hash = doc.get("doc_hash", "")
-        cache_key = f"thumb_{doc_hash}_{max_width}_{'dark' if dark_mode else 'light'}"
+        # Thumbnails represent original book/notebook covers and are never inverted
+        cache_key = f"thumb_{doc_hash}_{max_width}_v2"
         cache_file = self._get_cache_path(cache_key, "png")
         if cache_file.is_file():
             return cache_file.read_bytes()
 
         pages = doc.get("pages", [])
         if not pages:
-            blank_png = self._blank_thumbnail(dark_mode, max_width)
+            blank_png = self._blank_thumbnail(False, max_width)
             try:
                 cache_file.write_bytes(blank_png)
             except OSError:
@@ -190,7 +191,7 @@ class Exporter:
 
         png_bytes = b""
 
-        # Case 1: PDF document
+        # Case 1: PDF document (cover rendered in true original colors, never inverted)
         if pdf_file_key and self.blob_store.has(files[pdf_file_key]):
             try:
                 pdf_blob = self.blob_store.get(files[pdf_file_key])
@@ -200,22 +201,14 @@ class Exporter:
                         p = pdf_doc[actual_page]
                         scale = max_width / max(float(p.rect.width), 1.0)
                         pix = p.get_pixmap(matrix=pymupdf.Matrix(scale, scale))
-                        if dark_mode:
-                            images = p.get_images()
-                            text_len = len(p.get_text("text").strip())
-                            page_area = float(p.rect.width * p.rect.height) if p.rect else 1.0
-                            img_area = sum(float(r.width * r.height) for im in images for r in p.get_image_rects(im[0]))
-                            is_comic = (img_area / page_area > 0.55) or (len(images) > 0 and text_len < 100) if page_area > 0 else False
-                            if not is_comic:
-                                pix.invert_irect()
                         png_bytes = pix.tobytes("png")
                     else:
-                        png_bytes = self._blank_thumbnail(dark_mode, max_width)
+                        png_bytes = self._blank_thumbnail(False, max_width)
             except Exception as e:
                 logger.warning("Failed to render PDF thumbnail for %s: %s", doc_id, e)
-                png_bytes = self._blank_thumbnail(dark_mode, max_width)
+                png_bytes = self._blank_thumbnail(False, max_width)
 
-        # Case 2: Notebook (.rm file)
+        # Case 2: Notebook (.rm file) (natural paper background and ink)
         else:
             rm_file_key = f"{doc_id}/{page_id}.rm"
             rm_blob_hash = files.get(rm_file_key)
@@ -225,7 +218,7 @@ class Exporter:
                     target_height = int(max_width * 4 / 3)
                     svg_content = render_rm_to_svg(
                         rm_bytes,
-                        dark_mode=dark_mode,
+                        dark_mode=False,
                         include_background=True,
                         target_width=max_width,
                         target_height=target_height,
@@ -235,9 +228,9 @@ class Exporter:
                         png_bytes = pix.tobytes("png")
                 except Exception as e:
                     logger.warning("Failed to render notebook thumbnail for %s: %s", doc_id, e)
-                    png_bytes = self._blank_thumbnail(dark_mode, max_width)
+                    png_bytes = self._blank_thumbnail(False, max_width)
             else:
-                png_bytes = self._blank_thumbnail(dark_mode, max_width)
+                png_bytes = self._blank_thumbnail(False, max_width)
 
         try:
             cache_file.write_bytes(png_bytes)
@@ -247,12 +240,25 @@ class Exporter:
         return png_bytes
 
     def warm_thumbnail(self, doc_id: str, doc_hash: str = "") -> None:
-        """Pre-generate light and dark thumbnails in cache."""
+        """Pre-generate thumbnail in cache."""
         try:
             self.render_thumbnail(doc_id, dark_mode=False)
-            self.render_thumbnail(doc_id, dark_mode=True)
         except Exception as e:
             logger.debug("Thumbnail warm error for %s: %s", doc_id, e)
+
+    def clear_thumbnail_cache(self) -> int:
+        """Purge all cached thumbnail images."""
+        count = 0
+        try:
+            for p in self.settings.cache_dir.glob("thumb_*.png"):
+                try:
+                    p.unlink()
+                    count += 1
+                except OSError:
+                    pass
+        except Exception as e:
+            logger.warning("Failed to clear thumbnail cache: %s", e)
+        return count
 
     def _blank_thumbnail(self, dark_mode: bool, max_width: int = 320) -> bytes:
         """Generate a small placeholder thumbnail PNG."""

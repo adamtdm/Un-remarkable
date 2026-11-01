@@ -62,11 +62,7 @@
         </svg>
       </button>
 
-      <button id="btn-quick-capture" class="btn btn-sm" title="Quick capture a task or note (shortcut: C)" aria-label="Quick capture">
-        <span>⚡ Quick Capture</span>
-      </button>
-
-      <!-- Consolidated New Note & Folder Split Button -->
+      <!-- Consolidated New Note & Creation Dropdown -->
       <div class="split-btn-group" id="new-item-split-btn">
         <button id="btn-new-notebook" class="btn btn-primary btn-sm" title="Create a new notebook">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -84,6 +80,11 @@
           <button class="split-dropdown-item" id="menu-new-note">
             <span class="split-item-icon">📝</span>
             <span>New Note</span>
+          </button>
+          <button class="split-dropdown-item" id="menu-quick-capture">
+            <span class="split-item-icon">⚡</span>
+            <span>Quick Capture</span>
+            <kbd class="shortcut-key" style="margin-left: auto; font-size: 0.72rem; padding: 1px 5px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 3px;">C</kbd>
           </button>
           <button class="split-dropdown-item" id="menu-new-folder">
             <span class="split-item-icon">📁</span>
@@ -167,11 +168,18 @@
         <div id="breadcrumbs" class="breadcrumbs">
           <a href="#" data-folder="">Home</a>
         </div>
-        <div class="toolbar-center-actions">
-          <button id="btn-folder-exclude" class="btn btn-sm" style="display: none;" title="Toggle search & OCR exclusion for this folder">
-            <span id="folder-exclude-icon">🚫</span>
-            <span id="folder-exclude-label">Exclude Folder from Search</span>
+        <div class="toolbar-center-actions" id="folder-options-container" style="display: none; position: relative;">
+          <button id="btn-folder-options" class="btn btn-sm btn-icon" title="Folder options" aria-label="Folder options" aria-haspopup="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="1.5"></circle>
+              <circle cx="12" cy="5" r="1.5"></circle>
+              <circle cx="12" cy="19" r="1.5"></circle>
+            </svg>
           </button>
+          <div id="folder-options-menu" class="dropdown-menu" style="display: none; min-width: 220px; left: 0;">
+            <button id="menu-folder-exclude" class="menu-item">🚫 Exclude from Search</button>
+            <button id="menu-folder-new-subfolder" class="menu-item">📁 New Subfolder...</button>
+          </div>
         </div>
       </div>
 
@@ -229,7 +237,7 @@
   <!-- Reader View Modal / Fullscreen -->
   <div id="reader-view" class="reader-container fit-page" style="display: none;">
     <div class="reader-header" id="reader-header">
-      <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <div style="display: flex; align-items: center; gap: 0.75rem; min-width: 0;">
         <button id="btn-reader-close" class="btn">
           <svg id="icon-reader-close" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -238,22 +246,35 @@
           <span id="btn-reader-close-text">Library</span>
         </button>
         <span id="reader-title" class="reader-title">Document Title</span>
-        <span id="reader-exclude-badge" class="badge-excluded" style="display: none;" title="Excluded from full-text search & OCR">Excluded from Search</span>
       </div>
 
       <div class="reader-actions-desktop" style="display: flex; align-items: center; gap: 0.5rem;">
+        <button id="btn-reader-type-toggle" class="btn btn-sm btn-primary" title="Open distraction-free typed text editor">⌨ Type</button>
+        <button id="btn-fit-toggle" class="btn" title="Toggle Fit Mode">Fit Width</button>
+        <button id="btn-page-dark-toggle" class="btn" title="Toggle Inverted Dark Mode for Document">Dark: On</button>
         <button id="btn-reader-fullscreen" class="btn" title="Toggle Fullscreen Reading Mode (F)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
           </svg>
           <span id="btn-fullscreen-label">Fullscreen</span>
         </button>
-        <button id="btn-reader-type-toggle" class="btn btn-sm btn-primary" title="Open distraction-free typed text editor">⌨ Type</button>
-        <button id="btn-reader-exclude-toggle" class="btn btn-sm" title="Exclude/Include in search index">🚫 Exclude</button>
-        <button id="btn-reader-convert" class="btn btn-sm btn-accent" title="Convert or optimize this document for Paper Pro">⚡ Optimize</button>
-        <button id="btn-fit-toggle" class="btn" title="Toggle Fit Mode">Fit Width</button>
-        <button id="btn-page-dark-toggle" class="btn" title="Toggle Inverted Dark Mode for Document">Dark: On</button>
-        <button id="btn-export-pdf" class="btn" title="Export annotated PDF">Export PDF</button>
+
+        <!-- Reader Ellipsis Dropdown for Secondary / Management Actions -->
+        <div class="reader-more-container" style="position: relative;">
+          <button id="btn-reader-more-desktop" class="btn btn-icon" title="Document options" aria-label="Document options" aria-haspopup="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="1.5"></circle>
+              <circle cx="12" cy="5" r="1.5"></circle>
+              <circle cx="12" cy="19" r="1.5"></circle>
+            </svg>
+          </button>
+          <div id="reader-more-menu-desktop" class="dropdown-menu" style="display: none; right: 0; min-width: 220px;">
+            <button id="btn-reader-convert" class="menu-item">⚡ Optimize for Paper Pro</button>
+            <button id="btn-reader-exclude-toggle" class="menu-item">🚫 Exclude from Search</button>
+            <button id="btn-export-pdf" class="menu-item">📥 Download PDF</button>
+            <a id="btn-reader-open-tab" href="#" target="_blank" rel="noopener" class="menu-item" style="text-decoration: none; color: inherit;">↗ Read in New Tab</a>
+          </div>
+        </div>
       </div>
       <div class="reader-actions-mobile" style="display: none;">
         <button id="btn-reader-fullscreen-mobile" class="btn btn-icon" title="Toggle Fullscreen" aria-label="Toggle Fullscreen">
@@ -326,6 +347,17 @@
           <button id="btn-converter-upload-trigger" class="btn">Choose External File...</button>
           <input type="file" id="converter-file-input" style="display: none;" accept=".pdf,.epub,.cbz">
         </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label for="converter-device"><strong>Target Device:</strong></label>
+        <select id="converter-device" class="modal-input">
+          <option value="paper_pro" selected>reMarkable Paper Pro (2160×1620, Color Canvas)</option>
+          <option value="paper_pro_move">reMarkable Paper Pro - Move / Landscape (1620×2160)</option>
+          <option value="rm2">reMarkable 2 (1872×1404, Monochrome Canvas)</option>
+          <option value="rm1">reMarkable 1 (1872×1404, Monochrome Canvas)</option>
+        </select>
+        <span class="form-hint">Matches screen resolution and color/grayscale depth for optimal e-ink rendering.</span>
       </div>
 
       <div class="converter-slider-section">
@@ -571,8 +603,13 @@
 
           <div class="form-group">
             <label for="settings-model"><strong>Model Name:</strong></label>
-            <input type="text" id="settings-model" class="modal-input" placeholder="gemini-2.0-flash">
-            <span class="form-hint">E.g., <code>gemini-2.0-flash</code>, <code>gpt-4o-mini</code>, or <code>llama3.2-vision</code>.</span>
+            <select id="settings-model" class="modal-input">
+              <option value="gemini-2.0-flash" selected>gemini-2.0-flash (Newest Recommended — Fast & High Accuracy)</option>
+              <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (Cost Effective & Lightweight)</option>
+              <option value="gemini-1.5-flash">gemini-1.5-flash (Standard Balanced)</option>
+              <option value="gemini-1.5-pro">gemini-1.5-pro (High Reasoning)</option>
+            </select>
+            <span class="form-hint" id="settings-model-hint">Auto-discovers and defaults to the newest available model for your key.</span>
           </div>
         </div>
 
@@ -664,6 +701,7 @@
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
             <button id="btn-settings-sync-trigger" class="btn btn-sm">Sync Now</button>
             <button id="btn-settings-sync-drawer-toggle" class="btn btn-sm">View Activity Log</button>
+            <button id="btn-settings-logout" class="btn btn-sm" style="color: var(--danger); border-color: rgba(239, 68, 68, 0.4);" title="Unlink tablet and clear stored authorization tokens">Log Out / Unlink Tablet</button>
           </div>
         </div>
       </section>
@@ -967,6 +1005,7 @@
           <select id="bulk-import-device" class="modal-input" style="width: 100%;">
             <option value="none">No conversion (keep original PDF/EPUB)</option>
             <option value="paper_pro" selected>reMarkable Paper Pro (2160×1620, Color Canvas)</option>
+            <option value="paper_pro_move">reMarkable Paper Pro - Move / Landscape (1620×2160)</option>
             <option value="rm2">reMarkable 2 (1872×1404, Monochrome)</option>
             <option value="rm1">reMarkable 1 (1872×1404, Monochrome)</option>
           </select>

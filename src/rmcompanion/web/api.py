@@ -132,6 +132,12 @@ def get_router(
             logger.error("Authentication failed: %s", e)
             raise HTTPException(status_code=400, detail=str(e))
 
+    @r.post("/auth/logout")
+    async def logout_device() -> dict[str, Any]:
+        """Unlink tablet and clear auth tokens."""
+        auth.clear_tokens()
+        return {"status": "ok", "message": "Successfully unlinked device from reMarkable Cloud"}
+
     @r.post("/sync/trigger")
     async def trigger_sync() -> dict[str, Any]:
         """Manually trigger a sync cycle."""
@@ -153,7 +159,10 @@ def get_router(
     @r.get("/folders")
     def list_folders() -> list[dict[str, Any]]:
         """Get all folders in the library with hierarchical path and depth."""
-        return db.get_folder_tree()
+        folders = db.get_folder_tree()
+        for f in folders:
+            f["name"] = f.get("visible_name", "")
+        return folders
 
     @r.post("/folders")
     def create_folder(payload: CreateFolderRequest) -> dict[str, Any]:
@@ -248,7 +257,7 @@ def get_router(
             raise HTTPException(status_code=404, detail="Document not found")
 
         doc_hash = doc.get("doc_hash", "")
-        etag = f'"{doc_hash}_{"dark" if dark else "light"}"'
+        etag = f'"{doc_hash}_v2"'
 
         if request:
             if_none_match = request.headers.get("if-none-match")
@@ -262,7 +271,7 @@ def get_router(
                 )
 
         try:
-            png_bytes = exporter.render_thumbnail(doc_id, dark_mode=dark)
+            png_bytes = exporter.render_thumbnail(doc_id, dark_mode=False)
             content = b"" if (request and request.method == "HEAD") else png_bytes
             return Response(
                 content=content,
@@ -276,6 +285,12 @@ def get_router(
         except Exception as e:
             logger.warning("Failed to render thumbnail for %s: %s", doc_id, e)
             raise HTTPException(status_code=500, detail=str(e))
+
+    @r.post("/thumbnails/clear-cache")
+    def clear_thumbnails() -> dict[str, Any]:
+        """Purge disk thumbnail cache to regenerate covers cleanly."""
+        deleted = exporter.clear_thumbnail_cache()
+        return {"ok": True, "deleted_count": deleted}
 
     @r.api_route("/documents/{doc_id}/pages/{page_idx}/svg", methods=["GET", "HEAD"])
     def get_page_svg(doc_id: str, page_idx: int = 0, dark: bool = False, request: Request = None) -> Response:
@@ -630,6 +645,108 @@ def get_router(
             return await provider.test_connection()
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    @r.post("/settings/vision/models")
+    async def list_vision_models(payload: VisionSettingsRequest) -> dict[str, Any]:
+        """Query available vision models for the provider and API key, defaulting to newest."""
+        provider = (payload.provider or "gemini").lower()
+        api_key = payload.api_key.strip()
+        base_url = payload.base_url.strip()
+
+        # If key is empty in request, check if we have a saved key in database
+        if not api_key:
+            raw = db.get_state("vision_settings", "")
+            if raw:
+                try:
+                    saved = json.loads(raw)
+                    if saved.get("provider") == provider:
+                        api_key = saved.get("api_key", "")
+                        if not base_url:
+                            base_url = saved.get("base_url", "")
+                except Exception:
+                    pass
+
+        models: list[dict[str, Any]] = []
+        default_model = "gemini-2.0-flash" if provider == "gemini" else "gpt-4o-mini"
+
+        if provider == "gemini":
+            if api_key:
+                try:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+                    async with httpx.AsyncClient(timeout=4.0) as client:
+                        resp = await client.get(url)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            raw_models = data.get("models", [])
+                            found_ids = []
+                            for m in raw_models:
+                                mid = m.get("name", "").replace("models/", "")
+                                if "gemini" in mid and "vision" not in mid and not mid.endswith("-latest"):
+                                    methods = m.get("supportedGenerationMethods", [])
+                                    if "generateContent" in methods:
+                                        found_ids.append(mid)
+
+                            priority = [
+                                "gemini-2.5-pro",
+                                "gemini-2.0-flash",
+                                "gemini-2.0-flash-lite",
+                                "gemini-1.5-flash",
+                                "gemini-1.5-pro",
+                            ]
+                            seen = set()
+                            for p in priority:
+                                for f in found_ids:
+                                    if f.startswith(p) and f not in seen:
+                                        seen.add(f)
+                                        desc = "Newest — Fast & Accurate" if p == "gemini-2.0-flash" else ("Lightweight & Economical" if "lite" in p else "High Capability")
+                                        models.append({"id": f, "name": f"{f} ({desc})", "is_recommended": (f == "gemini-2.0-flash")})
+
+                            if not any(m["is_recommended"] for m in models) and models:
+                                models[0]["is_recommended"] = True
+                except Exception as e:
+                    logger.debug("Failed to query Gemini API for live models: %s", e)
+
+            if not models:
+                models = [
+                    {"id": "gemini-2.0-flash", "name": "gemini-2.0-flash (Newest Recommended — Fast & High Accuracy)", "is_recommended": True},
+                    {"id": "gemini-2.0-flash-lite", "name": "gemini-2.0-flash-lite (Cost Effective & Lightweight)", "is_recommended": False},
+                    {"id": "gemini-1.5-flash", "name": "gemini-1.5-flash (Standard Balanced)", "is_recommended": False},
+                    {"id": "gemini-1.5-pro", "name": "gemini-1.5-pro (High Reasoning)", "is_recommended": False},
+                ]
+            default_model = "gemini-2.0-flash"
+
+        elif provider == "openai":
+            if base_url:
+                try:
+                    url = f"{base_url.rstrip('/')}/v1/models"
+                    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+                    async with httpx.AsyncClient(timeout=3.0) as client:
+                        resp = await client.get(url, headers=headers)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            for m in data.get("data", []):
+                                mid = m.get("id", "")
+                                if mid:
+                                    models.append({"id": mid, "name": mid, "is_recommended": False})
+                except Exception:
+                    pass
+
+            if not models:
+                models = [
+                    {"id": "gpt-4o-mini", "name": "gpt-4o-mini (Newest Recommended — Fast Vision)", "is_recommended": True},
+                    {"id": "gpt-4o", "name": "gpt-4o (Omni Multimodal)", "is_recommended": False},
+                    {"id": "llama3.2-vision", "name": "llama3.2-vision (Local Ollama Vision)", "is_recommended": False},
+                    {"id": "llava", "name": "llava (Local Ollama Vision)", "is_recommended": False},
+                    {"id": "qwen2.5-vl", "name": "qwen2.5-vl (Local Ollama Vision)", "is_recommended": False},
+                ]
+            default_model = "gpt-4o-mini"
+
+        return {
+            "ok": True,
+            "provider": provider,
+            "models": models,
+            "default_model": default_model,
+        }
 
     # Phase 4: Typed notebook editor and markdown import endpoints
     @r.post("/documents/new")

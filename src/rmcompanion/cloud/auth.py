@@ -69,6 +69,17 @@ class AuthManager:
         tmp_path.replace(self.tokens_path)
         logger.debug("Saved auth tokens to %s", self.tokens_path)
 
+    def clear_tokens(self) -> None:
+        """Clear tokens and unlink the device."""
+        self.tokens.device_token = ""
+        self.tokens.user_token = ""
+        if self.tokens_path.exists():
+            try:
+                self.tokens_path.unlink()
+            except OSError as e:
+                logger.warning("Failed to delete tokens file %s: %s", self.tokens_path, e)
+        logger.info("Unlinked device and cleared auth tokens")
+
     def is_user_token_valid(self) -> bool:
         """Check if user token is present and not expired."""
         if not self.tokens.user_token:
