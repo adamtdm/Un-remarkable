@@ -23,6 +23,7 @@ const state = {
   hudTimeout: null,
   pageIndicatorTimeout: null,
   qcMode: "task",
+  currentView: "library",
 };
 
 // 5-stop slider profiles
@@ -179,18 +180,32 @@ const el = {
   taskFilterPills: document.querySelectorAll("[data-task-filter]"),
 
   // Settings elements
+  libraryView: document.getElementById("library-view"),
+  settingsView: document.getElementById("settings-view"),
   btnSettingsToggle: document.getElementById("btn-settings-toggle"),
-  settingsModal: document.getElementById("settings-modal"),
-  btnSettingsClose: document.getElementById("btn-settings-close"),
+  btnSettingsBack: document.getElementById("btn-settings-back"),
+  settingsModal: document.getElementById("settings-view"),
+  btnSettingsClose: document.getElementById("btn-settings-back"),
   settingsProvider: document.getElementById("settings-provider"),
   settingsModel: document.getElementById("settings-model"),
   settingsApiKey: document.getElementById("settings-api-key"),
+  btnToggleKeyVisibility: document.getElementById("btn-toggle-key-visibility"),
   settingsBaseUrlGroup: document.getElementById("settings-base-url-group"),
   settingsBaseUrl: document.getElementById("settings-base-url"),
   settingsKeyStatus: document.getElementById("settings-key-status"),
   settingsTestResult: document.getElementById("settings-test-result"),
   btnSettingsTest: document.getElementById("btn-settings-test"),
   btnSettingsSave: document.getElementById("btn-settings-save"),
+  mcpHttpUrl: document.getElementById("mcp-http-url"),
+  btnSettingsSyncTrigger: document.getElementById("btn-settings-sync-trigger"),
+  btnSettingsSyncDrawerToggle: document.getElementById("btn-settings-sync-drawer-toggle"),
+  btnSettingsScanTasks: document.getElementById("btn-settings-scan-tasks"),
+  settingsCloudStatusTitle: document.getElementById("settings-cloud-status-title"),
+  settingsCloudStatusDesc: document.getElementById("settings-cloud-status-desc"),
+  statTotalDocs: document.getElementById("stat-total-docs"),
+  statNotebooks: document.getElementById("stat-notebooks"),
+  statPdfs: document.getElementById("stat-pdfs"),
+  statTasks: document.getElementById("stat-tasks"),
 
   // New notebook & typed editor elements
   btnNewNotebook: document.getElementById("btn-new-notebook"),
@@ -581,6 +596,9 @@ async function navigateToFolder(folderId, pathIndex = null) {
 
 el.brandHome.addEventListener("click", (e) => {
   e.preventDefault();
+  if (state.currentView === "settings") {
+    navigateToView("library", true);
+  }
   closeReader();
   navigateToFolder("", 0);
 });
@@ -2090,6 +2108,13 @@ window.addEventListener("keydown", (e) => {
     return;
   }
 
+  if (state.currentView === "settings") {
+    if (e.key === "Escape") {
+      navigateToView("library", true);
+      return;
+    }
+  }
+
   if (el.authModal.style.display === "flex") {
     if (e.key === "Escape") closeAuthModal();
     return;
@@ -2282,18 +2307,170 @@ if (el.btnTasksScanAll) {
   });
 }
 
-// --- Vision Settings Controller ---
+// --- Settings View Controller ---
+function navigateToView(viewName, updateHistory = true) {
+  if (viewName === "settings") {
+    state.currentView = "settings";
+    if (el.libraryView) el.libraryView.style.display = "none";
+    if (el.readerView) el.readerView.style.display = "none";
+    if (el.settingsView) el.settingsView.style.display = "block";
+
+    loadVisionSettings();
+    updateSettingsSystemStats();
+    applyAppTheme(state.themePreference);
+
+    if (updateHistory) {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("view", "settings");
+        url.searchParams.delete("read");
+        url.searchParams.delete("page");
+        url.searchParams.delete("doc");
+        window.history.pushState({ view: "settings" }, "", url.toString());
+      } catch (_) {}
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } else {
+    state.currentView = "library";
+    if (el.settingsView) el.settingsView.style.display = "none";
+    if (el.readerView && !state.currentDoc) el.readerView.style.display = "none";
+    if (el.libraryView) el.libraryView.style.display = "block";
+
+    if (updateHistory) {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("view");
+        window.history.pushState({ view: "library" }, "", url.pathname + (url.search ? url.search : ""));
+      } catch (_) {}
+    }
+  }
+}
+
 function openSettingsModal() {
-  if (el.settingsModal) el.settingsModal.style.display = "flex";
-  loadVisionSettings();
+  navigateToView("settings", true);
 }
 
 function closeSettingsModal() {
-  if (el.settingsModal) el.settingsModal.style.display = "none";
+  navigateToView("library", true);
 }
 
-if (el.btnSettingsToggle) el.btnSettingsToggle.addEventListener("click", openSettingsModal);
-if (el.btnSettingsClose) el.btnSettingsClose.addEventListener("click", closeSettingsModal);
+if (el.btnSettingsToggle) el.btnSettingsToggle.addEventListener("click", () => navigateToView("settings", true));
+if (el.btnSettingsBack) el.btnSettingsBack.addEventListener("click", () => navigateToView("library", true));
+if (el.btnSettingsClose && el.btnSettingsClose !== el.btnSettingsBack) {
+  el.btnSettingsClose.addEventListener("click", () => navigateToView("library", true));
+}
+
+if (el.btnToggleKeyVisibility && el.settingsApiKey) {
+  el.btnToggleKeyVisibility.addEventListener("click", () => {
+    const isPass = el.settingsApiKey.type === "password";
+    el.settingsApiKey.type = isPass ? "text" : "password";
+    el.btnToggleKeyVisibility.textContent = isPass ? "🔒" : "👁";
+  });
+}
+
+if (el.btnSettingsSyncTrigger) {
+  el.btnSettingsSyncTrigger.addEventListener("click", async () => {
+    el.btnSettingsSyncTrigger.disabled = true;
+    el.btnSettingsSyncTrigger.textContent = "Triggering...";
+    try {
+      await fetch("/api/sync/trigger", { method: "POST" });
+      await fetchStatus();
+      await updateSettingsSystemStats();
+    } catch (e) {
+      alert(`Sync failed: ${e.message}`);
+    } finally {
+      el.btnSettingsSyncTrigger.disabled = false;
+      el.btnSettingsSyncTrigger.textContent = "Sync Now";
+    }
+  });
+}
+
+if (el.btnSettingsSyncDrawerToggle) {
+  el.btnSettingsSyncDrawerToggle.addEventListener("click", () => {
+    toggleSyncDrawer();
+  });
+}
+
+if (el.btnSettingsScanTasks) {
+  el.btnSettingsScanTasks.addEventListener("click", async () => {
+    el.btnSettingsScanTasks.disabled = true;
+    el.btnSettingsScanTasks.textContent = "Scanning documents...";
+    try {
+      const res = await fetch("/api/tasks/scan-all", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Scan complete! Extracted ${data.tasks_extracted ?? 0} tasks from ${data.documents_scanned ?? 0} documents.`);
+        await updateSettingsSystemStats();
+        fetchTasks();
+      } else {
+        alert("Scan failed");
+      }
+    } catch (e) {
+      alert(`Scan failed: ${e.message}`);
+    } finally {
+      el.btnSettingsScanTasks.disabled = false;
+      el.btnSettingsScanTasks.textContent = "⚡ Scan Documents for Tasks";
+    }
+  });
+}
+
+async function updateSettingsSystemStats() {
+  if (el.mcpHttpUrl) {
+    el.mcpHttpUrl.textContent = `${window.location.origin}/mcp/sse`;
+  }
+
+  // Update cloud sync status
+  try {
+    const statusRes = await fetch("/api/status");
+    if (statusRes.ok) {
+      const statusData = await statusRes.json();
+      const sync = statusData.sync || {};
+      if (el.settingsCloudStatusTitle && el.settingsCloudStatusDesc) {
+        if (!sync.is_authenticated) {
+          el.settingsCloudStatusTitle.textContent = "Connection Status: Not Linked";
+          el.settingsCloudStatusDesc.textContent = "Your instance is not paired with a reMarkable cloud account. Pair using the link banner or auth code.";
+        } else if (sync.status === "syncing") {
+          const p = sync.progress || {};
+          const pct = p.total_docs > 0 ? Math.round((p.current_doc_idx / p.total_docs) * 100) : 0;
+          el.settingsCloudStatusTitle.textContent = `Connection Status: Syncing (${pct}%)`;
+          el.settingsCloudStatusDesc.textContent = `Continuous sync active. Stage: ${p.stage || "syncing"}.`;
+        } else if (sync.status === "error") {
+          el.settingsCloudStatusTitle.textContent = "Connection Status: Sync Error";
+          el.settingsCloudStatusDesc.textContent = "Encountered an issue during last sync cycle. Open activity log to inspect details.";
+        } else {
+          el.settingsCloudStatusTitle.textContent = "Connection Status: Connected & Synced";
+          el.settingsCloudStatusDesc.textContent = `Device paired. Last sync generation: ${sync.last_generation || 0}. Real-time cloud sync active.`;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Failed to load cloud status in settings", e);
+  }
+
+  // Update library diagnostics
+  try {
+    const [docsRes, tasksRes] = await Promise.all([
+      fetch("/api/documents"),
+      fetch("/api/tasks")
+    ]);
+    if (docsRes.ok) {
+      const docs = await docsRes.json();
+      const realDocs = docs.filter(d => d.type !== "CollectionType");
+      const notebooks = realDocs.filter(d => d.file_type === "notebook" || (d.type === "DocumentType" && !d.file_type));
+      const pdfsAndEpubs = realDocs.filter(d => d.file_type === "pdf" || d.file_type === "epub");
+
+      if (el.statTotalDocs) el.statTotalDocs.textContent = realDocs.length;
+      if (el.statNotebooks) el.statNotebooks.textContent = notebooks.length;
+      if (el.statPdfs) el.statPdfs.textContent = pdfsAndEpubs.length;
+    }
+    if (tasksRes.ok) {
+      const tasks = await tasksRes.json();
+      if (el.statTasks) el.statTasks.textContent = Array.isArray(tasks) ? tasks.length : "-";
+    }
+  } catch (e) {
+    console.error("Failed to load library diagnostics in settings", e);
+  }
+}
 
 if (el.settingsProvider) {
   el.settingsProvider.addEventListener("change", () => {
@@ -2352,8 +2529,12 @@ if (el.btnSettingsSave) {
       if (res.ok) {
         if (el.settingsApiKey) el.settingsApiKey.value = "";
         await loadVisionSettings();
-        alert("Vision settings saved successfully!");
-        closeSettingsModal();
+        if (el.settingsTestResult) {
+          el.settingsTestResult.style.display = "block";
+          el.settingsTestResult.style.backgroundColor = "rgba(34, 197, 94, 0.15)";
+          el.settingsTestResult.style.color = "var(--success)";
+          el.settingsTestResult.textContent = "✓ Vision OCR settings saved successfully!";
+        }
       } else {
         alert("Failed to save settings");
       }
@@ -3183,19 +3364,44 @@ if (el.btnCopyMcpUrl) {
   });
 }
 
-// --- Initialization ---
+// --- Initialization & Routing ---
 setViewMode(state.viewMode);
 fetchStatus();
 fetchTasks();
 fetchDocuments();
 
-// Check for deep-link / read in new tab parameter
-try {
+window.addEventListener("popstate", () => {
   const urlParams = new URLSearchParams(window.location.search);
+  const view = urlParams.get("view");
   const readDocId = urlParams.get("read") || urlParams.get("doc");
-  if (readDocId) {
+
+  if (view === "settings") {
+    navigateToView("settings", false);
+  } else if (readDocId) {
     const pageIdx = parseInt(urlParams.get("page") || "0", 10);
     openReader(readDocId, isNaN(pageIdx) ? 0 : pageIdx);
+  } else {
+    if (state.currentView === "settings") {
+      navigateToView("library", false);
+    }
+    if (state.currentDoc) {
+      closeReader();
+    }
+  }
+});
+
+// Check initial URL parameters for deep linking
+try {
+  const urlParams = new URLSearchParams(window.location.search);
+  const view = urlParams.get("view");
+  if (view === "settings") {
+    navigateToView("settings", false);
+  } else {
+    const readDocId = urlParams.get("read") || urlParams.get("doc");
+    if (readDocId) {
+      const pageIdx = parseInt(urlParams.get("page") || "0", 10);
+      openReader(readDocId, isNaN(pageIdx) ? 0 : pageIdx);
+    }
   }
 } catch (e) {
   console.error("Deep-link read error", e);

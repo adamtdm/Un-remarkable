@@ -477,96 +477,147 @@
     </div>
   </div>
 
-  <!-- Settings Modal (Vision OCR & Providers) -->
-  <div id="settings-modal" class="modal-backdrop" style="display: none;">
-    <div class="modal">
-      <div class="modal-header">
-        <h2>⚙️ App Settings & Integrations</h2>
-        <button id="btn-settings-close" class="btn btn-icon">✕</button>
-      </div>
-
-      <!-- Appearance & Theme Section -->
-      <div class="settings-section" style="margin-bottom: 1.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border-color);">
-        <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
-          <span>🌓</span>
-          <span>Appearance & Theme</span>
-        </h3>
-        <p class="modal-desc" style="margin-bottom: 0.75rem;">
-          Choose your interface theme or let it automatically match your device / browser mode.
-        </p>
-        <div class="theme-options-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
-          <label class="theme-radio-card" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); cursor: pointer; background: var(--bg-tertiary);">
-            <input type="radio" name="app-theme-choice" value="auto" id="theme-choice-auto">
-            <span style="font-size: 0.85rem; font-weight: 500;">💻 Auto</span>
-          </label>
-          <label class="theme-radio-card" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); cursor: pointer; background: var(--bg-tertiary);">
-            <input type="radio" name="app-theme-choice" value="dark" id="theme-choice-dark">
-            <span style="font-size: 0.85rem; font-weight: 500;">🌙 Dark</span>
-          </label>
-          <label class="theme-radio-card" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); cursor: pointer; background: var(--bg-tertiary);">
-            <input type="radio" name="app-theme-choice" value="light" id="theme-choice-light">
-            <span style="font-size: 0.85rem; font-weight: 500;">☀️ Light</span>
-          </label>
+  <!-- Settings Dedicated Page View -->
+  <main id="settings-view" class="settings-view" style="display: none;">
+    <div class="settings-container">
+      <div class="settings-page-header">
+        <button id="btn-settings-back" class="btn btn-sm" title="Return to library">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span>Back to Library</span>
+        </button>
+        <div class="settings-header-titles">
+          <h1 class="settings-page-title">Settings & Preferences</h1>
+          <p class="settings-page-subtitle">Configure handwriting OCR, AI vision models, Model Context Protocol (MCP), and application appearance.</p>
         </div>
       </div>
 
-      <div class="settings-section" style="margin-bottom: 1rem;">
-        <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
-          <span>🤖</span>
-          <span>AI & Vision OCR Settings</span>
-        </h3>
-        <p class="modal-desc">
-          Configure a vision model to recognize handwriting, extract action items marked with <code style="color: var(--accent);">*</code> or checkboxes, and index text.
-        </p>
-
-        <div class="form-group" style="margin-bottom: 1rem;">
-          <label for="settings-provider"><strong>Provider:</strong></label>
-          <select id="settings-provider" class="modal-input" style="width: 100%; margin-top: 0.35rem;">
-            <option value="gemini">Google Gemini (Recommended — fastest & best handwriting accuracy)</option>
-            <option value="openai">OpenAI / Compatible / Ollama</option>
-          </select>
-        </div>
-
-        <div class="form-group" style="margin-bottom: 1rem;">
-          <label for="settings-model"><strong>Model Name:</strong></label>
-          <input type="text" id="settings-model" class="modal-input" style="width: 100%; margin-top: 0.35rem;" placeholder="gemini-2.0-flash">
-        </div>
-
-        <div class="form-group" style="margin-bottom: 1rem;">
-          <label for="settings-api-key"><strong>API Key:</strong></label>
-          <input type="password" id="settings-api-key" class="modal-input" style="width: 100%; margin-top: 0.35rem;" placeholder="Enter your API key">
-          <div id="settings-key-status" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem;"></div>
-        </div>
-
-        <div id="settings-base-url-group" class="form-group" style="margin-bottom: 1rem; display: none;">
-          <label for="settings-base-url"><strong>Custom Base URL (e.g. for Ollama):</strong></label>
-          <input type="text" id="settings-base-url" class="modal-input" style="width: 100%; margin-top: 0.35rem;" placeholder="http://localhost:11434">
-        </div>
-
-        <div id="settings-test-result" style="display: none; padding: 0.5rem; border-radius: var(--radius-sm); font-size: 0.82rem; margin-bottom: 1rem;"></div>
-
-        <div class="modal-actions" style="margin-bottom: 1rem;">
-          <button id="btn-settings-test" class="btn">Test Connection</button>
-          <button id="btn-settings-save" class="btn btn-primary">Save Settings</button>
-        </div>
+      <!-- Settings Navigation Pills / Anchor Tabs -->
+      <div class="settings-nav-tabs">
+        <a href="#settings-appearance" class="settings-nav-pill">🌓 Appearance</a>
+        <a href="#settings-vision" class="settings-nav-pill">🤖 AI Vision OCR</a>
+        <a href="#settings-mcp" class="settings-nav-pill">🔌 MCP Server</a>
+        <a href="#settings-sync" class="settings-nav-pill">☁️ Cloud Sync</a>
+        <a href="#settings-system" class="settings-nav-pill">📊 System & Diagnostics</a>
       </div>
 
-      <!-- MCP Server Integration -->
-      <div class="settings-section" style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color);">
-        <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
-          <span>🔌</span>
-          <span>Model Context Protocol (MCP) Server</span>
-        </h3>
-        <p class="modal-desc" style="margin-bottom: 0.75rem;">
-          Connect Claude Desktop or other MCP clients to query notes, search handwriting, and access your library.
-        </p>
-
-        <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem; margin-bottom: 0.75rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
-            <strong style="font-size: 0.8rem; color: var(--text-secondary);">Claude Desktop Configuration (claude_desktop_config.json):</strong>
-            <button type="button" id="btn-copy-mcp-config" class="btn btn-sm btn-ghost" style="padding: 2px 8px; font-size: 0.75rem;">📋 Copy Config</button>
+      <!-- Section 1: Appearance & Theme -->
+      <section id="settings-appearance" class="settings-card">
+        <div class="settings-card-header">
+          <div class="settings-card-icon">🌓</div>
+          <div>
+            <h2 class="settings-section-title">Appearance & Theme</h2>
+            <p class="settings-section-desc">Choose your interface theme or let it automatically match your device / browser mode.</p>
           </div>
-          <pre id="mcp-config-snippet" style="font-size: 0.75rem; color: var(--accent); background: var(--bg-surface, var(--bg-secondary)); padding: 0.5rem; border-radius: 4px; overflow-x: auto; margin: 0; font-family: monospace;">{
+        </div>
+
+        <div class="settings-theme-grid">
+          <label class="settings-theme-option">
+            <input type="radio" name="app-theme-choice" value="auto" id="theme-choice-auto">
+            <div class="theme-option-box">
+              <span class="theme-option-icon">💻</span>
+              <div class="theme-option-info">
+                <strong>Follow Device / Browser</strong>
+                <span>Automatically adapts between Nordic basalt and tactile paper based on your OS system preference.</span>
+              </div>
+            </div>
+          </label>
+
+          <label class="settings-theme-option">
+            <input type="radio" name="app-theme-choice" value="dark" id="theme-choice-dark">
+            <div class="theme-option-box">
+              <span class="theme-option-icon">🌙</span>
+              <div class="theme-option-info">
+                <strong>Dark Mode (Nordic Basalt)</strong>
+                <span>Deep obsidian surfaces with warm chalk typography. Reduced eye strain in dim environments.</span>
+              </div>
+            </div>
+          </label>
+
+          <label class="settings-theme-option">
+            <input type="radio" name="app-theme-choice" value="light" id="theme-choice-light">
+            <div class="theme-option-box">
+              <span class="theme-option-icon">☀️</span>
+              <div class="theme-option-info">
+                <strong>Light Mode (Tactile Warm Paper)</strong>
+                <span>Natural warm paper canvas with deep charcoal ink. Faithful to the physical reMarkable experience.</span>
+              </div>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <!-- Section 2: AI & Vision OCR -->
+      <section id="settings-vision" class="settings-card">
+        <div class="settings-card-header">
+          <div class="settings-card-icon">🤖</div>
+          <div>
+            <h2 class="settings-section-title">AI Vision OCR & Transcription</h2>
+            <p class="settings-section-desc">Configure a multimodal vision model to recognize handwriting, extract action items marked with <code>*</code> or checkboxes, and index notebook pages for full-text search.</p>
+          </div>
+        </div>
+
+        <div class="settings-form-grid">
+          <div class="form-group">
+            <label for="settings-provider"><strong>Vision Provider:</strong></label>
+            <select id="settings-provider" class="modal-input">
+              <option value="gemini">Google Gemini (Recommended — fastest & best handwriting accuracy)</option>
+              <option value="openai">OpenAI / OpenAI-Compatible / Local Ollama</option>
+            </select>
+            <span class="form-hint">Gemini 2.0 Flash is recommended for sub-second handwriting recognition.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="settings-model"><strong>Model Name:</strong></label>
+            <input type="text" id="settings-model" class="modal-input" placeholder="gemini-2.0-flash">
+            <span class="form-hint">E.g., <code>gemini-2.0-flash</code>, <code>gpt-4o-mini</code>, or <code>llama3.2-vision</code>.</span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 1.25rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+            <label for="settings-api-key"><strong>API Key:</strong></label>
+            <span id="settings-key-status" class="key-status-badge">Checking...</span>
+          </div>
+          <div class="password-input-wrapper">
+            <input type="password" id="settings-api-key" class="modal-input" placeholder="Enter new API key to update...">
+            <button type="button" id="btn-toggle-key-visibility" class="btn btn-sm btn-ghost" title="Toggle visibility">👁</button>
+          </div>
+          <span class="form-hint">API keys are stored securely in local SQLite state and only sent directly to your chosen provider.</span>
+        </div>
+
+        <div id="settings-base-url-group" class="form-group" style="margin-top: 1.25rem; display: none;">
+          <label for="settings-base-url"><strong>Custom Base URL (for Local Ollama / vLLM):</strong></label>
+          <input type="text" id="settings-base-url" class="modal-input" placeholder="http://localhost:11434">
+          <span class="form-hint">For Ollama vision models, enter your host URL: <code>http://localhost:11434</code>.</span>
+        </div>
+
+        <div id="settings-test-result" class="settings-alert" style="display: none; margin-top: 1rem;"></div>
+
+        <div class="settings-card-actions" style="margin-top: 1.5rem;">
+          <button id="btn-settings-test" class="btn">Test Connection</button>
+          <button id="btn-settings-save" class="btn btn-primary">Save OCR Settings</button>
+        </div>
+      </section>
+
+      <!-- Section 3: MCP Server Integration -->
+      <section id="settings-mcp" class="settings-card">
+        <div class="settings-card-header">
+          <div class="settings-card-icon">🔌</div>
+          <div>
+            <h2 class="settings-section-title">Model Context Protocol (MCP) Server</h2>
+            <p class="settings-section-desc">Connect Claude Desktop, Cursor, Cline, or any MCP client to search notes, query handwriting OCR, inspect your document library, and retrieve tasks.</p>
+          </div>
+        </div>
+
+        <div class="mcp-config-box">
+          <div class="mcp-config-box-header">
+            <strong>Claude Desktop Configuration (claude_desktop_config.json):</strong>
+            <button type="button" id="btn-copy-mcp-config" class="btn btn-sm">📋 Copy Config</button>
+          </div>
+          <pre id="mcp-config-snippet" class="code-block">{
   "mcpServers": {
     "remarkable": {
       "command": "python",
@@ -576,13 +627,82 @@
 }</pre>
         </div>
 
-        <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between;">
-          <span>Streamable SSE Endpoint: <code id="mcp-http-url" style="color: var(--accent);">http://localhost:8099/mcp/sse</code></span>
-          <button type="button" id="btn-copy-mcp-url" class="btn btn-sm btn-ghost" style="padding: 2px 8px; font-size: 0.75rem;">📋 Copy URL</button>
+        <div class="mcp-url-box">
+          <div class="mcp-url-content">
+            <span class="mcp-url-label">Streamable HTTP / SSE Endpoint:</span>
+            <code id="mcp-http-url" class="mcp-url-code">http://localhost:8099/mcp/sse</code>
+          </div>
+          <button type="button" id="btn-copy-mcp-url" class="btn btn-sm">📋 Copy URL</button>
         </div>
-      </div>
+
+        <div class="mcp-tools-list">
+          <span class="mcp-tools-heading">Exposed MCP Tools:</span>
+          <div class="mcp-tags-grid">
+            <span class="mcp-tag"><code>search_notes(query)</code> — Full-text & handwriting OCR search</span>
+            <span class="mcp-tag"><code>list_documents(folder)</code> — Explore notebooks, PDFs, EPUBs</span>
+            <span class="mcp-tag"><code>read_page(doc_id, page)</code> — Read typed notes & annotations</span>
+            <span class="mcp-tag"><code>list_tasks(status)</code> — Query extracted tasks</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 4: Cloud Sync & Device -->
+      <section id="settings-sync" class="settings-card">
+        <div class="settings-card-header">
+          <div class="settings-card-icon">☁️</div>
+          <div>
+            <h2 class="settings-section-title">reMarkable Cloud Sync</h2>
+            <p class="settings-section-desc">Manage continuous background cloud synchronization and device pairing.</p>
+          </div>
+        </div>
+
+        <div class="sync-status-row">
+          <div>
+            <strong id="settings-cloud-status-title">Connection Status:</strong>
+            <div id="settings-cloud-status-desc" class="form-hint">Checking connection...</div>
+          </div>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button id="btn-settings-sync-trigger" class="btn btn-sm">Sync Now</button>
+            <button id="btn-settings-sync-drawer-toggle" class="btn btn-sm">View Activity Log</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 5: System & Storage -->
+      <section id="settings-system" class="settings-card">
+        <div class="settings-card-header">
+          <div class="settings-card-icon">📊</div>
+          <div>
+            <h2 class="settings-section-title">Library Diagnostics & Storage</h2>
+            <p class="settings-section-desc">Summary of your local synchronized files, database state, and background tasks.</p>
+          </div>
+        </div>
+
+        <div class="system-stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">Total Documents</span>
+            <strong id="stat-total-docs" class="stat-value">-</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Notebooks</span>
+            <strong id="stat-notebooks" class="stat-value">-</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">PDFs & EPUBs</span>
+            <strong id="stat-pdfs" class="stat-value">-</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Extracted Tasks</span>
+            <strong id="stat-tasks" class="stat-value">-</strong>
+          </div>
+        </div>
+
+        <div style="margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+          <button id="btn-settings-scan-tasks" class="btn">⚡ Scan Documents for Tasks</button>
+        </div>
+      </section>
     </div>
-  </div>
+  </main>
 
   <!-- Move / Add to Folder Modal -->
   <div id="move-folder-modal" class="modal-backdrop" style="display: none;">
