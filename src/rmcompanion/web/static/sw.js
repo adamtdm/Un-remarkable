@@ -1,10 +1,10 @@
 // Service Worker for reMarkable Companion PWA
-const CACHE_NAME = "rmc-shell-v20261101h";
+const CACHE_NAME = "rmc-shell-v20261101i";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
-  "/style.css?v=20261101h",
-  "/app.js?v=20261101h",
+  "/style.css?v=20261101i",
+  "/app.js?v=20261101i",
   "/manifest.json",
   "/icon.svg"
 ];

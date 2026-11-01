@@ -497,7 +497,6 @@ if (el.btnSyncNow) {
     }
   });
 }
-});
 
 // --- Auth Modal ---
 function openAuthModal() {
@@ -1866,7 +1865,12 @@ function closeConverterModal() {
   }
 }
 
-el.btnOpenConverter.addEventListener("click", () => openConverterModal());
+if (el.btnOpenConverter) {
+  el.btnOpenConverter.addEventListener("click", () => {
+    if (el.newItemDropdown) el.newItemDropdown.style.display = "none";
+    openConverterModal();
+  });
+}
 el.btnConverterClose.addEventListener("click", closeConverterModal);
 el.btnConverterCancel.addEventListener("click", closeConverterModal);
 

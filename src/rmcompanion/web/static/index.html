@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
-  <link rel="stylesheet" href="/style.css?v=20261101h">
+  <link rel="stylesheet" href="/style.css?v=20261101i">
 </head>
 <body>
   <!-- Header -->
@@ -93,6 +93,10 @@
             <span class="split-item-icon">📥</span>
             <span>Bulk Import Files...</span>
           </button>
+          <button class="split-dropdown-item" id="btn-open-converter">
+            <span class="split-item-icon">⚡</span>
+            <span>Optimize for Paper Pro...</span>
+          </button>
         </div>
       </div>
 
@@ -123,11 +127,6 @@
         <button id="btn-sync-now" class="btn btn-sm btn-primary" title="Trigger cloud sync now">Sync Now</button>
         <button id="btn-sync-drawer-close" class="btn btn-icon" title="Close drawer">✕</button>
       </div>
-    </div>
-        <strong>Cloud Sync Monitor</strong>
-        <span id="sync-drawer-stage" class="stage-badge">Idle</span>
-      </div>
-      <button id="btn-sync-drawer-close" class="btn btn-icon" title="Close drawer">✕</button>
     </div>
 
     <div class="sync-drawer-body">
@@ -164,60 +163,61 @@
   <!-- Library View -->
   <main id="library-view">
     <div class="toolbar">
-      <div id="breadcrumbs" class="breadcrumbs">
-        <a href="#" data-folder="">Home</a>
+      <div class="toolbar-left">
+        <div id="breadcrumbs" class="breadcrumbs">
+          <a href="#" data-folder="">Home</a>
+        </div>
+        <div class="toolbar-center-actions">
+          <button id="btn-folder-exclude" class="btn btn-sm" style="display: none;" title="Toggle search & OCR exclusion for this folder">
+            <span id="folder-exclude-icon">🚫</span>
+            <span id="folder-exclude-label">Exclude Folder from Search</span>
+          </button>
+        </div>
       </div>
 
-      <div class="toolbar-center-actions">
-        <button id="btn-folder-exclude" class="btn btn-sm" style="display: none;" title="Toggle search & OCR exclusion for this folder">
-          <span id="folder-exclude-icon">🚫</span>
-          <span id="folder-exclude-label">Exclude Folder from Search</span>
-        </button>
+      <div class="toolbar-right">
+        <div class="filter-tabs">
+          <button class="filter-tab active" data-type="">All</button>
+          <button class="filter-tab" data-type="folder">Folders</button>
+          <button class="filter-tab" data-type="notebook">Notebooks</button>
+          <button class="filter-tab" data-type="pdf">PDFs</button>
+          <button class="filter-tab" data-type="epub">EPUBs</button>
+          <button class="filter-tab" data-type="excluded">Excluded</button>
+        </div>
 
-        <button id="btn-open-converter" class="btn btn-sm btn-accent" title="Convert comics and bulky files to native Paper Pro PDF">
-          ⚡ Optimize for Paper Pro
-        </button>
-      </div>
+        <div class="toolbar-controls">
+          <div class="toolbar-sort">
+            <label for="select-sort" class="sort-label">Sort:</label>
+            <select id="select-sort" class="select-sort" aria-label="Sort documents">
+              <option value="modified-desc">Modified (Newest)</option>
+              <option value="modified-asc">Modified (Oldest)</option>
+              <option value="name-asc">Name (A–Z)</option>
+              <option value="name-desc">Name (Z–A)</option>
+              <option value="pages-desc">Most Pages</option>
+            </select>
+          </div>
 
-      <div class="filter-tabs">
-        <button class="filter-tab active" data-type="">All</button>
-        <button class="filter-tab" data-type="folder">Folders</button>
-        <button class="filter-tab" data-type="notebook">Notebooks</button>
-        <button class="filter-tab" data-type="pdf">PDFs</button>
-        <button class="filter-tab" data-type="epub">EPUBs</button>
-        <button class="filter-tab" data-type="excluded">Excluded</button>
-      </div>
-
-      <div class="toolbar-sort">
-        <label for="select-sort" class="sort-label">Sort:</label>
-        <select id="select-sort" class="select-sort" aria-label="Sort documents">
-          <option value="modified-desc">Modified (Newest)</option>
-          <option value="modified-asc">Modified (Oldest)</option>
-          <option value="name-asc">Name (A–Z)</option>
-          <option value="name-desc">Name (Z–A)</option>
-          <option value="pages-desc">Most Pages</option>
-        </select>
-      </div>
-
-      <div class="toolbar-view-mode">
-        <button id="btn-view-grid" class="btn btn-icon btn-sm active" title="Grid View" aria-label="Grid View">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="7" height="7"></rect>
-            <rect x="14" y="3" width="7" height="7"></rect>
-            <rect x="14" y="14" width="7" height="7"></rect>
-            <rect x="3" y="14" width="7" height="7"></rect>
-          </svg>
-        </button>
-        <button id="btn-view-list" class="btn btn-icon btn-sm" title="List View" aria-label="List View">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="8" y1="6" x2="21" y2="6"></line>
-            <line x1="8" y1="12" x2="21" y2="12"></line>
-            <line x1="8" y1="18" x2="21" y2="18"></line>
-            <line x1="3" y1="6" x2="3.01" y2="6"></line>
-            <line x1="3" y1="12" x2="3.01" y2="12"></line>
-            <line x1="3" y1="18" x2="3.01" y2="18"></line>
-          </svg>
-        </button>
+          <div class="toolbar-view-mode">
+            <button id="btn-view-grid" class="btn btn-icon btn-sm active" title="Grid View" aria-label="Grid View">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            </button>
+            <button id="btn-view-list" class="btn btn-icon btn-sm" title="List View" aria-label="List View">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="8" y1="6" x2="21" y2="6"></line>
+                <line x1="8" y1="12" x2="21" y2="12"></line>
+                <line x1="8" y1="18" x2="21" y2="18"></line>
+                <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                <line x1="3" y1="18" x2="3.01" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -894,13 +894,13 @@
     </div>
   </div>
 
-  <script src="/app.js?v=20261101h"></script>
+  <script src="/app.js?v=20261101i"></script>
   <script>
     // Purge legacy service worker caches immediately
     if ("caches" in window) {
       caches.keys().then((keys) => {
         keys.forEach((key) => {
-          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261101h") {
+          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261101i") {
             caches.delete(key);
           }
         });
@@ -909,7 +909,7 @@
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js?v=20261101h").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=20261101i").then((reg) => {
           reg.update();
         }).catch(() => {});
       });
