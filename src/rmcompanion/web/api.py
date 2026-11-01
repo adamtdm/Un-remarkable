@@ -232,7 +232,7 @@ def get_router(
         new_state = not doc.get("exclude_from_search", False)
         return set_exclude_search(doc_id, ExcludeSearchRequest(exclude=new_state))
 
-    @r.get("/documents/{doc_id}/thumbnail")
+    @r.api_route("/documents/{doc_id}/thumbnail", methods=["GET", "HEAD"])
     def get_document_thumbnail(
         doc_id: str,
         dark: bool = False,
@@ -259,27 +259,33 @@ def get_router(
 
         try:
             png_bytes = exporter.render_thumbnail(doc_id, dark_mode=dark)
+            content = b"" if (request and request.method == "HEAD") else png_bytes
             return Response(
-                content=png_bytes,
+                content=content,
                 media_type="image/png",
                 headers={
                     "ETag": etag,
                     "Cache-Control": "public, max-age=604800, immutable",
+                    "Content-Length": str(len(png_bytes)),
                 },
             )
         except Exception as e:
             logger.warning("Failed to render thumbnail for %s: %s", doc_id, e)
             raise HTTPException(status_code=500, detail=str(e))
 
-    @r.get("/documents/{doc_id}/pages/{page_idx}/svg")
-    def get_page_svg(doc_id: str, page_idx: int = 0, dark: bool = False) -> Response:
+    @r.api_route("/documents/{doc_id}/pages/{page_idx}/svg", methods=["GET", "HEAD"])
+    def get_page_svg(doc_id: str, page_idx: int = 0, dark: bool = False, request: Request = None) -> Response:
         """Render a single page to SVG."""
         try:
             svg = exporter.render_page_svg(doc_id, page_idx=page_idx, dark_mode=dark)
+            content = "" if (request and request.method == "HEAD") else svg
             return Response(
-                content=svg,
+                content=content,
                 media_type="image/svg+xml",
-                headers={"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"},
+                headers={
+                    "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+                    "Content-Length": str(len(svg.encode("utf-8"))),
+                },
             )
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Document not found")
@@ -287,15 +293,19 @@ def get_router(
             logger.exception("Error rendering page %d for %s: %s", page_idx, doc_id, e)
             raise HTTPException(status_code=500, detail=str(e))
 
-    @r.get("/documents/{doc_id}/pages/{page_idx}/png")
-    def get_page_png(doc_id: str, page_idx: int = 0, dark: bool = False) -> Response:
+    @r.api_route("/documents/{doc_id}/pages/{page_idx}/png", methods=["GET", "HEAD"])
+    def get_page_png(doc_id: str, page_idx: int = 0, dark: bool = False, request: Request = None) -> Response:
         """Render a single page to PNG."""
         try:
             png = exporter.render_page_png(doc_id, page_idx=page_idx, dark_mode=dark)
+            content = b"" if (request and request.method == "HEAD") else png
             return Response(
-                content=png,
+                content=content,
                 media_type="image/png",
-                headers={"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"},
+                headers={
+                    "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+                    "Content-Length": str(len(png)),
+                },
             )
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Document not found")
