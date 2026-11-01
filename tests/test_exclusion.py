@@ -174,3 +174,37 @@ def test_notes_only_search_filter(tmp_path):
     notes_res = db.search("Architecture", only_notes=True)
     assert len(notes_res) == 1
     assert notes_res[0]["doc_id"] == note_id
+
+
+def test_task_exclusion_with_document_and_folder(tmp_path):
+    db_file = tmp_path / "test.db"
+    db = Database(db_path=db_file)
+
+    folder_id = "f-work"
+    doc_id = "doc-work-notes"
+
+    db.upsert_document({"id": folder_id, "visible_name": "Work", "type": "CollectionType", "parent_id": ""})
+    db.upsert_document({"id": doc_id, "visible_name": "Meeting", "type": "DocumentType", "parent_id": folder_id})
+
+    # Add tasks
+    db.upsert_task({
+        "id": "t-1",
+        "doc_id": doc_id,
+        "page_idx": 0,
+        "raw_text": "* Buy notebook",
+        "clean_text": "Buy notebook",
+        "status": "open",
+        "marker_type": "star",
+        "fingerprint": "fp1",
+    })
+
+    assert db.count_open_tasks() == 1
+    assert len(db.list_tasks()) == 1
+
+    # Exclude parent folder
+    db.set_exclude_from_search(folder_id, True)
+
+    # Tasks for documents inside the excluded folder must not appear in the task list
+    assert db.count_open_tasks() == 0
+    assert len(db.list_tasks()) == 0
+

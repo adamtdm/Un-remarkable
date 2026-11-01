@@ -134,7 +134,7 @@ def test_api_editor_endpoints(test_env):
     from fastapi.testclient import TestClient
     from rmcompanion.web.app import create_app
 
-    settings = Settings()
+    settings = Settings(data_dir=test_env["db"].settings.data_dir, cache_dir=test_env["db"].settings.cache_dir)
     app = create_app(settings)
     app.state.db = test_env["db"]
     app.state.blob_store = test_env["blob_store"]

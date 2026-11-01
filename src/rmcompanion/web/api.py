@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 import logging
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +38,7 @@ class ConvertDocRequest(BaseModel):
     quality_stop: int = 3
     split_spreads: bool = False
     manga_mode: bool = False
+    device: str = "paper_pro"
 
 
 class TaskStatusRequest(BaseModel):
@@ -330,6 +333,52 @@ def get_router(
             logger.exception("Error exporting PDF for %s: %s", doc_id, e)
             raise HTTPException(status_code=500, detail=str(e))
 
+    @r.get("/documents/{doc_id}/export/zip")
+    def export_folder_zip(doc_id: str) -> Response:
+        """Download a folder or notebook hierarchy as a ZIP archive."""
+        root_doc = db.get_document(doc_id)
+        if not root_doc:
+            raise HTTPException(status_code=404, detail="Document or folder not found")
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            def _add_to_zip(d: dict[str, Any], prefix: str) -> None:
+                name = d.get("visible_name", "document")
+                clean_name = "".join(c for c in name if c.isalnum() or c in " ._-").strip() or "item"
+                if d.get("type") == "CollectionType":
+                    folder_prefix = f"{prefix}{clean_name}/"
+                    children = db.list_documents(parent_id=d["id"])
+                    if not children:
+                        zf.writestr(folder_prefix, "")
+                    for child in children:
+                        _add_to_zip(child, folder_prefix)
+                else:
+                    try:
+                        pdf_bytes = exporter.export_annotated_pdf(d["id"])
+                        zf.writestr(f"{prefix}{clean_name}.pdf", pdf_bytes)
+                    except Exception as err:
+                        logger.warning("Could not render PDF for %s: %s", d["id"], err)
+                        doc_files = db.get_document_files(d["id"])
+                        for df in doc_files:
+                            p = blob_store.get_path(df["blob_hash"])
+                            if p and p.is_file():
+                                zf.writestr(f"{prefix}{clean_name}_{df['file_id']}", p.read_bytes())
+
+            if root_doc.get("type") == "CollectionType":
+                children = db.list_documents(parent_id=root_doc["id"])
+                for child in children:
+                    _add_to_zip(child, "")
+            else:
+                _add_to_zip(root_doc, "")
+
+        zip_buf.seek(0)
+        zip_name = "".join(c for c in root_doc.get("visible_name", "export") if c.isalnum() or c in " ._-").strip() or "archive"
+        return Response(
+            content=zip_buf.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{zip_name}.zip"'},
+        )
+
     # --- Converter Endpoints ---
 
     @r.get("/converter/profiles")
@@ -358,6 +407,7 @@ def get_router(
                 quality_stop=payload.quality_stop,
                 split_spreads=payload.split_spreads,
                 manga_mode=payload.manga_mode,
+                device=payload.device,
             )
             return {"ok": True, "job_id": job_id}
         except ValueError as e:
@@ -372,6 +422,7 @@ def get_router(
         quality_stop: int = Form(3),
         split_spreads: bool = Form(False),
         manga_mode: bool = Form(False),
+        device: str = Form("paper_pro"),
     ) -> dict[str, Any]:
         """Upload and convert an external file (PDF, EPUB, CBZ)."""
         if not converter_engine:
@@ -384,6 +435,7 @@ def get_router(
                 quality_stop=quality_stop,
                 split_spreads=split_spreads,
                 manga_mode=manga_mode,
+                device=device,
             )
             return {"ok": True, "job_id": job_id}
         except ValueError as e:
@@ -657,5 +709,58 @@ def get_router(
         except Exception as e:
             logger.error("Failed to process quick capture: %s", e)
             raise HTTPException(status_code=500, detail=str(e))
+
+    @r.post("/documents/bulk-import")
+    async def bulk_import_documents(
+        files: list[UploadFile] = File(...),
+        device: str = Form("none"),
+        parent_id: str = Form(""),
+        quality_stop: int = Form(3),
+    ) -> dict[str, Any]:
+        """Bulk import documents (PDF, EPUB, Markdown, Text) with optional device optimization."""
+        imported: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+
+        for upload in files:
+            orig_name = upload.filename or "uploaded_file"
+            stem = Path(orig_name).stem
+            ext = Path(orig_name).suffix.lstrip(".").lower()
+            try:
+                content = await upload.read()
+                if not content:
+                    errors.append({"file": orig_name, "error": "File is empty"})
+                    continue
+
+                if device in {"paper_pro", "rm2", "rm1"} and ext in {"pdf", "epub", "cbz"} and converter_engine:
+                    opt_pdf = converter_engine.convert_sync(
+                        input_source=content,
+                        input_type=ext,
+                        quality_stop=quality_stop,
+                        device=device,
+                    )
+                    res = editor.import_pdf_file(title=stem, pdf_bytes=opt_pdf, parent_id=parent_id)
+                    imported.append({"file": orig_name, "id": res["id"], "type": "pdf", "optimized": True})
+                elif ext == "pdf":
+                    res = editor.import_pdf_file(title=stem, pdf_bytes=content, parent_id=parent_id)
+                    imported.append({"file": orig_name, "id": res["id"], "type": "pdf", "optimized": False})
+                elif ext == "epub":
+                    res = editor.import_epub_file(title=stem, epub_bytes=content, parent_id=parent_id)
+                    imported.append({"file": orig_name, "id": res["id"], "type": "epub", "optimized": False})
+                elif ext in {"md", "markdown", "txt"}:
+                    text_str = content.decode("utf-8", errors="replace")
+                    res = editor.import_markdown(title=stem, markdown_content=text_str, parent_id=parent_id)
+                    imported.append({"file": orig_name, "id": res["id"], "type": "notebook", "optimized": False})
+                else:
+                    errors.append({"file": orig_name, "error": f"Unsupported file type .{ext}"})
+            except Exception as e:
+                logger.exception("Failed to import file %s: %s", orig_name, e)
+                errors.append({"file": orig_name, "error": str(e)})
+
+        return {
+            "ok": len(imported) > 0,
+            "imported_count": len(imported),
+            "imported": imported,
+            "errors": errors,
+        }
 
     return r

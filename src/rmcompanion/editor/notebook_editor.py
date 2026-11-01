@@ -533,6 +533,311 @@ class NotebookEditor:
             pages_content=parts,
         )
 
+    def import_pdf_file(
+        self,
+        title: str,
+        pdf_bytes: bytes,
+        parent_id: str = "",
+    ) -> dict[str, Any]:
+        """Import a PDF document into the reMarkable library."""
+        import pymupdf
+        with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf_doc:
+            page_count = len(pdf_doc)
+
+        now_ms = str(int(time.time() * 1000))
+        doc_id = str(uuid.uuid4())
+        page_ids = [str(uuid.uuid4()) for _ in range(page_count)]
+
+        files_meta: list[dict[str, Any]] = []
+        doc_pages_meta: list[dict[str, Any]] = []
+        c_pages_list: list[dict[str, Any]] = []
+
+        # 1. Store PDF blob
+        pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
+        self.blob_store.put(pdf_hash, pdf_bytes)
+        files_meta.append({
+            "file_id": f"{doc_id}.pdf",
+            "blob_hash": pdf_hash,
+            "file_type": "pdf",
+            "size": len(pdf_bytes),
+        })
+
+        for idx, p_id in enumerate(page_ids):
+            doc_pages_meta.append({
+                "page_idx": idx,
+                "page_id": p_id,
+                "deleted": False,
+                "redir": idx,
+            })
+            c_pages_list.append({
+                "id": p_id,
+                "idx": {"timestamp": f"1:{idx + 1}", "value": f"ba{idx}" if idx > 0 else "ba"},
+                "redir": {"timestamp": "1:1", "value": idx},
+                "template": {"timestamp": "1:1", "value": "P Blank"},
+            })
+
+        # 2. Store .pagedata
+        pagedata_content = "\n".join(["P Blank"] * page_count) + "\n"
+        pagedata_bytes = pagedata_content.encode("utf-8")
+        pagedata_hash = hashlib.sha256(pagedata_bytes).hexdigest()
+        self.blob_store.put(pagedata_hash, pagedata_bytes)
+        files_meta.append({
+            "file_id": f"{doc_id}.pagedata",
+            "blob_hash": pagedata_hash,
+            "file_type": "pagedata",
+            "size": len(pagedata_bytes),
+        })
+
+        # 3. Store .content
+        content_dict = {
+            "cPages": {
+                "lastOpened": {"timestamp": "1:1", "value": page_ids[0] if page_ids else ""},
+                "original": {"timestamp": "0:0", "value": -1},
+                "pages": c_pages_list,
+            },
+            "crdt": True,
+            "dummyDocument": False,
+            "extraMetadata": {},
+            "fileType": "pdf",
+            "formatVersion": 2,
+            "lineHeight": -1,
+            "margins": 125,
+            "orientation": "portrait",
+            "originalPageCount": page_count,
+            "pageCount": page_count,
+            "pages": page_ids,
+            "pageTags": [],
+            "sizeInBytes": str(len(pdf_bytes)),
+            "textAlignment": "left",
+            "textScale": 1,
+        }
+        content_bytes = json.dumps(content_dict, indent=2).encode("utf-8")
+        content_hash = hashlib.sha256(content_bytes).hexdigest()
+        self.blob_store.put(content_hash, content_bytes)
+        files_meta.append({
+            "file_id": f"{doc_id}.content",
+            "blob_hash": content_hash,
+            "file_type": "content",
+            "size": len(content_bytes),
+        })
+
+        # 4. Store .metadata
+        meta_dict = {
+            "createdTime": now_ms,
+            "lastModified": now_ms,
+            "lastOpened": now_ms,
+            "lastOpenedPage": 0,
+            "new": True,
+            "parent": parent_id or "",
+            "pinned": False,
+            "source": "",
+            "type": "DocumentType",
+            "visibleName": title,
+        }
+        meta_bytes = json.dumps(meta_dict, indent=2).encode("utf-8")
+        meta_hash = hashlib.sha256(meta_bytes).hexdigest()
+        self.blob_store.put(meta_hash, meta_bytes)
+        files_meta.append({
+            "file_id": f"{doc_id}.metadata",
+            "blob_hash": meta_hash,
+            "file_type": "metadata",
+            "size": len(meta_bytes),
+        })
+
+        # Compute doc_hash
+        entries = [
+            Entry(
+                hash=f["blob_hash"],
+                type="0",
+                doc_id=f["file_id"],
+                subfiles=0,
+                size=f["size"],
+            )
+            for f in files_meta
+        ]
+        doc_hash = compute_doc_index_hash(entries)
+
+        doc_record = {
+            "id": doc_id,
+            "visible_name": title,
+            "type": "DocumentType",
+            "parent_id": parent_id or "",
+            "last_modified": now_ms,
+            "last_opened": now_ms,
+            "last_opened_page": 0,
+            "pinned": False,
+            "deleted": False,
+            "file_type": "pdf",
+            "page_count": page_count,
+            "doc_hash": doc_hash,
+        }
+        self.db.upsert_document(doc_record)
+        self.db.set_document_files(doc_hash, files_meta)
+        self.db.set_document_pages(doc_hash, doc_pages_meta)
+
+        logger.info("Imported PDF document %s (%s) with %d pages", title, doc_id, page_count)
+        return {
+            "id": doc_id,
+            "visible_name": title,
+            "page_count": page_count,
+            "doc_hash": doc_hash,
+            "parent_id": parent_id or "",
+            "file_type": "pdf",
+        }
+
+    def import_epub_file(
+        self,
+        title: str,
+        epub_bytes: bytes,
+        parent_id: str = "",
+    ) -> dict[str, Any]:
+        """Import an EPUB document into the reMarkable library."""
+        import pymupdf
+        try:
+            with pymupdf.open(stream=epub_bytes, filetype="epub") as ep_doc:
+                page_count = len(ep_doc)
+        except Exception:
+            page_count = 1
+
+        now_ms = str(int(time.time() * 1000))
+        doc_id = str(uuid.uuid4())
+        page_ids = [str(uuid.uuid4()) for _ in range(max(1, page_count))]
+
+        files_meta: list[dict[str, Any]] = []
+        doc_pages_meta: list[dict[str, Any]] = []
+        c_pages_list: list[dict[str, Any]] = []
+
+        # 1. Store EPUB blob
+        epub_hash = hashlib.sha256(epub_bytes).hexdigest()
+        self.blob_store.put(epub_hash, epub_bytes)
+        files_meta.append({
+            "file_id": f"{doc_id}.epub",
+            "blob_hash": epub_hash,
+            "file_type": "epub",
+            "size": len(epub_bytes),
+        })
+
+        for idx, p_id in enumerate(page_ids):
+            doc_pages_meta.append({
+                "page_idx": idx,
+                "page_id": p_id,
+                "deleted": False,
+                "redir": -1,
+            })
+            c_pages_list.append({
+                "id": p_id,
+                "idx": {"timestamp": f"1:{idx + 1}", "value": f"ba{idx}" if idx > 0 else "ba"},
+                "template": {"timestamp": "1:1", "value": "P Blank"},
+            })
+
+        # 2. Store .pagedata
+        pagedata_content = "\n".join(["P Blank"] * len(page_ids)) + "\n"
+        pagedata_bytes = pagedata_content.encode("utf-8")
+        pagedata_hash = hashlib.sha256(pagedata_bytes).hexdigest()
+        self.blob_store.put(pagedata_hash, pagedata_bytes)
+        files_meta.append({
+            "file_id": f"{doc_id}.pagedata",
+            "blob_hash": pagedata_hash,
+            "file_type": "pagedata",
+            "size": len(pagedata_bytes),
+        })
+
+        # 3. Store .content
+        content_dict = {
+            "cPages": {
+                "lastOpened": {"timestamp": "1:1", "value": page_ids[0]},
+                "original": {"timestamp": "0:0", "value": -1},
+                "pages": c_pages_list,
+            },
+            "crdt": True,
+            "dummyDocument": False,
+            "extraMetadata": {},
+            "fileType": "epub",
+            "formatVersion": 2,
+            "lineHeight": -1,
+            "margins": 125,
+            "orientation": "portrait",
+            "originalPageCount": page_count,
+            "pageCount": page_count,
+            "pages": page_ids,
+            "pageTags": [],
+            "sizeInBytes": str(len(epub_bytes)),
+            "textAlignment": "left",
+            "textScale": 1,
+        }
+        content_bytes = json.dumps(content_dict, indent=2).encode("utf-8")
+        content_hash = hashlib.sha256(content_bytes).hexdigest()
+        self.blob_store.put(content_hash, content_bytes)
+        files_meta.append({
+            "file_id": f"{doc_id}.content",
+            "blob_hash": content_hash,
+            "file_type": "content",
+            "size": len(content_bytes),
+        })
+
+        # 4. Store .metadata
+        meta_dict = {
+            "createdTime": now_ms,
+            "lastModified": now_ms,
+            "lastOpened": now_ms,
+            "lastOpenedPage": 0,
+            "new": True,
+            "parent": parent_id or "",
+            "pinned": False,
+            "source": "",
+            "type": "DocumentType",
+            "visibleName": title,
+        }
+        meta_bytes = json.dumps(meta_dict, indent=2).encode("utf-8")
+        meta_hash = hashlib.sha256(meta_bytes).hexdigest()
+        self.blob_store.put(meta_hash, meta_bytes)
+        files_meta.append({
+            "file_id": f"{doc_id}.metadata",
+            "blob_hash": meta_hash,
+            "file_type": "metadata",
+            "size": len(meta_bytes),
+        })
+
+        entries = [
+            Entry(
+                hash=f["blob_hash"],
+                type="0",
+                doc_id=f["file_id"],
+                subfiles=0,
+                size=f["size"],
+            )
+            for f in files_meta
+        ]
+        doc_hash = compute_doc_index_hash(entries)
+
+        doc_record = {
+            "id": doc_id,
+            "visible_name": title,
+            "type": "DocumentType",
+            "parent_id": parent_id or "",
+            "last_modified": now_ms,
+            "last_opened": now_ms,
+            "last_opened_page": 0,
+            "pinned": False,
+            "deleted": False,
+            "file_type": "epub",
+            "page_count": page_count,
+            "doc_hash": doc_hash,
+        }
+        self.db.upsert_document(doc_record)
+        self.db.set_document_files(doc_hash, files_meta)
+        self.db.set_document_pages(doc_hash, doc_pages_meta)
+
+        logger.info("Imported EPUB document %s (%s) with %d pages", title, doc_id, page_count)
+        return {
+            "id": doc_id,
+            "visible_name": title,
+            "page_count": page_count,
+            "doc_hash": doc_hash,
+            "parent_id": parent_id or "",
+            "file_type": "epub",
+        }
+
     def create_folder(self, name: str, parent_id: str = "") -> dict[str, Any]:
         """Create a new folder (CollectionType) in the library or nested inside a parent folder."""
         folder_name = name.strip()

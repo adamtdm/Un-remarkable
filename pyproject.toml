@@ -3,13 +3,13 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rmcompanion"
+name = "un-remarkable"
 version = "0.1.0"
-description = "Self-hosted companion for reMarkable Paper Pro: continuous cloud sync, dark mode web reader, and MCP server"
+description = "Un-remarkable: Self-hosted companion for reMarkable Paper Pro: continuous cloud sync, dark mode web reader, and MCP server"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-    { name = "reMarkable Companion Team" }
+    { name = "Adam Meek" }
 ]
 dependencies = [
     "fastapi>=0.115.0",

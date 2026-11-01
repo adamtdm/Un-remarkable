@@ -361,24 +361,33 @@ class Database:
         include_deleted: bool = False,
         file_type: str | None = None,
     ) -> list[dict[str, Any]]:
-        query = "SELECT * FROM documents WHERE 1=1"
+        query = """
+        SELECT d.*, COALESCE(df.total_size, 0) AS total_size
+        FROM documents d
+        LEFT JOIN (
+            SELECT doc_hash, SUM(size) AS total_size
+            FROM document_files
+            GROUP BY doc_hash
+        ) df ON d.doc_hash = df.doc_hash
+        WHERE 1=1
+        """
         params: list[Any] = []
 
         if not include_deleted:
-            query += " AND deleted = 0"
+            query += " AND d.deleted = 0"
 
         if parent_id is not None:
-            query += " AND parent_id = ?"
+            query += " AND d.parent_id = ?"
             params.append(parent_id)
 
         if file_type is not None and file_type != "":
             if file_type.lower() in ("folder", "collection", "collectiontype"):
-                query += " AND type = 'CollectionType'"
+                query += " AND d.type = 'CollectionType'"
             else:
-                query += " AND file_type = ? AND type = 'DocumentType'"
+                query += " AND d.file_type = ? AND d.type = 'DocumentType'"
                 params.append(file_type)
 
-        query += " ORDER BY type DESC, visible_name ASC"
+        query += " ORDER BY d.type DESC, d.visible_name ASC"
 
         with self.connect() as conn:
             rows = conn.execute(query, params).fetchall()
@@ -388,6 +397,16 @@ class Database:
                 d["pinned"] = bool(d.get("pinned", False))
                 d["deleted"] = bool(d.get("deleted", False))
                 d["exclude_from_search"] = bool(d.get("exclude_from_search", False))
+                size = int(d.get("total_size") or 0)
+                d["total_size"] = size
+                d["needs_optimization"] = (
+                    d.get("type") != "CollectionType"
+                    and (
+                        size > 30 * 1024 * 1024
+                        or (d.get("file_type") == "epub" and size > 15 * 1024 * 1024)
+                        or (d.get("page_count", 0) > 150)
+                    )
+                )
                 results.append(d)
             return results
 
@@ -519,6 +538,10 @@ class Database:
                 placeholders = ",".join("?" for _ in affected_ids)
                 conn.execute(
                     f"DELETE FROM search_index WHERE doc_id IN ({placeholders}) AND source NOT IN ('title')",
+                    affected_ids,
+                )
+                conn.execute(
+                    f"DELETE FROM tasks WHERE doc_id IN ({placeholders})",
                     affected_ids,
                 )
             return affected_ids
@@ -655,10 +678,10 @@ class Database:
 
     def list_tasks(self, status: str | None = None, doc_id: str | None = None) -> list[dict[str, Any]]:
         query = """
-        SELECT t.*, d.visible_name AS doc_name
+        SELECT t.*, d.visible_name AS doc_name, d.parent_id, d.exclude_from_search AS doc_excluded, d.deleted AS doc_deleted
         FROM tasks t
         LEFT JOIN documents d ON t.doc_id = d.id
-        WHERE 1=1
+        WHERE (d.deleted IS NULL OR d.deleted = 0)
         """
         params: list[Any] = []
         if status:
@@ -671,7 +694,14 @@ class Database:
 
         with self.connect() as conn:
             rows = conn.execute(query, params).fetchall()
-            return [dict(r) for r in rows]
+            valid_tasks: list[dict[str, Any]] = []
+            for r in rows:
+                t = dict(r)
+                did = t.get("doc_id")
+                if did and self.is_excluded_from_search(did):
+                    continue
+                valid_tasks.append(t)
+            return valid_tasks
 
     def set_task_status(self, task_id: str, status: str) -> bool:
         now = time.time() if status == "completed" else None
@@ -688,6 +718,4 @@ class Database:
             return cur.rowcount > 0
 
     def count_open_tasks(self) -> int:
-        with self.connect() as conn:
-            row = conn.execute("SELECT count(*) FROM tasks WHERE status = 'open'").fetchone()
-            return row[0] if row else 0
+        return len(self.list_tasks(status="open"))

@@ -1,6 +1,6 @@
 {
-  "name": "reMarkable Companion",
-  "short_name": "reMarkable",
+  "name": "Un-remarkable",
+  "short_name": "Un-remarkable",
   "description": "Local cloud mirror, dark mode reader, and typed editor for reMarkable Paper Pro",
   "start_url": "/",
   "display": "standalone",

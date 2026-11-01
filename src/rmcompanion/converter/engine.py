@@ -38,6 +38,12 @@ class QualityProfile:
 
 # 5-Stop Quality Slider Profiles
 # Paper Pro physical screen is 1620 x 2160 portrait (2160 x 1620 landscape) at 229 PPI
+DEVICE_SPECS: dict[str, dict[str, Any]] = {
+    "paper_pro": {"name": "reMarkable Paper Pro (2160×1620, Color Canvas)", "max_w": 1620, "max_h": 2160, "grayscale": False},
+    "rm2": {"name": "reMarkable 2 (1872×1404, Monochrome Canvas)", "max_w": 1404, "max_h": 1872, "grayscale": True},
+    "rm1": {"name": "reMarkable 1 (1872×1404, Monochrome)", "max_w": 1404, "max_h": 1872, "grayscale": True},
+}
+
 QUALITY_PROFILES: dict[int, QualityProfile] = {
     1: QualityProfile(
         stop=1,
@@ -129,6 +135,7 @@ class ConverterEngine:
         manga_mode: bool = False,
         progress_cb: Callable[[int, int, str], None] | None = None,
         out_path: Path | None = None,
+        device: str = "paper_pro",
         *,
         input_bytes: bytes | None = None,
     ) -> bytes:
@@ -155,7 +162,7 @@ class ConverterEngine:
                     raw_img = z.read(name)
                     with pymupdf.open(stream=raw_img, filetype="image") as img_doc:
                         self._process_and_insert_page(
-                            img_doc[0], out_pdf, profile, split_spreads, manga_mode
+                            img_doc[0], out_pdf, profile, split_spreads, manga_mode, device=device
                         )
                     time.sleep(0.004)
 
@@ -173,7 +180,7 @@ class ConverterEngine:
                     if progress_cb:
                         progress_cb(idx + 1, total, f"Processing page {idx + 1} of {total}")
                     self._process_and_insert_page(
-                        page, out_pdf, profile, split_spreads, manga_mode
+                        page, out_pdf, profile, split_spreads, manga_mode, device=device
                     )
                     time.sleep(0.004)
 
@@ -193,6 +200,7 @@ class ConverterEngine:
         profile: QualityProfile,
         split_spreads: bool,
         manga_mode: bool,
+        device: str = "paper_pro",
     ) -> None:
         """Render page or sub-pages to target resolution and insert as compressed JPEG."""
         rect = page.rect
@@ -206,9 +214,9 @@ class ConverterEngine:
 
             sub_rects = [r_right, r_left] if manga_mode else [r_left, r_right]
             for sub_r in sub_rects:
-                self._render_rect_to_page(page, sub_r, out_doc, profile, is_landscape=False)
+                self._render_rect_to_page(page, sub_r, out_doc, profile, is_landscape=False, device=device)
         else:
-            self._render_rect_to_page(page, rect, out_doc, profile, is_landscape=is_spread)
+            self._render_rect_to_page(page, rect, out_doc, profile, is_landscape=is_spread, device=device)
 
     def _render_rect_to_page(
         self,
@@ -217,16 +225,25 @@ class ConverterEngine:
         out_doc: pymupdf.Document,
         profile: QualityProfile,
         is_landscape: bool,
+        device: str = "paper_pro",
     ) -> None:
-        target_w = profile.max_height if is_landscape else profile.max_width
-        target_h = profile.max_width if is_landscape else profile.max_height
+        dev_info = DEVICE_SPECS.get(device, DEVICE_SPECS["paper_pro"])
+        dev_w = dev_info["max_w"]
+        dev_h = dev_info["max_h"]
+
+        base_w = min(profile.max_width, dev_w)
+        base_h = min(profile.max_height, dev_h)
+
+        target_w = base_h if is_landscape else base_w
+        target_h = base_w if is_landscape else base_h
 
         scale_x = target_w / clip_rect.width
         scale_y = target_h / clip_rect.height
         scale = min(scale_x, scale_y)
 
         mat = pymupdf.Matrix(scale, scale)
-        pix = page.get_pixmap(matrix=mat, clip=clip_rect, alpha=False)
+        colorspace = pymupdf.csGRAY if dev_info.get("grayscale") else pymupdf.csRGB
+        pix = page.get_pixmap(matrix=mat, clip=clip_rect, colorspace=colorspace, alpha=False)
         jpg_bytes = pix.tobytes(output="jpeg", jpg_quality=profile.jpeg_quality)
 
         new_page = out_doc.new_page(width=pix.width, height=pix.height)
@@ -238,6 +255,7 @@ class ConverterEngine:
         quality_stop: int = 3,
         split_spreads: bool = False,
         manga_mode: bool = False,
+        device: str = "paper_pro",
     ) -> str:
         """Start asynchronous conversion of an existing library document."""
         doc = self.db.get_document(doc_id)
@@ -272,6 +290,7 @@ class ConverterEngine:
             quality_stop=quality_stop,
             split_spreads=split_spreads,
             manga_mode=manga_mode,
+            device=device,
         )
 
     async def start_job_from_upload(
@@ -281,6 +300,7 @@ class ConverterEngine:
         quality_stop: int = 3,
         split_spreads: bool = False,
         manga_mode: bool = False,
+        device: str = "paper_pro",
     ) -> str:
         """Start asynchronous conversion of an uploaded file."""
         ext = Path(filename).suffix.lstrip(".").lower()
@@ -295,6 +315,7 @@ class ConverterEngine:
             quality_stop=quality_stop,
             split_spreads=split_spreads,
             manga_mode=manga_mode,
+            device=device,
         )
 
     def _launch_job(
@@ -306,6 +327,7 @@ class ConverterEngine:
         quality_stop: int,
         split_spreads: bool,
         manga_mode: bool,
+        device: str = "paper_pro",
     ) -> str:
         # Evict oldest jobs when exceeding capacity
         while len(self._jobs) >= self.MAX_CONVERSION_JOBS:
@@ -328,6 +350,7 @@ class ConverterEngine:
             "output_path": str(out_path),
             "quality_stop": quality_stop,
             "quality_name": QUALITY_PROFILES.get(quality_stop, QUALITY_PROFILES[3]).name,
+            "device": device,
             "status": "processing",
             "progress_percent": 0,
             "current_page": 0,
@@ -360,6 +383,7 @@ class ConverterEngine:
                     manga_mode,
                     _progress,
                     out_path,
+                    device,
                 )
                 result_size = out_path.stat().st_size
                 job_info["status"] = "done"

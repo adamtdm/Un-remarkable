@@ -1,4 +1,4 @@
-# reMarkable Companion
+# Un-remarkable
 
 A self-hosted, Dockerized cloud companion, dark mode web reader, and optimization engine purpose-built for the **reMarkable Paper Pro** (and reMarkable 2).
 
@@ -39,8 +39,8 @@ The recommended setup is running the container 24/7 on a local home server or al
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/adamtdm/remarkable.git
-cd remarkable
+git clone https://github.com/adamtdm/Un-remarkable.git
+cd Un-remarkable
 ```
 
 ### 2. Configure Environment (Optional)
