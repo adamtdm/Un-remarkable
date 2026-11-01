@@ -426,6 +426,82 @@ class Database:
                         queue.append(r["id"])
         return descendants
 
+    def get_folder_tree(self) -> list[dict[str, Any]]:
+        """Get all non-deleted folders with hierarchical path, depth, and child counts."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT id, visible_name, parent_id, last_modified FROM documents WHERE type = 'CollectionType' AND deleted = 0"
+            ).fetchall()
+
+        folder_map = {r["id"]: dict(r) for r in rows}
+
+        def get_path_info(fid: str) -> tuple[str, int]:
+            curr = folder_map.get(fid)
+            if not curr:
+                return ("", 0)
+            parts = [curr["visible_name"]]
+            depth = 0
+            visited = {fid}
+            p = curr.get("parent_id", "")
+            while p and p in folder_map and p not in visited:
+                visited.add(p)
+                p_item = folder_map[p]
+                parts.insert(0, p_item["visible_name"])
+                depth += 1
+                p = p_item.get("parent_id", "")
+            return (" / ".join(parts), depth)
+
+        result = []
+        for fid, f in folder_map.items():
+            path_str, depth = get_path_info(fid)
+            result.append({
+                "id": f["id"],
+                "visible_name": f["visible_name"],
+                "parent_id": f.get("parent_id", ""),
+                "path": path_str,
+                "depth": depth,
+            })
+
+        result.sort(key=lambda x: x["path"].lower())
+        return result
+
+    def update_document_parent(self, doc_id: str, new_parent_id: str = "") -> None:
+        """Update parent_id of a document or collection."""
+        now = time.time()
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE documents SET parent_id = ?, updated_at = ? WHERE id = ?",
+                (new_parent_id, now, doc_id),
+            )
+
+    def soft_delete_document(self, doc_id: str) -> list[str]:
+        """Mark document and all its descendants as deleted. Purges search index and tasks."""
+        row = self.get_document(doc_id)
+        if not row:
+            return []
+
+        affected_ids = [doc_id]
+        if row.get("type") == "CollectionType":
+            descendants = self.get_descendant_ids(doc_id)
+            affected_ids.extend(descendants)
+
+        now = time.time()
+        placeholders = ",".join("?" for _ in affected_ids)
+        with self.connect() as conn:
+            conn.execute(
+                f"UPDATE documents SET deleted = 1, updated_at = ? WHERE id IN ({placeholders})",
+                [now, *affected_ids],
+            )
+            conn.execute(
+                f"DELETE FROM search_index WHERE doc_id IN ({placeholders})",
+                affected_ids,
+            )
+            conn.execute(
+                f"DELETE FROM tasks WHERE doc_id IN ({placeholders})",
+                affected_ids,
+            )
+        return affected_ids
+
     def set_exclude_from_search(self, doc_id: str, exclude: bool) -> list[str]:
         """Toggle exclusion for a document or folder. Purges non-title search index entries if excluded."""
         with self.connect() as conn:

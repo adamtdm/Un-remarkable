@@ -74,6 +74,15 @@ class CreateTaskItemRequest(BaseModel):
     notebook_title: str = "Tasks"
 
 
+class CreateFolderRequest(BaseModel):
+    name: str
+    parent_id: str = ""
+
+
+class MoveDocumentRequest(BaseModel):
+    parent_id: str = ""
+
+
 def get_router(
     db: Database,
     blob_store: BlobStore,
@@ -130,6 +139,46 @@ def get_router(
         pid = parent_id if parent_id else ""
         effective_file_type = file_type or type
         return db.list_documents(parent_id=pid, include_deleted=include_deleted, file_type=effective_file_type)
+
+    @r.get("/folders")
+    def list_folders() -> list[dict[str, Any]]:
+        """Get all folders in the library with hierarchical path and depth."""
+        return db.get_folder_tree()
+
+    @r.post("/folders")
+    def create_folder(payload: CreateFolderRequest) -> dict[str, Any]:
+        """Create a new folder in the library."""
+        if not notebook_editor:
+            raise HTTPException(status_code=503, detail="Notebook editor not available")
+        try:
+            folder = notebook_editor.create_folder(payload.name, payload.parent_id)
+            return {"status": "ok", "folder": folder}
+        except (ValueError, FileNotFoundError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @r.post("/documents/{doc_id}/move")
+    def move_document(doc_id: str, payload: MoveDocumentRequest) -> dict[str, Any]:
+        """Move a document or folder to a target parent folder (or root "")."""
+        if not notebook_editor:
+            raise HTTPException(status_code=503, detail="Notebook editor not available")
+        try:
+            res = notebook_editor.move_document(doc_id, payload.parent_id)
+            return {"status": "ok", "result": res}
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @r.delete("/documents/{doc_id}")
+    def delete_document(doc_id: str) -> dict[str, Any]:
+        """Soft delete a document or folder (including all nested descendants)."""
+        if not notebook_editor:
+            raise HTTPException(status_code=503, detail="Notebook editor not available")
+        try:
+            res = notebook_editor.delete_document(doc_id)
+            return {"status": "ok", "result": res}
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
     @r.get("/documents/{doc_id}")
     def get_document(doc_id: str) -> dict[str, Any]:

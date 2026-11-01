@@ -271,4 +271,50 @@ def create_mcp_server(
         """
         return app_editor.update_page_typed_text(doc_id=doc_id, page_idx=page_idx, text=text)
 
+    @server.tool(
+        name="list_folders",
+        description="List all folders in the reMarkable library including full nesting paths and hierarchy.",
+    )
+    def list_folders() -> list[dict[str, Any]]:
+        """List folders with hierarchical path, depth, and IDs."""
+        return app_db.get_folder_tree()
+
+    @server.tool(
+        name="create_folder",
+        description="Create a new folder or nested subfolder in the reMarkable library.",
+    )
+    def create_folder(name: str, parent_id: str = "") -> dict[str, Any]:
+        """Create a folder.
+
+        Args:
+            name: Folder visible name.
+            parent_id: Optional parent folder UUID for nested folders, or empty string for root.
+        """
+        return app_editor.create_folder(name=name, parent_id=parent_id)
+
+    @server.tool(
+        name="move_document",
+        description="Move a document or folder to another folder or back to root in the reMarkable library.",
+    )
+    def move_document(doc_id: str, parent_id: str = "") -> dict[str, Any]:
+        """Move document or folder.
+
+        Args:
+            doc_id: UUID of document or folder to move.
+            parent_id: Target folder UUID, or empty string "" for root library.
+        """
+        return app_editor.move_document(doc_id=doc_id, new_parent_id=parent_id)
+
+    @server.tool(
+        name="delete_document",
+        description="Delete a document or folder (and all nested contents) from the reMarkable library.",
+    )
+    def delete_document(doc_id: str) -> dict[str, Any]:
+        """Delete document or folder.
+
+        Args:
+            doc_id: UUID of document or folder to delete.
+        """
+        return app_editor.delete_document(doc_id=doc_id)
+
     return server

@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
-  <link rel="stylesheet" href="/style.css?v=20261101b">
+  <link rel="stylesheet" href="/style.css?v=20261101c">
 </head>
 <body>
   <!-- Header -->
@@ -83,6 +83,10 @@
           <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
         <span>New Note</span>
+      </button>
+
+      <button id="btn-new-folder" class="btn btn-sm" title="Create a new folder in this location">
+        <span>📁 New Folder</span>
       </button>
 
       <button id="btn-tasks-toggle" class="btn btn-sm" title="Consolidated Tasks">
@@ -464,6 +468,65 @@
     </div>
   </div>
 
+  <!-- Move / Add to Folder Modal -->
+  <div id="move-folder-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal modal-md">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="font-size: 1.25rem;">📁</span>
+          <h2>Add to Folder</h2>
+        </div>
+        <button id="btn-move-folder-close" class="btn btn-icon" aria-label="Close">✕</button>
+      </div>
+
+      <div class="modal-body-content">
+        <p class="modal-hint" style="margin-bottom: 0.75rem;">
+          Choose destination for <strong id="move-modal-doc-title">Document</strong>:
+        </p>
+
+        <!-- Quick inline create new folder -->
+        <form id="form-quick-new-folder" class="form-quick-new-folder" onsubmit="return false;" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+          <input type="text" id="input-quick-new-folder" class="modal-input" placeholder="Create new subfolder here..." style="flex: 1;">
+          <button type="submit" id="btn-quick-create-folder" class="btn btn-sm btn-accent">+ New Folder</button>
+        </form>
+
+        <!-- Search / filter folders -->
+        <input type="text" id="input-folder-search" class="modal-input" placeholder="Filter folders..." style="width: 100%; margin-bottom: 0.75rem;">
+
+        <!-- Interactive Folder Tree -->
+        <div id="folder-tree-container" class="folder-tree-list">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top: 1rem;">
+        <button id="btn-move-folder-cancel" class="btn">Cancel</button>
+        <button id="btn-move-folder-submit" class="btn btn-primary" disabled>Move Here</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Folder Modal -->
+  <div id="new-folder-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📁 Create New Folder</h2>
+        <button id="btn-new-folder-close" class="btn btn-icon" aria-label="Close">✕</button>
+      </div>
+      <form id="form-new-folder" onsubmit="return false;">
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label for="input-new-folder-name"><strong>Folder Name:</strong></label>
+          <input type="text" id="input-new-folder-name" class="modal-input" placeholder="e.g. Invoices, Sketches..." required style="width: 100%; margin-top: 0.35rem;">
+          <div class="modal-hint" style="margin-top: 0.35rem;" id="new-folder-location-hint">Location: Home</div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="btn-new-folder-cancel" class="btn">Cancel</button>
+          <button type="submit" id="btn-new-folder-submit" class="btn btn-primary">Create Folder</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Mobile Bottom Action Sheet / Tray for Documents & Folders -->
   <div id="mobile-action-tray" class="bottom-sheet-backdrop" style="display: none;">
     <div class="bottom-sheet" id="bottom-sheet-content">
@@ -514,6 +577,22 @@
           <div class="tray-btn-text">
             <strong id="tray-label-exclude">Exclude from Search</strong>
             <span id="tray-desc-exclude">Hide from full-text search and OCR indexing</span>
+          </div>
+        </button>
+
+        <button id="tray-btn-move" class="tray-action-btn">
+          <span class="tray-btn-icon">📁</span>
+          <div class="tray-btn-text">
+            <strong>Add to Folder</strong>
+            <span>Move to root or a nested folder</span>
+          </div>
+        </button>
+
+        <button id="tray-btn-delete" class="tray-action-btn tray-action-btn-danger">
+          <span class="tray-btn-icon">🗑</span>
+          <div class="tray-btn-text">
+            <strong style="color: var(--danger);">Delete</strong>
+            <span>Move to trash</span>
           </div>
         </button>
       </div>
@@ -574,13 +653,13 @@
     </div>
   </div>
 
-  <script src="/app.js?v=20261101b"></script>
+  <script src="/app.js?v=20261101c"></script>
   <script>
     // Purge legacy service worker caches immediately
     if ("caches" in window) {
       caches.keys().then((keys) => {
         keys.forEach((key) => {
-          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-20261101b") {
+          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261101c") {
             caches.delete(key);
           }
         });
@@ -589,7 +668,7 @@
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js?v=20261101b").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=20261101c").then((reg) => {
           reg.update();
         }).catch(() => {});
       });

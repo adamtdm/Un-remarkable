@@ -501,3 +501,161 @@ class NotebookEditor:
             parent_id=parent_id,
             pages_content=parts,
         )
+
+    def create_folder(self, name: str, parent_id: str = "") -> dict[str, Any]:
+        """Create a new folder (CollectionType) in the library or nested inside a parent folder."""
+        folder_name = name.strip()
+        if not folder_name:
+            raise ValueError("Folder name cannot be empty")
+
+        if parent_id:
+            parent = self.db.get_document(parent_id)
+            if not parent:
+                raise FileNotFoundError(f"Parent folder {parent_id} not found")
+            if parent.get("type") != "CollectionType":
+                raise ValueError(f"Parent {parent_id} is not a folder")
+
+        folder_id = str(uuid.uuid4())
+        now_ms = str(int(time.time() * 1000))
+
+        meta_dict = {
+            "createdTime": now_ms,
+            "lastModified": now_ms,
+            "new": True,
+            "parent": parent_id or "",
+            "pinned": False,
+            "source": "",
+            "type": "CollectionType",
+            "visibleName": folder_name,
+        }
+        meta_bytes = json.dumps(meta_dict, indent=2).encode("utf-8")
+        meta_hash = hashlib.sha256(meta_bytes).hexdigest()
+        self.blob_store.put(meta_hash, meta_bytes)
+
+        entries = [
+            Entry(
+                hash=meta_hash,
+                type="0",
+                doc_id=f"{folder_id}.metadata",
+                subfiles=0,
+                size=len(meta_bytes),
+            )
+        ]
+        doc_hash = compute_doc_index_hash(entries)
+
+        doc_record = {
+            "id": folder_id,
+            "visible_name": folder_name,
+            "type": "CollectionType",
+            "parent_id": parent_id or "",
+            "last_modified": now_ms,
+            "last_opened": "",
+            "last_opened_page": 0,
+            "pinned": False,
+            "deleted": False,
+            "file_type": "",
+            "page_count": 0,
+            "doc_hash": doc_hash,
+        }
+        self.db.upsert_document(doc_record)
+        self.db.set_document_files(doc_hash, [{
+            "file_id": f"{folder_id}.metadata",
+            "blob_hash": meta_hash,
+            "file_type": "metadata",
+            "size": len(meta_bytes),
+        }])
+
+        return doc_record
+
+    def move_document(self, doc_id: str, new_parent_id: str = "") -> dict[str, Any]:
+        """Move a document or folder to a new parent folder (or root "")."""
+        doc = self.db.get_document(doc_id)
+        if not doc:
+            raise FileNotFoundError(f"Document {doc_id} not found")
+
+        is_collection = doc.get("type") == "CollectionType"
+        if is_collection:
+            if new_parent_id == doc_id:
+                raise ValueError("Cannot move a folder into itself")
+            descendants = self.db.get_descendant_ids(doc_id)
+            if new_parent_id in descendants:
+                raise ValueError("Cannot move a folder into its own subfolder")
+
+        if new_parent_id:
+            parent = self.db.get_document(new_parent_id)
+            if not parent:
+                raise FileNotFoundError(f"Target folder {new_parent_id} not found")
+            if parent.get("type") != "CollectionType":
+                raise ValueError(f"Target {new_parent_id} is not a folder")
+
+        # Update metadata blob if present
+        now_ms = str(int(time.time() * 1000))
+        meta_key = f"{doc_id}.metadata"
+        files = doc.get("files", [])
+        meta_file = next((f for f in files if f["file_id"] == meta_key), None)
+        if meta_file and self.blob_store.has(meta_file["blob_hash"]):
+            try:
+                meta_dict = json.loads(self.blob_store.get(meta_file["blob_hash"]).decode("utf-8"))
+            except Exception:
+                meta_dict = {}
+            meta_dict["parent"] = new_parent_id or ""
+            meta_dict["lastModified"] = now_ms
+            new_meta_bytes = json.dumps(meta_dict, indent=2).encode("utf-8")
+            new_meta_hash = hashlib.sha256(new_meta_bytes).hexdigest()
+            self.blob_store.put(new_meta_hash, new_meta_bytes)
+
+            updated_files = [
+                {**f, "blob_hash": new_meta_hash, "size": len(new_meta_bytes)}
+                if f["file_id"] == meta_key else f
+                for f in files
+            ]
+            entries = [
+                Entry(hash=f["blob_hash"], type="0", doc_id=f["file_id"], subfiles=0, size=f["size"])
+                for f in updated_files
+            ]
+            new_doc_hash = compute_doc_index_hash(entries)
+            self.db.set_document_files(new_doc_hash, updated_files)
+            doc["doc_hash"] = new_doc_hash
+
+        # Update DB parent_id
+        self.db.update_document_parent(doc_id, new_parent_id)
+        doc["parent_id"] = new_parent_id
+        doc["last_modified"] = now_ms
+        self.db.upsert_document(doc)
+
+        return {
+            "id": doc_id,
+            "visible_name": doc["visible_name"],
+            "parent_id": new_parent_id,
+            "type": doc["type"],
+        }
+
+    def delete_document(self, doc_id: str) -> dict[str, Any]:
+        """Soft delete a document or folder (including all nested descendants)."""
+        doc = self.db.get_document(doc_id)
+        if not doc:
+            raise FileNotFoundError(f"Document {doc_id} not found")
+
+        affected_ids = self.db.soft_delete_document(doc_id)
+
+        # Update metadata blob as deleted
+        now_ms = str(int(time.time() * 1000))
+        meta_key = f"{doc_id}.metadata"
+        files = doc.get("files", [])
+        meta_file = next((f for f in files if f["file_id"] == meta_key), None)
+        if meta_file and self.blob_store.has(meta_file["blob_hash"]):
+            try:
+                meta_dict = json.loads(self.blob_store.get(meta_file["blob_hash"]).decode("utf-8"))
+            except Exception:
+                meta_dict = {}
+            meta_dict["deleted"] = True
+            meta_dict["lastModified"] = now_ms
+            new_meta_bytes = json.dumps(meta_dict, indent=2).encode("utf-8")
+            new_meta_hash = hashlib.sha256(new_meta_bytes).hexdigest()
+            self.blob_store.put(new_meta_hash, new_meta_bytes)
+
+        return {
+            "id": doc_id,
+            "visible_name": doc["visible_name"],
+            "deleted_ids": affected_ids,
+        }

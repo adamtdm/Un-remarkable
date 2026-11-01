@@ -181,7 +181,28 @@ const el = {
   trayIconExclude: document.getElementById("tray-icon-exclude"),
   trayLabelExclude: document.getElementById("tray-label-exclude"),
   trayDescExclude: document.getElementById("tray-desc-exclude"),
+  trayBtnMove: document.getElementById("tray-btn-move"),
+  trayBtnDelete: document.getElementById("tray-btn-delete"),
   trayBtnCancel: document.getElementById("tray-btn-cancel"),
+
+  // Folder management elements
+  btnNewFolder: document.getElementById("btn-new-folder"),
+  newFolderModal: document.getElementById("new-folder-modal"),
+  btnNewFolderClose: document.getElementById("btn-new-folder-close"),
+  btnNewFolderCancel: document.getElementById("btn-new-folder-cancel"),
+  formNewFolder: document.getElementById("form-new-folder"),
+  inputNewFolderName: document.getElementById("input-new-folder-name"),
+  newFolderLocationHint: document.getElementById("new-folder-location-hint"),
+
+  moveFolderModal: document.getElementById("move-folder-modal"),
+  btnMoveFolderClose: document.getElementById("btn-move-folder-close"),
+  btnMoveFolderCancel: document.getElementById("btn-move-folder-cancel"),
+  btnMoveFolderSubmit: document.getElementById("btn-move-folder-submit"),
+  moveModalDocTitle: document.getElementById("move-modal-doc-title"),
+  formQuickNewFolder: document.getElementById("form-quick-new-folder"),
+  inputQuickNewFolder: document.getElementById("input-quick-new-folder"),
+  inputFolderSearch: document.getElementById("input-folder-search"),
+  folderTreeContainer: document.getElementById("folder-tree-container"),
 
   // Mobile Reader Options elements
   btnReaderTypeMobile: document.getElementById("btn-reader-type-mobile"),
@@ -573,12 +594,14 @@ function renderDocumentGrid(docs) {
               <button class="menu-item menu-item-open">
                 ${isFolder ? '📂 Open Folder' : '📖 Open & Read'}
               </button>
+              <button class="menu-item menu-item-move">📁 Add to Folder...</button>
               ${!isFolder ? `<button class="menu-item menu-item-optimize">⚡ Optimize for Paper Pro</button>` : ""}
               <button class="menu-item menu-item-exclude">
                 ${isExcluded ? '✓ Include in Search' : '🚫 Exclude from Search'}
               </button>
               ${!isFolder ? `<a href="/api/documents/${doc.id}/export/pdf?dark=${state.appTheme === 'dark'}" download class="menu-item menu-item-export" style="text-decoration: none; color: inherit;">📥 Export PDF</a>` : ""}
               <button class="menu-item menu-item-copy-id">📋 Copy ID</button>
+              <button class="menu-item menu-item-delete">🗑 Delete</button>
             </div>
           </div>
         </div>
@@ -676,6 +699,24 @@ function renderDocumentGrid(docs) {
             mCopy.textContent = "📋 Copy ID";
           }, 1500);
         });
+      });
+    }
+
+    const mMove = card.querySelector(".menu-item-move");
+    if (mMove) {
+      mMove.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menuDropdown.style.display = "none";
+        openMoveFolderModal(doc);
+      });
+    }
+
+    const mDelete = card.querySelector(".menu-item-delete");
+    if (mDelete) {
+      mDelete.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menuDropdown.style.display = "none";
+        confirmDeleteDocument(doc);
       });
     }
 
@@ -826,6 +867,292 @@ if (el.trayBtnExclude) {
       console.error("Failed to toggle exclusion", err);
     }
   });
+}
+
+if (el.trayBtnMove) {
+  el.trayBtnMove.addEventListener("click", () => {
+    if (!selectedMobileDoc) return;
+    const doc = selectedMobileDoc;
+    closeMobileActionTray();
+    openMoveFolderModal(doc);
+  });
+}
+
+if (el.trayBtnDelete) {
+  el.trayBtnDelete.addEventListener("click", () => {
+    if (!selectedMobileDoc) return;
+    const doc = selectedMobileDoc;
+    closeMobileActionTray();
+    confirmDeleteDocument(doc);
+  });
+}
+
+// --- Folder Management & Move / Add to Folder Controller ---
+let docBeingMoved = null;
+let selectedTargetFolderId = null;
+let allLibraryFolders = [];
+
+async function openMoveFolderModal(doc) {
+  if (!el.moveFolderModal) return;
+  docBeingMoved = doc;
+  selectedTargetFolderId = null;
+  el.btnMoveFolderSubmit.disabled = true;
+  el.btnMoveFolderSubmit.textContent = "Move Here";
+  el.moveModalDocTitle.textContent = doc.visible_name;
+  if (el.inputQuickNewFolder) el.inputQuickNewFolder.value = "";
+  if (el.inputFolderSearch) el.inputFolderSearch.value = "";
+
+  el.moveFolderModal.style.display = "flex";
+
+  try {
+    const res = await fetch("/api/folders");
+    if (!res.ok) return;
+    allLibraryFolders = await res.json();
+    renderFolderTree();
+  } catch (err) {
+    console.error("Failed to load folders", err);
+  }
+}
+
+function closeMoveFolderModal() {
+  if (el.moveFolderModal) el.moveFolderModal.style.display = "none";
+  docBeingMoved = null;
+  selectedTargetFolderId = null;
+}
+
+function renderFolderTree() {
+  if (!el.folderTreeContainer) return;
+  el.folderTreeContainer.innerHTML = "";
+
+  const q = (el.inputFolderSearch ? el.inputFolderSearch.value : "").trim().toLowerCase();
+
+  const rootItem = {
+    id: "",
+    visible_name: "Home (Root Library)",
+    path: "Home",
+    depth: 0,
+    parent_id: null,
+  };
+
+  const isMovingCollection = docBeingMoved && docBeingMoved.type === "CollectionType";
+  const movingDocId = docBeingMoved ? docBeingMoved.id : null;
+  const currentParentId = docBeingMoved ? (docBeingMoved.parent_id || "") : "";
+
+  // If moving a collection, prevent moving into itself or its descendants
+  const invalidFolderIds = new Set();
+  if (isMovingCollection && movingDocId) {
+    invalidFolderIds.add(movingDocId);
+    let added = true;
+    while (added) {
+      added = false;
+      allLibraryFolders.forEach((f) => {
+        if (!invalidFolderIds.has(f.id) && invalidFolderIds.has(f.parent_id)) {
+          invalidFolderIds.add(f.id);
+          added = true;
+        }
+      });
+    }
+  }
+
+  const itemsToRender = [rootItem, ...allLibraryFolders].filter((item) => {
+    if (!q) return true;
+    return item.visible_name.toLowerCase().includes(q) || item.path.toLowerCase().includes(q);
+  });
+
+  itemsToRender.forEach((item) => {
+    const isCurrent = currentParentId === item.id;
+    const isDisabled = isMovingCollection && invalidFolderIds.has(item.id);
+    const isSelected = selectedTargetFolderId === item.id;
+
+    const row = document.createElement("div");
+    row.className = `folder-tree-item${isSelected ? " selected" : ""}${isDisabled ? " disabled" : ""}`;
+
+    const indentPx = Math.min(item.depth * 18, 120);
+    row.style.paddingLeft = `${indentPx + 12}px`;
+
+    const icon = item.id === "" ? "🏠" : "📁";
+    let badge = "";
+    if (isCurrent) {
+      badge = `<span class="folder-tree-badge">Current Location</span>`;
+    } else if (isDisabled) {
+      badge = `<span class="folder-tree-badge">Cannot move into itself</span>`;
+    }
+
+    row.innerHTML = `
+      <span>${icon}</span>
+      <span class="folder-tree-name" title="${escapeHtml(item.path)}">${escapeHtml(item.visible_name)}</span>
+      ${badge}
+    `;
+
+    if (!isDisabled) {
+      row.addEventListener("click", () => {
+        selectedTargetFolderId = item.id;
+        el.btnMoveFolderSubmit.disabled = false;
+        el.btnMoveFolderSubmit.textContent = item.id === "" ? "Move to Home" : `Move to "${item.visible_name}"`;
+        document.querySelectorAll(".folder-tree-item").forEach((r) => r.classList.remove("selected"));
+        row.classList.add("selected");
+      });
+    }
+
+    el.folderTreeContainer.appendChild(row);
+  });
+}
+
+if (el.btnMoveFolderClose) {
+  el.btnMoveFolderClose.addEventListener("click", closeMoveFolderModal);
+}
+
+if (el.btnMoveFolderCancel) {
+  el.btnMoveFolderCancel.addEventListener("click", closeMoveFolderModal);
+}
+
+if (el.moveFolderModal) {
+  el.moveFolderModal.addEventListener("click", (e) => {
+    if (e.target === el.moveFolderModal) closeMoveFolderModal();
+  });
+}
+
+if (el.inputFolderSearch) {
+  el.inputFolderSearch.addEventListener("input", renderFolderTree);
+}
+
+if (el.btnMoveFolderSubmit) {
+  el.btnMoveFolderSubmit.addEventListener("click", async () => {
+    if (!docBeingMoved || selectedTargetFolderId === null) return;
+    try {
+      el.btnMoveFolderSubmit.disabled = true;
+      el.btnMoveFolderSubmit.textContent = "Moving...";
+      const res = await fetch(`/api/documents/${docBeingMoved.id}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parent_id: selectedTargetFolderId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || "Failed to move item");
+        return;
+      }
+      closeMoveFolderModal();
+      await fetchDocuments();
+    } catch (err) {
+      console.error("Failed to move item", err);
+      alert("Error moving item");
+    } finally {
+      if (el.btnMoveFolderSubmit) el.btnMoveFolderSubmit.disabled = false;
+    }
+  });
+}
+
+if (el.formQuickNewFolder) {
+  el.formQuickNewFolder.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = (el.inputQuickNewFolder.value || "").trim();
+    if (!name) return;
+    try {
+      const parentId = selectedTargetFolderId !== null ? selectedTargetFolderId : (docBeingMoved ? docBeingMoved.parent_id : "");
+      const res = await fetch("/api/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, parent_id: parentId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || "Failed to create folder");
+        return;
+      }
+      const data = await res.json();
+      el.inputQuickNewFolder.value = "";
+      const treeRes = await fetch("/api/folders");
+      allLibraryFolders = await treeRes.json();
+      selectedTargetFolderId = data.folder.id;
+      renderFolderTree();
+      el.btnMoveFolderSubmit.disabled = false;
+      el.btnMoveFolderSubmit.textContent = `Move to "${data.folder.visible_name}"`;
+    } catch (err) {
+      console.error("Failed to create folder", err);
+    }
+  });
+}
+
+// Standalone New Folder Modal
+function openNewFolderModal() {
+  if (!el.newFolderModal) return;
+  if (el.inputNewFolderName) el.inputNewFolderName.value = "";
+  const currentFolderName = state.folderPath.length > 0 ? state.folderPath[state.folderPath.length - 1].name : "Home";
+  if (el.newFolderLocationHint) {
+    el.newFolderLocationHint.textContent = `Location: ${currentFolderName}`;
+  }
+  el.newFolderModal.style.display = "flex";
+  if (el.inputNewFolderName) el.inputNewFolderName.focus();
+}
+
+function closeNewFolderModal() {
+  if (el.newFolderModal) el.newFolderModal.style.display = "none";
+}
+
+if (el.btnNewFolder) {
+  el.btnNewFolder.addEventListener("click", openNewFolderModal);
+}
+
+if (el.btnNewFolderClose) {
+  el.btnNewFolderClose.addEventListener("click", closeNewFolderModal);
+}
+
+if (el.btnNewFolderCancel) {
+  el.btnNewFolderCancel.addEventListener("click", closeNewFolderModal);
+}
+
+if (el.newFolderModal) {
+  el.newFolderModal.addEventListener("click", (e) => {
+    if (e.target === el.newFolderModal) closeNewFolderModal();
+  });
+}
+
+if (el.formNewFolder) {
+  el.formNewFolder.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = (el.inputNewFolderName.value || "").trim();
+    if (!name) return;
+    try {
+      const res = await fetch("/api/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, parent_id: state.currentFolder }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || "Failed to create folder");
+        return;
+      }
+      closeNewFolderModal();
+      await fetchDocuments();
+    } catch (err) {
+      console.error("Failed to create folder", err);
+    }
+  });
+}
+
+// Confirmation and Document Deletion
+async function confirmDeleteDocument(doc) {
+  const isFolder = doc.type === "CollectionType";
+  const confirmMsg = isFolder
+    ? `Delete folder "${doc.visible_name}" and all its contents?\n\nThis will remove all nested documents and subfolders from your library.`
+    : `Are you sure you want to delete "${doc.visible_name}"?`;
+
+  if (!confirm(confirmMsg)) return;
+
+  try {
+    const res = await fetch(`/api/documents/${doc.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || "Failed to delete item");
+      return;
+    }
+    await fetchDocuments();
+  } catch (err) {
+    console.error("Failed to delete item", err);
+    alert("Error deleting item");
+  }
 }
 
 // --- Mobile Reader Options Controller ---

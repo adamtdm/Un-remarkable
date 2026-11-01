@@ -1522,4 +1522,75 @@ main {
   }
 }
 
+/* Folder Tree and Move Modal */
+.folder-tree-list {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.folder-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  min-height: 44px;
+  border: 1px solid transparent;
+}
+
+.folder-tree-item:hover:not(.disabled) {
+  background: var(--bg-tertiary);
+}
+
+.folder-tree-item.selected {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.folder-tree-item.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.folder-tree-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+
+.folder-tree-badge {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.tray-action-btn-danger:hover {
+  background: var(--danger-bg);
+}
+
+.menu-item-delete {
+  color: var(--danger) !important;
+}
+
+.menu-item-delete:hover {
+  background: var(--danger-bg) !important;
+}
+
+
 

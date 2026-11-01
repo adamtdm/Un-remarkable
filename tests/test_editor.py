@@ -185,4 +185,123 @@ async def test_mcp_editor_tools(test_env):
     assert "create_notebook" in tools
     assert "append_task" in tools
     assert "update_page_text" in tools
+    assert "list_folders" in tools
+    assert "create_folder" in tools
+    assert "move_document" in tools
+    assert "delete_document" in tools
+
+
+def test_create_and_nest_folders(test_env):
+    editor = test_env["editor"]
+    db = test_env["db"]
+
+    # Create root folder
+    f1 = editor.create_folder(name="Projects")
+    assert f1["visible_name"] == "Projects"
+    assert f1["type"] == "CollectionType"
+    assert f1["parent_id"] == ""
+
+    # Create nested folder
+    f2 = editor.create_folder(name="Subproject Alpha", parent_id=f1["id"])
+    assert f2["visible_name"] == "Subproject Alpha"
+    assert f2["parent_id"] == f1["id"]
+
+    # Verify folder tree
+    tree = db.get_folder_tree()
+    assert len(tree) == 2
+    paths = {item["visible_name"]: item["path"] for item in tree}
+    assert paths["Projects"] == "Projects"
+    assert paths["Subproject Alpha"] == "Projects / Subproject Alpha"
+
+
+def test_move_document_and_folder(test_env):
+    editor = test_env["editor"]
+    db = test_env["db"]
+
+    f_parent = editor.create_folder(name="Work")
+    f_child = editor.create_folder(name="Tasks", parent_id=f_parent["id"])
+    note = editor.create_notebook(title="Daily Standup", initial_text="Notes here")
+
+    # Move note into nested child folder
+    res = editor.move_document(note["id"], f_child["id"])
+    assert res["parent_id"] == f_child["id"]
+    updated_note = db.get_document(note["id"])
+    assert updated_note["parent_id"] == f_child["id"]
+
+    # Move child folder to root
+    editor.move_document(f_child["id"], "")
+    updated_child = db.get_document(f_child["id"])
+    assert updated_child["parent_id"] == ""
+
+    # Prevent moving folder into itself
+    with pytest.raises(ValueError, match="Cannot move a folder into itself"):
+        editor.move_document(f_parent["id"], f_parent["id"])
+
+    # Prevent moving folder into its own subfolder
+    editor.move_document(f_child["id"], f_parent["id"])
+    with pytest.raises(ValueError, match="Cannot move a folder into its own subfolder"):
+        editor.move_document(f_parent["id"], f_child["id"])
+
+
+def test_delete_document_and_recursive_folder(test_env):
+    editor = test_env["editor"]
+    db = test_env["db"]
+
+    folder = editor.create_folder(name="Archive")
+    subfolder = editor.create_folder(name="2025", parent_id=folder["id"])
+    doc = editor.create_notebook(title="Annual Review", parent_id=subfolder["id"])
+
+    # Deleting the parent folder should soft-delete all descendants
+    res = editor.delete_document(folder["id"])
+    assert folder["id"] in res["deleted_ids"]
+    assert subfolder["id"] in res["deleted_ids"]
+    assert doc["id"] in res["deleted_ids"]
+
+    # They should no longer appear in non-deleted listings
+    active_docs = db.list_documents()
+    active_ids = {d["id"] for d in active_docs}
+    assert folder["id"] not in active_ids
+    assert subfolder["id"] not in active_ids
+    assert doc["id"] not in active_ids
+
+
+def test_api_folder_and_move_delete_endpoints(test_env):
+    from fastapi.testclient import TestClient
+    from rmcompanion.web.app import create_app
+
+    settings = Settings(data_dir=test_env["db"].settings.data_dir)
+    app = create_app(settings=settings)
+    app.state.db = test_env["db"]
+    app.state.blob_store = test_env["blob_store"]
+    app.state.notebook_editor = test_env["editor"]
+
+    client = TestClient(app)
+
+    # 1. Create folder via API
+    resp_f = client.post("/api/folders", json={"name": "Research", "parent_id": ""})
+    assert resp_f.status_code == 200
+    folder_id = resp_f.json()["folder"]["id"]
+
+    # 2. List folders
+    resp_list = client.get("/api/folders")
+    assert resp_list.status_code == 200
+    assert any(f["id"] == folder_id for f in resp_list.json())
+
+    # 3. Create doc and move via API
+    resp_doc = client.post("/api/documents/new", json={"title": "Paper Draft", "initial_text": "Draft"})
+    doc_id = resp_doc.json()["id"]
+
+    resp_move = client.post(f"/api/documents/{doc_id}/move", json={"parent_id": folder_id})
+    assert resp_move.status_code == 200
+    assert resp_move.json()["result"]["parent_id"] == folder_id
+
+    # 4. Delete doc via API
+    resp_del = client.delete(f"/api/documents/{doc_id}")
+    assert resp_del.status_code == 200
+    assert resp_del.json()["status"] == "ok"
+
+    # Confirm doc is gone
+    resp_check = client.get(f"/api/documents/{doc_id}")
+    assert resp_check.status_code == 200
+    assert resp_check.json()["deleted"] is True
 
