@@ -16,6 +16,8 @@ from pydantic import BaseModel
 from rmcompanion.cloud.auth import AuthManager
 from rmcompanion.config import Settings
 from rmcompanion.converter.engine import QUALITY_PROFILES, ConverterEngine
+from rmcompanion.delivery.manager import DeliveryManager
+from rmcompanion.delivery.models import DeliverySettings
 from rmcompanion.editor.notebook_editor import NotebookEditor
 from rmcompanion.index.text_indexer import TextIndexer
 from rmcompanion.intelligence.task_extractor import TaskExtractor
@@ -104,9 +106,16 @@ def get_router(
     task_extractor: TaskExtractor | None = None,
     notebook_editor: NotebookEditor | None = None,
     settings: Settings | None = None,
+    delivery_manager: DeliveryManager | None = None,
 ) -> APIRouter:
     r = APIRouter(prefix="/api")
     editor = notebook_editor or NotebookEditor(db=db, blob_store=blob_store, task_extractor=task_extractor)
+    dm = delivery_manager or DeliveryManager(
+        db=db,
+        client=sync_engine.client,
+        sync_engine=sync_engine,
+        notebook_editor=editor,
+    )
 
     def _push_bg(coro: Any) -> None:
         if sync_engine and sync_engine.auth.tokens.is_authenticated:
@@ -1023,5 +1032,38 @@ def get_router(
             "imported": imported,
             "errors": errors,
         }
+
+    # --- Daily News & Puzzles Delivery ---
+
+    @r.get("/delivery/settings")
+    def get_delivery_settings() -> dict[str, Any]:
+        """Get automated delivery preferences for news and puzzles."""
+        return dm.get_settings().model_dump()
+
+    @r.post("/delivery/settings")
+    def update_delivery_settings(payload: DeliverySettings) -> dict[str, Any]:
+        """Update automated delivery preferences for news and puzzles."""
+        dm.update_settings(payload)
+        return {"status": "ok", "settings": payload.model_dump()}
+
+    @r.post("/delivery/newspaper/trigger")
+    async def trigger_newspaper_delivery(force: bool = True) -> dict[str, Any]:
+        """Trigger on-demand generation and delivery of today's morning newspaper."""
+        try:
+            res = await dm.deliver_newspaper(force=force)
+            return res
+        except Exception as e:
+            logger.error("Failed delivering newspaper: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @r.post("/delivery/puzzles/trigger")
+    async def trigger_puzzles_delivery(force: bool = True) -> dict[str, Any]:
+        """Trigger on-demand fetch and delivery of today's crosswords and sudoku."""
+        try:
+            res = await dm.deliver_puzzles(force=force)
+            return res
+        except Exception as e:
+            logger.error("Failed delivering puzzles: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
 
     return r

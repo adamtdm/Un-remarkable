@@ -24,6 +24,7 @@ const state = {
   pageIndicatorTimeout: null,
   qcMode: "task",
   currentView: "library",
+  draggedDoc: null,
 };
 
 // 5-stop slider profiles
@@ -308,6 +309,28 @@ const el = {
   statNotebooks: document.getElementById("stat-notebooks"),
   statPdfs: document.getElementById("stat-pdfs"),
   statTasks: document.getElementById("stat-tasks"),
+
+  // Delivery (News & Puzzles) elements
+  deliveryNewspaperEnabled: document.getElementById("delivery-newspaper-enabled"),
+  deliveryNewspaperTime: document.getElementById("delivery-newspaper-time"),
+  deliveryNewspaperFolder: document.getElementById("delivery-newspaper-folder"),
+  deliveryIncludeWeather: document.getElementById("delivery-include-weather"),
+  deliveryWeatherLocation: document.getElementById("delivery-weather-location"),
+  deliveryIncludeWikipedia: document.getElementById("delivery-include-wikipedia"),
+  deliveryRssFeeds: document.getElementById("delivery-rss-feeds"),
+  btnDeliveryNewspaperNow: document.getElementById("btn-delivery-newspaper-now"),
+  deliveryNewspaperStatus: document.getElementById("delivery-newspaper-status"),
+  deliveryPuzzlesEnabled: document.getElementById("delivery-puzzles-enabled"),
+  deliveryPuzzlesTime: document.getElementById("delivery-puzzles-time"),
+  deliveryPuzzlesFolder: document.getElementById("delivery-puzzles-folder"),
+  deliveryIncludeQuick: document.getElementById("delivery-include-quick"),
+  deliveryIncludeCryptic: document.getElementById("delivery-include-cryptic"),
+  deliveryIncludeSudoku: document.getElementById("delivery-include-sudoku"),
+  deliverySudokuDifficulty: document.getElementById("delivery-sudoku-difficulty"),
+  btnDeliveryPuzzlesNow: document.getElementById("btn-delivery-puzzles-now"),
+  deliveryPuzzlesStatus: document.getElementById("delivery-puzzles-status"),
+  btnDeliverySave: document.getElementById("btn-delivery-save"),
+  deliverySaveStatus: document.getElementById("delivery-save-status"),
 
   // New notebook & typed editor elements
   btnNewNotebook: document.getElementById("btn-new-notebook"),
@@ -668,6 +691,8 @@ el.btnAuthSubmit.addEventListener("click", async () => {
 // --- Breadcrumbs & Navigation ---
 function renderBreadcrumbs() {
   el.breadcrumbs.innerHTML = "";
+  const isDesktop = !window.matchMedia("(pointer: coarse)").matches && window.innerWidth > 768;
+
   state.folderPath.forEach((item, index) => {
     if (index > 0) {
       const sep = document.createElement("span");
@@ -682,6 +707,33 @@ function renderBreadcrumbs() {
       e.preventDefault();
       navigateToFolder(item.id, index);
     });
+
+    // Desktop Drag and drop target for parent/ancestor breadcrumbs
+    if (isDesktop && index < state.folderPath.length - 1) {
+      a.setAttribute("title", `Drop items here to move into "${item.name}"`);
+      a.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "move";
+        a.classList.add("breadcrumb-drop-target");
+      });
+      a.addEventListener("dragleave", (e) => {
+        if (!a.contains(e.relatedTarget)) {
+          a.classList.remove("breadcrumb-drop-target");
+        }
+      });
+      a.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        a.classList.remove("breadcrumb-drop-target");
+        if (state.draggedDoc && state.draggedDoc.id !== item.id) {
+          await moveItemToFolder(state.draggedDoc.id, state.draggedDoc.name, item.id, item.name);
+        } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          await uploadExternalFiles(e.dataTransfer.files, item.id, item.name);
+        }
+      });
+    }
+
     el.breadcrumbs.appendChild(a);
   });
 }
@@ -969,6 +1021,69 @@ function renderDocumentGrid(docs) {
           </div>
         </div>
       `;
+    }
+
+    // Desktop Drag & Drop file and folder management (strictly ignored on mobile/touch)
+    const isDesktop = !window.matchMedia("(pointer: coarse)").matches && window.innerWidth > 768;
+    if (isDesktop) {
+      element.setAttribute("draggable", "true");
+
+      element.addEventListener("dragstart", (e) => {
+        if (e.target.closest(".card-menu-wrapper") || e.target.closest(".btn-card-menu")) {
+          e.preventDefault();
+          return;
+        }
+        state.draggedDoc = {
+          id: doc.id,
+          name: doc.visible_name,
+          type: doc.type,
+          parent_id: doc.parent_id || state.currentFolder || ""
+        };
+        element.classList.add("is-dragging");
+        e.dataTransfer.setData("application/x-rmcompanion-doc", doc.id);
+        e.dataTransfer.setData("text/plain", doc.visible_name);
+        e.dataTransfer.effectAllowed = "move";
+      });
+
+      element.addEventListener("dragend", () => {
+        element.classList.remove("is-dragging");
+        state.draggedDoc = null;
+        document.querySelectorAll(".drag-over").forEach((d) => d.classList.remove("drag-over"));
+        document.querySelectorAll(".breadcrumb-drop-target").forEach((b) => b.classList.remove("breadcrumb-drop-target"));
+        if (el.docGrid) el.docGrid.classList.remove("grid-drop-active");
+      });
+
+      if (isFolder) {
+        element.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (state.draggedDoc && state.draggedDoc.id === doc.id) {
+            e.dataTransfer.dropEffect = "none";
+            return;
+          }
+          e.dataTransfer.dropEffect = state.draggedDoc ? "move" : "copy";
+          element.classList.add("drag-over");
+        });
+
+        element.addEventListener("dragleave", (e) => {
+          if (!element.contains(e.relatedTarget)) {
+            element.classList.remove("drag-over");
+          }
+        });
+
+        element.addEventListener("drop", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          element.classList.remove("drag-over");
+
+          if (state.draggedDoc) {
+            if (state.draggedDoc.id === doc.id) return;
+            await moveItemToFolder(state.draggedDoc.id, state.draggedDoc.name, doc.id, doc.visible_name);
+          } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            await uploadExternalFiles(e.dataTransfer.files, doc.id, doc.visible_name);
+          }
+        });
+      }
     }
 
     // Click on item body opens folder / document
@@ -1445,6 +1560,109 @@ if (el.btnMoveFolderSubmit) {
       showToast("Error moving item", "error");
     } finally {
       if (el.btnMoveFolderSubmit) el.btnMoveFolderSubmit.disabled = false;
+    }
+  });
+}
+
+// --- Desktop Drag & Drop Handlers ---
+async function moveItemToFolder(docId, docTitle, targetFolderId, targetFolderName) {
+  if (!docId || docId === targetFolderId) return;
+  showToast(`Moving "${docTitle}" to "${targetFolderName}"...`, "info");
+  try {
+    const res = await fetch(`/api/documents/${docId}/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parent_id: targetFolderId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.detail || "Failed to move item", "error");
+      return;
+    }
+    showToast(`Moved "${docTitle}" to "${targetFolderName}"`, "success");
+    await fetchDocuments();
+  } catch (err) {
+    console.error("Failed to move item", err);
+    showToast("Error moving item", "error");
+  }
+}
+
+async function uploadExternalFiles(fileList, targetFolderId, targetFolderName) {
+  if (!fileList || fileList.length === 0) return;
+  const files = Array.from(fileList);
+
+  const allowedExts = [".pdf", ".epub", ".cbz", ".md", ".markdown", ".txt"];
+  const validFiles = files.filter((f) => {
+    const lower = f.name.toLowerCase();
+    return allowedExts.some((ext) => lower.endsWith(ext));
+  });
+
+  if (validFiles.length === 0) {
+    showToast("Unsupported file type. Drop PDF, EPUB, CBZ, Markdown or TXT files.", "error");
+    return;
+  }
+
+  showToast(`Importing ${validFiles.length} file(s) into "${targetFolderName}"...`, "info");
+
+  const formData = new FormData();
+  validFiles.forEach((f) => formData.append("files", f));
+  formData.append("parent_id", targetFolderId || "");
+  formData.append("device", "none");
+  formData.append("quality_stop", "3");
+
+  try {
+    const res = await fetch("/api/documents/bulk-import", {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.detail || "Bulk import failed", "error");
+      return;
+    }
+    const data = await res.json();
+    const importedCount = data.imported ? data.imported.length : 0;
+    const errorCount = data.errors ? data.errors.length : 0;
+
+    if (errorCount > 0) {
+      showToast(`Imported ${importedCount} file(s) with ${errorCount} warning(s)`, "warning");
+    } else {
+      showToast(`Successfully imported ${importedCount} file(s) into "${targetFolderName}"`, "success");
+    }
+    await fetchDocuments();
+  } catch (err) {
+    console.error("Failed to import dropped files", err);
+    showToast("Failed to import dropped files", "error");
+  }
+}
+
+// Attach drop listener to the library grid for external files
+if (el.docGrid) {
+  el.docGrid.addEventListener("dragover", (e) => {
+    const isDesktop = !window.matchMedia("(pointer: coarse)").matches && window.innerWidth > 768;
+    if (!isDesktop) return;
+    if (!state.draggedDoc && e.dataTransfer.types && (e.dataTransfer.types.includes("Files") || e.dataTransfer.types.includes("application/x-moz-file"))) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      el.docGrid.classList.add("grid-drop-active");
+    }
+  });
+
+  el.docGrid.addEventListener("dragleave", (e) => {
+    if (!el.docGrid.contains(e.relatedTarget)) {
+      el.docGrid.classList.remove("grid-drop-active");
+    }
+  });
+
+  el.docGrid.addEventListener("drop", async (e) => {
+    const isDesktop = !window.matchMedia("(pointer: coarse)").matches && window.innerWidth > 768;
+    if (!isDesktop) return;
+    el.docGrid.classList.remove("grid-drop-active");
+    if (!state.draggedDoc && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      const currentFolderName = state.folderPath.length > 0 ? state.folderPath[state.folderPath.length - 1].name : "Home";
+      await uploadExternalFiles(e.dataTransfer.files, state.currentFolder || "", currentFolderName);
     }
   });
 }
@@ -2543,6 +2761,7 @@ function navigateToView(viewName, updateHistory = true) {
     if (el.settingsView) el.settingsView.style.display = "block";
 
     loadVisionSettings();
+    loadDeliverySettings();
     updateSettingsSystemStats();
     applyAppTheme(state.themePreference);
 
@@ -2948,6 +3167,180 @@ if (el.btnSettingsTest) {
     }
   });
 }
+
+// --- News & Puzzles Delivery Controller ---
+async function loadDeliverySettings() {
+  try {
+    const res = await fetch("/api/delivery/settings");
+    if (!res.ok) return;
+    const settings = await res.json();
+
+    if (el.deliveryNewspaperEnabled) el.deliveryNewspaperEnabled.checked = !!(settings.news_enabled ?? settings.newspaper_enabled);
+    if (el.deliveryNewspaperTime) el.deliveryNewspaperTime.value = settings.news_delivery_time || settings.newspaper_time || "06:00";
+    if (el.deliveryNewspaperFolder) el.deliveryNewspaperFolder.value = settings.news_folder || settings.newspaper_folder || "Daily News";
+    if (el.deliveryIncludeWeather) el.deliveryIncludeWeather.checked = (settings.news_include_weather ?? settings.include_weather) !== false;
+    if (el.deliveryWeatherLocation) el.deliveryWeatherLocation.value = settings.news_weather_location || settings.weather_location || "";
+    if (el.deliveryIncludeWikipedia) el.deliveryIncludeWikipedia.checked = (settings.news_include_wikipedia ?? settings.include_wikipedia) !== false;
+    if (el.deliveryRssFeeds) {
+      const feeds = settings.news_rss_feeds || settings.rss_feeds || [];
+      el.deliveryRssFeeds.value = feeds.join("\n");
+    }
+    if (el.deliveryNewspaperStatus) {
+      const lastNews = settings.last_news_delivery || settings.last_newspaper_delivery;
+      if (lastNews) {
+        const d = new Date(lastNews);
+        el.deliveryNewspaperStatus.textContent = `Last delivered: ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      } else {
+        el.deliveryNewspaperStatus.textContent = "Not delivered yet";
+      }
+    }
+
+    if (el.deliveryPuzzlesEnabled) el.deliveryPuzzlesEnabled.checked = !!settings.puzzles_enabled;
+    if (el.deliveryPuzzlesTime) el.deliveryPuzzlesTime.value = settings.puzzles_delivery_time || settings.puzzles_time || "06:00";
+    if (el.deliveryPuzzlesFolder) el.deliveryPuzzlesFolder.value = settings.puzzles_folder || "Puzzles";
+    if (el.deliveryIncludeQuick) el.deliveryIncludeQuick.checked = (settings.puzzles_guardian_quick ?? settings.include_guardian_quick) !== false;
+    if (el.deliveryIncludeCryptic) el.deliveryIncludeCryptic.checked = (settings.puzzles_guardian_cryptic ?? settings.include_guardian_cryptic) !== false;
+    if (el.deliveryIncludeSudoku) el.deliveryIncludeSudoku.checked = (settings.puzzles_sudoku ?? settings.include_sudoku) !== false;
+    if (el.deliverySudokuDifficulty) el.deliverySudokuDifficulty.value = settings.puzzles_sudoku_difficulty || settings.sudoku_difficulty || "medium";
+    if (el.deliveryPuzzlesStatus) {
+      const lastPuzzles = settings.last_puzzles_delivery;
+      if (lastPuzzles) {
+        const d = new Date(lastPuzzles);
+        el.deliveryPuzzlesStatus.textContent = `Last delivered: ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      } else {
+        el.deliveryPuzzlesStatus.textContent = "Not delivered yet";
+      }
+    }
+  } catch (err) {
+    console.error("Failed to load delivery settings", err);
+  }
+}
+
+async function saveDeliverySettings() {
+  if (!el.btnDeliverySave) return;
+  const rawFeeds = (el.deliveryRssFeeds ? el.deliveryRssFeeds.value : "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const payload = {
+    news_enabled: el.deliveryNewspaperEnabled ? el.deliveryNewspaperEnabled.checked : false,
+    news_delivery_time: el.deliveryNewspaperTime ? el.deliveryNewspaperTime.value : "06:00",
+    news_folder: (el.deliveryNewspaperFolder ? el.deliveryNewspaperFolder.value.trim() : "") || "Daily News",
+    news_include_weather: el.deliveryIncludeWeather ? el.deliveryIncludeWeather.checked : true,
+    news_weather_location: el.deliveryWeatherLocation ? el.deliveryWeatherLocation.value.trim() : "",
+    news_include_wikipedia: el.deliveryIncludeWikipedia ? el.deliveryIncludeWikipedia.checked : true,
+    news_rss_feeds: rawFeeds,
+
+    puzzles_enabled: el.deliveryPuzzlesEnabled ? el.deliveryPuzzlesEnabled.checked : false,
+    puzzles_delivery_time: el.deliveryPuzzlesTime ? el.deliveryPuzzlesTime.value : "06:00",
+    puzzles_folder: (el.deliveryPuzzlesFolder ? el.deliveryPuzzlesFolder.value.trim() : "") || "Puzzles",
+    puzzles_guardian_quick: el.deliveryIncludeQuick ? el.deliveryIncludeQuick.checked : true,
+    puzzles_guardian_cryptic: el.deliveryIncludeCryptic ? el.deliveryIncludeCryptic.checked : true,
+    puzzles_sudoku: el.deliveryIncludeSudoku ? el.deliveryIncludeSudoku.checked : true,
+    puzzles_sudoku_difficulty: el.deliverySudokuDifficulty ? el.deliverySudokuDifficulty.value : "medium",
+  };
+
+  try {
+    el.btnDeliverySave.disabled = true;
+    if (el.deliverySaveStatus) {
+      el.deliverySaveStatus.textContent = "Saving settings...";
+      el.deliverySaveStatus.style.color = "var(--text-muted)";
+    }
+
+    const res = await fetch("/api/delivery/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to save settings");
+    }
+
+    if (el.deliverySaveStatus) {
+      el.deliverySaveStatus.textContent = "✓ Settings saved successfully";
+      el.deliverySaveStatus.style.color = "var(--success)";
+      setTimeout(() => {
+        if (el.deliverySaveStatus) el.deliverySaveStatus.textContent = "";
+      }, 3500);
+    }
+    showToast("Delivery settings saved", "success");
+  } catch (err) {
+    console.error("Save delivery settings error:", err);
+    if (el.deliverySaveStatus) {
+      el.deliverySaveStatus.textContent = `✗ ${err.message}`;
+      el.deliverySaveStatus.style.color = "var(--danger)";
+    }
+    showToast(err.message, "error");
+  } finally {
+    if (el.btnDeliverySave) el.btnDeliverySave.disabled = false;
+  }
+}
+
+async function triggerNewspaperDelivery() {
+  if (!el.btnDeliveryNewspaperNow) return;
+  const originalText = el.btnDeliveryNewspaperNow.innerHTML;
+  try {
+    el.btnDeliveryNewspaperNow.disabled = true;
+    el.btnDeliveryNewspaperNow.innerHTML = `
+      <svg class="spinning" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+      <span>Generating Newspaper...</span>
+    `;
+    showToast("Generating today's newspaper digest...", "info");
+
+    const res = await fetch("/api/delivery/newspaper/trigger", { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Newspaper delivery failed");
+    }
+    const data = await res.json();
+    showToast(`Delivered newspaper to "${data.folder || 'Daily News'}"!`, "success");
+    await loadDeliverySettings();
+    await fetchDocuments();
+  } catch (err) {
+    console.error("Newspaper delivery failed:", err);
+    showToast(err.message, "error");
+  } finally {
+    el.btnDeliveryNewspaperNow.disabled = false;
+    el.btnDeliveryNewspaperNow.innerHTML = originalText;
+  }
+}
+
+async function triggerPuzzlesDelivery() {
+  if (!el.btnDeliveryPuzzlesNow) return;
+  const originalText = el.btnDeliveryPuzzlesNow.innerHTML;
+  try {
+    el.btnDeliveryPuzzlesNow.disabled = true;
+    el.btnDeliveryPuzzlesNow.innerHTML = `
+      <svg class="spinning" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+      <span>Fetching Puzzles...</span>
+    `;
+    showToast("Fetching Guardian crosswords and generating Sudoku...", "info");
+
+    const res = await fetch("/api/delivery/puzzles/trigger", { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Puzzles delivery failed");
+    }
+    const data = await res.json();
+    const count = data.delivered ? data.delivered.length : 0;
+    showToast(`Delivered ${count} puzzle(s) to "${data.folder || 'Puzzles'}"!`, "success");
+    await loadDeliverySettings();
+    await fetchDocuments();
+  } catch (err) {
+    console.error("Puzzles delivery failed:", err);
+    showToast(err.message, "error");
+  } finally {
+    el.btnDeliveryPuzzlesNow.disabled = false;
+    el.btnDeliveryPuzzlesNow.innerHTML = originalText;
+  }
+}
+
+if (el.btnDeliverySave) el.btnDeliverySave.addEventListener("click", saveDeliverySettings);
+if (el.btnDeliveryNewspaperNow) el.btnDeliveryNewspaperNow.addEventListener("click", triggerNewspaperDelivery);
+if (el.btnDeliveryPuzzlesNow) el.btnDeliveryPuzzlesNow.addEventListener("click", triggerPuzzlesDelivery);
 
 // --- Phase 4: Typed Notebook Editor & Markdown Import ---
 async function loadTypingPaneText() {

@@ -3047,5 +3047,129 @@ main {
   }
 }
 
+/* --- News & Puzzles Delivery Settings --- */
+.delivery-section {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  transition: border-color 0.15s ease;
+}
+
+.delivery-section:hover {
+  border-color: var(--text-muted);
+}
+
+.delivery-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.delivery-switch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.delivery-switch-label input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.delivery-switch-track {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.delivery-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background-color: var(--text-secondary);
+  border-radius: 50%;
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.delivery-switch-label input[type="checkbox"]:focus-visible + .delivery-switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.delivery-switch-label input[type="checkbox"]:checked + .delivery-switch-track {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.delivery-switch-label input[type="checkbox"]:checked + .delivery-switch-track::after {
+  transform: translateX(16px);
+  background-color: #ffffff;
+}
+
+/* --- Drag & Drop (Desktop Only) --- */
+@media (hover: hover) and (pointer: fine) and (min-width: 769px) {
+  .doc-card[draggable="true"],
+  .doc-list-item[draggable="true"] {
+    cursor: grab;
+  }
+
+  .doc-card[draggable="true"]:active,
+  .doc-list-item[draggable="true"]:active {
+    cursor: grabbing;
+  }
+
+  .doc-card.is-dragging,
+  .doc-list-item.is-dragging {
+    opacity: 0.45;
+    transform: scale(0.98);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
+  .doc-card.drag-over,
+  .doc-list-item.drag-over {
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
+    background-color: var(--bg-tertiary) !important;
+    transform: translateY(-2px);
+    transition: outline 0.1s ease, transform 0.1s ease;
+  }
+
+  .breadcrumbs a.breadcrumb-drop-target {
+    outline: 2px dashed var(--accent);
+    outline-offset: 2px;
+    background-color: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+  }
+
+  #doc-grid.grid-drop-active {
+    outline: 2px dashed var(--accent);
+    outline-offset: 4px;
+    background-color: rgba(125, 125, 125, 0.05);
+    border-radius: var(--radius-md);
+  }
+}
+
+
 
 

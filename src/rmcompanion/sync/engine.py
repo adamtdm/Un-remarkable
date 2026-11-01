@@ -33,6 +33,7 @@ class SyncEngine:
         settings: Settings | None = None,
         on_doc_indexed: Callable[[str, str], None] | None = None,
         exporter: Exporter | None = None,
+        delivery_manager: Any = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.auth = auth or AuthManager(self.settings)
@@ -41,6 +42,7 @@ class SyncEngine:
         self.blob_store = blob_store or BlobStore(settings=self.settings)
         self.on_doc_indexed = on_doc_indexed
         self.exporter = exporter or Exporter(db=self.db, blob_store=self.blob_store, settings=self.settings)
+        self.delivery_manager = delivery_manager
 
         self._task: asyncio.Task[None] | None = None
         self._running = False
@@ -554,11 +556,21 @@ class SyncEngine:
             while self._running:
                 try:
                     await self.sync_once()
+                    if self.delivery_manager:
+                        try:
+                            await self.delivery_manager.check_scheduled_delivery()
+                        except Exception as de:
+                            logger.error("Error checking scheduled delivery: %s", de)
                 except Exception as e:
                     logger.error("Unexpected error in background sync loop: %s", e)
                 await asyncio.sleep(self.settings.sync_interval_seconds)
 
         self._task = asyncio.create_task(_loop())
+
+    def trigger(self) -> None:
+        """Trigger an immediate background sync pass if not already syncing."""
+        if not self._progress.get("is_syncing", False):
+            asyncio.create_task(self.sync_once())
 
     def stop(self) -> None:
         """Stop background sync loop."""
