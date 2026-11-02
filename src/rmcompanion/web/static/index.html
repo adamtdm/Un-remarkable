@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
   <title>Un-remarkable</title>
   <meta name="theme-color" content="#09090b">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
-  <link rel="stylesheet" href="/style.css?v=20261101j">
+  <link rel="stylesheet" href="/style.css?v=20261102a">
 </head>
 <body>
   <!-- Header -->
@@ -1461,13 +1461,13 @@
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-  <script src="/app.js?v=20261101j"></script>
+  <script src="/app.js?v=20261102a"></script>
   <script>
     // Purge legacy service worker caches immediately
     if ("caches" in window) {
       caches.keys().then((keys) => {
         keys.forEach((key) => {
-          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261101j") {
+          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261102a") {
             caches.delete(key);
           }
         });
@@ -1476,7 +1476,7 @@
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js?v=20261101j").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=20261102a").then((reg) => {
           reg.update();
         }).catch(() => {});
       });
