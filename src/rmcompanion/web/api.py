@@ -95,6 +95,10 @@ class MoveDocumentRequest(BaseModel):
     parent_id: str = ""
 
 
+class UpdatePositionRequest(BaseModel):
+    page_idx: int
+
+
 def get_router(
     db: Database,
     blob_store: BlobStore,
@@ -215,14 +219,27 @@ def get_router(
     @r.delete("/documents/{doc_id}")
     async def delete_document(doc_id: str) -> dict[str, Any]:
         """Soft delete a document or folder and remove from reMarkable Cloud."""
-        if not notebook_editor:
+        if not editor:
             raise HTTPException(status_code=503, detail="Notebook editor not available")
         try:
-            res = notebook_editor.delete_document(doc_id)
+            res = editor.delete_document(doc_id)
             _push_bg(sync_engine.delete_remote_document(doc_id))
             return {"status": "ok", "result": res}
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
+
+    @r.post("/documents/{doc_id}/position")
+    async def update_document_position(doc_id: str, payload: UpdatePositionRequest) -> dict[str, Any]:
+        """Update last read page position for a document and push to reMarkable Cloud."""
+        try:
+            res = editor.update_document_position(doc_id, payload.page_idx)
+            _push_bg(sync_engine.update_remote_position(doc_id, payload.page_idx))
+            return {"status": "ok", "result": res}
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            logger.error("Failed to update position for %s: %s", doc_id, e)
+            raise HTTPException(status_code=500, detail=str(e))
 
     @r.get("/documents/{doc_id}")
     def get_document(doc_id: str) -> dict[str, Any]:

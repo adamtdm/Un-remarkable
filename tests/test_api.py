@@ -172,3 +172,24 @@ def test_rescan_endpoint(test_client):
     assert "rescanned_count" in data
     assert "excluded_count" in data
 
+
+def test_api_update_document_position(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    app = create_app(settings=settings)
+    with TestClient(app) as client:
+        # Create a notebook
+        nb_res = client.post("/api/documents/new", json={"title": "Position Doc", "initial_text": "Hello"})
+        assert nb_res.status_code == 200
+        doc_id = nb_res.json()["id"]
+
+        # Update position
+        pos_res = client.post(f"/api/documents/{doc_id}/position", json={"page_idx": 0})
+        assert pos_res.status_code == 200
+        assert pos_res.json()["status"] == "ok"
+        assert pos_res.json()["result"]["last_opened_page"] == 0
+
+        # Verify through get_document
+        doc_res = client.get(f"/api/documents/{doc_id}")
+        assert doc_res.status_code == 200
+        assert doc_res.json()["last_opened_page"] == 0
+

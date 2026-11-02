@@ -83,14 +83,14 @@ def parse_index(content: str | bytes) -> tuple[list[Entry], str]:
     return entries, schema
 
 
-def format_index(entries: list[Entry], schema: str = SCHEMA_V4) -> str:
+def format_index(entries: list[Entry], schema: str = SCHEMA_V4, doc_id: str = ".") -> str:
     """Format entries into canonical index string sorted by doc_id."""
     sorted_entries = sorted(entries, key=lambda e: e.doc_id)
     out: list[str] = [schema]
 
     if schema == SCHEMA_V4:
         total_size = sum(e.size for e in sorted_entries)
-        out.append(f"0{DELIMITER}.{DELIMITER}{len(sorted_entries)}{DELIMITER}{total_size}")
+        out.append(f"0{DELIMITER}{doc_id}{DELIMITER}{len(sorted_entries)}{DELIMITER}{total_size}")
 
     for e in sorted_entries:
         out.append(e.to_line())

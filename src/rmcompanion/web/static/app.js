@@ -446,7 +446,7 @@ function applyAppTheme(pref) {
   document.documentElement.setAttribute("data-theme", effectiveTheme);
   localStorage.setItem("rmc_theme", effectiveTheme);
 
-  const isDark = effectiveTheme !== "light";
+  const isDark = effectiveTheme === "dark";
   document.querySelectorAll(".doc-card-thumb img[data-doc-id]").forEach((img) => {
     const docId = img.getAttribute("data-doc-id");
     const docHash = img.getAttribute("data-doc-hash") || "";
@@ -1017,7 +1017,7 @@ function renderDocumentGrid(docs) {
           </svg>
         `;
       } else {
-        const isDark = state.appTheme !== "light";
+        const isDark = state.appTheme === "dark";
         const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}&dark=${isDark}`;
         iconHtml = `<img src="${thumbUrl}" data-doc-id="${escapeHtml(doc.id)}" data-doc-hash="${escapeHtml(doc.doc_hash || "")}" alt="${escapeHtml(doc.visible_name)} preview" loading="lazy" width="320" height="426">`;
       }
@@ -1936,19 +1936,30 @@ function renderSvgContent(svgText) {
   }
 }
 
-async function openReader(docId, initialPageIdx = 0) {
+async function openReader(docId, initialPageIdx = null) {
   try {
     const res = await fetch(`/api/documents/${docId}`);
     if (!res.ok) return;
     const doc = await res.json();
 
     state.currentDoc = doc;
-    state.currentPageIdx = initialPageIdx;
+    // Determine effective starting page: resume at doc.last_opened_page if not explicitly specified
+    let startingPage = 0;
+    if (initialPageIdx !== null && initialPageIdx !== undefined && !isNaN(initialPageIdx)) {
+      startingPage = initialPageIdx;
+    } else if (doc.last_opened_page !== undefined && doc.last_opened_page !== null && !isNaN(doc.last_opened_page)) {
+      startingPage = doc.last_opened_page;
+    }
+    const maxPage = (doc.pages && doc.pages.length > 0) ? doc.pages.length - 1 : (doc.page_count ? doc.page_count - 1 : 0);
+    startingPage = Math.max(0, Math.min(startingPage, maxPage));
+
+    state.currentPageIdx = startingPage;
+    state.currentDoc._savedPageIdx = startingPage;
     el.readerTitle.textContent = doc.visible_name;
 
     updateReaderExclusionState();
     if (el.btnReaderOpenTab) {
-      el.btnReaderOpenTab.href = `/?read=${docId}&page=${initialPageIdx}`;
+      el.btnReaderOpenTab.href = `/?read=${docId}&page=${startingPage}`;
     }
     el.readerView.style.display = "flex";
     updatePageDarkToggle();
@@ -1957,14 +1968,43 @@ async function openReader(docId, initialPageIdx = 0) {
     try {
       const url = new URL(window.location.href);
       url.searchParams.set("read", docId);
-      if (initialPageIdx > 0) url.searchParams.set("page", initialPageIdx);
+      if (startingPage > 0) url.searchParams.set("page", startingPage);
       else url.searchParams.delete("page");
-      window.history.replaceState({ docId, pageIdx: initialPageIdx }, "", url.toString());
+      window.history.replaceState({ docId, pageIdx: startingPage }, "", url.toString());
     } catch (_) {}
   } catch (e) {
     console.error("Failed to open document", e);
   }
 }
+
+function saveDocumentPosition(docId, pageIdx) {
+  if (!docId || pageIdx === undefined || pageIdx === null || isNaN(pageIdx)) return;
+  if (state.currentDoc && state.currentDoc.id === docId && state.currentDoc._savedPageIdx === pageIdx) {
+    return;
+  }
+  if (state.currentDoc && state.currentDoc.id === docId) {
+    state.currentDoc._savedPageIdx = pageIdx;
+  }
+  const payload = JSON.stringify({ page_idx: pageIdx });
+  try {
+    fetch(`/api/documents/${docId}/position`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true,
+    }).catch((e) => console.debug("Failed saving document position:", e));
+  } catch (e) {
+    console.debug("Failed initiating position save:", e);
+  }
+}
+
+function handlePageUnload() {
+  if (state.currentDoc) {
+    saveDocumentPosition(state.currentDoc.id, state.currentPageIdx || 0);
+  }
+}
+window.addEventListener("pagehide", handlePageUnload);
+window.addEventListener("beforeunload", handlePageUnload);
 
 function updateReaderExclusionState() {
   if (!state.currentDoc) return;
@@ -2016,6 +2056,16 @@ el.btnReaderConvert.addEventListener("click", () => {
 });
 
 function closeReader() {
+  if (state.currentDoc) {
+    const docId = state.currentDoc.id;
+    const pageIdx = state.currentPageIdx || 0;
+    state.currentDoc.last_opened_page = pageIdx;
+    if (Array.isArray(state.allDocs)) {
+      const item = state.allDocs.find((d) => d.id === docId);
+      if (item) item.last_opened_page = pageIdx;
+    }
+    saveDocumentPosition(docId, pageIdx);
+  }
   closePageJumpInput(false);
   resetZoom(false);
   if (state.isFullscreen) {
@@ -2639,6 +2689,12 @@ if (el.readerContent) {
         } else {
           readerZoomState.lastTapTime = now;
         }
+      }
+
+      if (readerZoomState.hasMoved && e.touches.length === 0) {
+        setTimeout(() => {
+          readerZoomState.hasMoved = false;
+        }, 320);
       }
     },
     { passive: true }
@@ -4591,8 +4647,9 @@ window.addEventListener("popstate", () => {
   if (view === "settings") {
     navigateToView("settings", false);
   } else if (readDocId) {
-    const pageIdx = parseInt(urlParams.get("page") || "0", 10);
-    openReader(readDocId, isNaN(pageIdx) ? 0 : pageIdx);
+    const pageParam = urlParams.get("page");
+    const pageIdx = pageParam !== null ? parseInt(pageParam, 10) : null;
+    openReader(readDocId, (pageIdx !== null && !isNaN(pageIdx)) ? pageIdx : null);
   } else {
     if (state.currentView === "settings") {
       navigateToView("library", false);
@@ -4612,8 +4669,9 @@ try {
   } else {
     const readDocId = urlParams.get("read") || urlParams.get("doc");
     if (readDocId) {
-      const pageIdx = parseInt(urlParams.get("page") || "0", 10);
-      openReader(readDocId, isNaN(pageIdx) ? 0 : pageIdx);
+      const pageParam = urlParams.get("page");
+      const pageIdx = pageParam !== null ? parseInt(pageParam, 10) : null;
+      openReader(readDocId, (pageIdx !== null && !isNaN(pageIdx)) ? pageIdx : null);
     }
   }
 } catch (e) {

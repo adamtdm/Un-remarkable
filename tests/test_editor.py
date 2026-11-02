@@ -324,3 +324,36 @@ def test_quick_capture_notes_and_tasks(test_env):
     assert "calibrate color display" in text
 
 
+def test_update_document_position(test_env):
+    import json
+    editor = test_env["editor"]
+    db = test_env["db"]
+    blob_store = test_env["blob_store"]
+
+    res = editor.create_notebook(title="Position Test", initial_text="P1", pages_content=["Page 1", "Page 2", "Page 3"])
+    doc_id = res["id"]
+
+    doc = db.get_document(doc_id)
+    assert doc["last_opened_page"] == 0
+
+    pos_res = editor.update_document_position(doc_id, 2)
+    assert pos_res["id"] == doc_id
+    assert pos_res["last_opened_page"] == 2
+
+    # Verify database was updated
+    updated_doc = db.get_document(doc_id)
+    assert updated_doc["last_opened_page"] == 2
+
+    # Verify metadata blob was updated
+    meta_file = next(f for f in updated_doc["files"] if f["file_id"].endswith(".metadata"))
+    meta_dict = json.loads(blob_store.get(meta_file["blob_hash"]).decode("utf-8"))
+    assert meta_dict["lastOpenedPage"] == 2
+
+    # Verify content blob was updated
+    content_file = next((f for f in updated_doc["files"] if f["file_id"].endswith(".content")), None)
+    if content_file:
+        content_dict = json.loads(blob_store.get(content_file["blob_hash"]).decode("utf-8"))
+        if "cPages" in content_dict and "lastOpened" in content_dict["cPages"]:
+            assert content_dict["cPages"]["lastOpened"]["value"] == updated_doc["pages"][2]["page_id"]
+
+

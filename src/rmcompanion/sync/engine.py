@@ -478,8 +478,12 @@ class SyncEngine:
                 if e.doc_id == meta_entry.doc_id else e
                 for e in doc_entries
             ]
-            new_doc_hash = compute_doc_index_hash(updated_doc_entries)
-            doc_schema_bytes = format_index(updated_doc_entries, schema=doc_schema_ver).encode("utf-8")
+            doc_schema_bytes = format_index(updated_doc_entries, schema=doc_schema_ver, doc_id=doc_id).encode("utf-8")
+            if doc_schema_ver == "4":
+                new_doc_hash = hashlib.sha256(doc_schema_bytes).hexdigest()
+            else:
+                new_doc_hash = compute_doc_index_hash(updated_doc_entries)
+
             await self.client.put_blob(
                 new_doc_hash,
                 doc_schema_bytes,
@@ -488,12 +492,13 @@ class SyncEngine:
             )
 
             # Update root index
+            total_doc_size = sum(e.size for e in updated_doc_entries)
             updated_root_entries = [
-                Entry(hash=new_doc_hash, type=e.type, doc_id=e.doc_id, subfiles=e.subfiles, size=e.size)
+                Entry(hash=new_doc_hash, type=e.type, doc_id=e.doc_id, subfiles=len(updated_doc_entries), size=total_doc_size)
                 if e.doc_id == doc_id else e
                 for e in entries
             ]
-            new_root_bytes = format_index(updated_root_entries, schema=schema).encode("utf-8")
+            new_root_bytes = format_index(updated_root_entries, schema=schema, doc_id=".").encode("utf-8")
             new_root_hash = compute_root_hash(new_root_bytes)
             await self.client.put_blob(
                 new_root_hash,
@@ -540,6 +545,122 @@ class SyncEngine:
             return True
         except Exception as e:
             logger.warning("Failed to delete remote document %s on cloud: %s", doc_id, e)
+            return False
+
+    async def update_remote_position(self, doc_id: str, page_idx: int) -> bool:
+        """Update lastOpenedPage in cloud metadata and content blobs, then broadcast root update."""
+        if not self.auth.tokens.is_authenticated:
+            return False
+
+        try:
+            root_hash, gen, schema = await self.client.get_root()
+            entries, _, _ = await self.client.get_root_index(root_hash)
+
+            doc_entry = next((e for e in entries if e.doc_id == doc_id), None)
+            if not doc_entry:
+                logger.debug("Document %s not found in cloud root; skipping remote position update", doc_id)
+                return False
+
+            doc_entries, doc_schema_ver, _ = await self.client.get_doc_index(doc_entry.hash, doc_id)
+            meta_entry = next((e for e in doc_entries if e.doc_id.endswith(".metadata")), None)
+            if not meta_entry:
+                return False
+
+            content_entry = next((e for e in doc_entries if e.doc_id.endswith(".content")), None)
+
+            now_ms = str(int(time.time() * 1000))
+            new_meta_hash = None
+            new_meta_bytes = None
+            new_content_hash = None
+            new_content_bytes = None
+
+            # 1. Update metadata
+            raw_meta = await self.client.get_blob(meta_entry.hash, meta_entry.doc_id)
+            meta_dict = json.loads(raw_meta.decode("utf-8"))
+            meta_dict["lastOpenedPage"] = page_idx
+            meta_dict["lastOpened"] = now_ms
+            new_meta_bytes = json.dumps(meta_dict, indent=2).encode("utf-8")
+            new_meta_hash = hashlib.sha256(new_meta_bytes).hexdigest()
+
+            await self.client.put_blob(new_meta_hash, new_meta_bytes, meta_entry.doc_id)
+
+            # 2. Update content if present
+            if content_entry:
+                try:
+                    raw_content = await self.client.get_blob(content_entry.hash, content_entry.doc_id)
+                    content_dict = json.loads(raw_content.decode("utf-8"))
+                    page_id = ""
+                    if "cPages" in content_dict and isinstance(content_dict["cPages"], dict):
+                        c_pages = content_dict["cPages"].get("pages", [])
+                        if 0 <= page_idx < len(c_pages):
+                            cp = c_pages[page_idx]
+                            page_id = cp.get("id", "") if isinstance(cp, dict) else str(cp)
+                    elif "pages" in content_dict and isinstance(content_dict["pages"], list):
+                        if 0 <= page_idx < len(content_dict["pages"]):
+                            page_id = str(content_dict["pages"][page_idx])
+
+                    if "cPages" in content_dict and isinstance(content_dict["cPages"], dict) and page_id:
+                        if "lastOpened" not in content_dict["cPages"] or not isinstance(content_dict["cPages"]["lastOpened"], dict):
+                            content_dict["cPages"]["lastOpened"] = {}
+                        content_dict["cPages"]["lastOpened"]["value"] = page_id
+                        content_dict["cPages"]["lastOpened"]["timestamp"] = f"1:{page_idx + 1}"
+
+                        new_content_bytes = json.dumps(content_dict, indent=2).encode("utf-8")
+                        new_content_hash = hashlib.sha256(new_content_bytes).hexdigest()
+                        await self.client.put_blob(new_content_hash, new_content_bytes, content_entry.doc_id)
+                except Exception as ex:
+                    logger.debug("Failed updating remote .content blob for %s: %s", doc_id, ex)
+
+            # 3. Update doc index
+            updated_doc_entries = []
+            for e in doc_entries:
+                if e.doc_id == meta_entry.doc_id and new_meta_hash and new_meta_bytes:
+                    updated_doc_entries.append(
+                        Entry(hash=new_meta_hash, type=e.type, doc_id=e.doc_id, subfiles=e.subfiles, size=len(new_meta_bytes))
+                    )
+                elif content_entry and e.doc_id == content_entry.doc_id and new_content_hash and new_content_bytes:
+                    updated_doc_entries.append(
+                        Entry(hash=new_content_hash, type=e.type, doc_id=e.doc_id, subfiles=e.subfiles, size=len(new_content_bytes))
+                    )
+                else:
+                    updated_doc_entries.append(e)
+
+            doc_schema_bytes = format_index(updated_doc_entries, schema=doc_schema_ver, doc_id=doc_id).encode("utf-8")
+            if doc_schema_ver == "4":
+                new_doc_hash = hashlib.sha256(doc_schema_bytes).hexdigest()
+            else:
+                new_doc_hash = compute_doc_index_hash(updated_doc_entries)
+
+            await self.client.put_blob(
+                new_doc_hash,
+                doc_schema_bytes,
+                f"{doc_id}.docSchema",
+                content_type="text/plain; charset=UTF-8",
+            )
+
+            # 4. Update root index
+            total_doc_size = sum(e.size for e in updated_doc_entries)
+            updated_root_entries = [
+                Entry(hash=new_doc_hash, type=e.type, doc_id=e.doc_id, subfiles=len(updated_doc_entries), size=total_doc_size)
+                if e.doc_id == doc_id else e
+                for e in entries
+            ]
+            new_root_bytes = format_index(updated_root_entries, schema=schema, doc_id=".").encode("utf-8")
+            new_root_hash = compute_root_hash(new_root_bytes)
+            await self.client.put_blob(
+                new_root_hash,
+                new_root_bytes,
+                "root.docSchema",
+                content_type="text/plain; charset=UTF-8",
+            )
+
+            new_gen = await self.client.update_root(new_root_hash, gen, broadcast=True)
+            self.db.set_state("last_root_hash", new_root_hash)
+            self.db.set_state("last_generation", str(new_gen))
+            logger.info("Updated reading position for doc %s to page %d on reMarkable Cloud", doc_id, page_idx)
+            return True
+        except Exception as e:
+            logger.warning("Failed to update remote position for doc %s on cloud: %s", doc_id, e)
             return False
 
     def start_background_loop(self) -> None:

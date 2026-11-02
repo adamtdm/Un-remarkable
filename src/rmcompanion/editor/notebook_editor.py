@@ -420,6 +420,125 @@ class NotebookEditor:
             "last_modified": now_ms,
         }
 
+    def update_document_position(
+        self,
+        doc_id: str,
+        page_idx: int,
+    ) -> dict[str, Any]:
+        """Update last opened page and timestamp for a document in SQLite and local metadata/content blobs."""
+        doc = self.db.get_document(doc_id)
+        if not doc:
+            raise FileNotFoundError(f"Document {doc_id} not found")
+
+        pages = doc.get("pages", [])
+        total_pages = doc.get("page_count", len(pages)) or 1
+        page_idx = max(0, min(page_idx, total_pages - 1)) if total_pages > 0 else 0
+
+        now_ms = str(int(time.time() * 1000))
+        file_map = {f["file_id"]: f for f in doc.get("files", [])}
+
+        meta_key = f"{doc_id}.metadata"
+        content_key = f"{doc_id}.content"
+
+        updated_files: list[dict[str, Any]] = []
+        new_meta_hash = None
+        new_meta_bytes = None
+        new_content_hash = None
+        new_content_bytes = None
+
+        # 1. Update .metadata
+        if meta_key in file_map and self.blob_store.has(file_map[meta_key]["blob_hash"]):
+            try:
+                meta_dict = json.loads(self.blob_store.get(file_map[meta_key]["blob_hash"]).decode("utf-8"))
+            except Exception:
+                meta_dict = {}
+            meta_dict["lastOpenedPage"] = page_idx
+            meta_dict["lastOpened"] = now_ms
+            new_meta_bytes = json.dumps(meta_dict, indent=2).encode("utf-8")
+            new_meta_hash = hashlib.sha256(new_meta_bytes).hexdigest()
+            self.blob_store.put(new_meta_hash, new_meta_bytes)
+
+        # 2. Update .content if present
+        if content_key in file_map and self.blob_store.has(file_map[content_key]["blob_hash"]):
+            try:
+                content_dict = json.loads(self.blob_store.get(file_map[content_key]["blob_hash"]).decode("utf-8"))
+                page_id = ""
+                if 0 <= page_idx < len(pages):
+                    page_id = pages[page_idx].get("page_id", "")
+                elif "cPages" in content_dict and isinstance(content_dict["cPages"], dict):
+                    c_pages = content_dict["cPages"].get("pages", [])
+                    if 0 <= page_idx < len(c_pages):
+                        cp = c_pages[page_idx]
+                        page_id = cp.get("id", "") if isinstance(cp, dict) else str(cp)
+                elif "pages" in content_dict and isinstance(content_dict["pages"], list):
+                    if 0 <= page_idx < len(content_dict["pages"]):
+                        page_id = str(content_dict["pages"][page_idx])
+
+                if "cPages" in content_dict and isinstance(content_dict["cPages"], dict) and page_id:
+                    if "lastOpened" not in content_dict["cPages"] or not isinstance(content_dict["cPages"]["lastOpened"], dict):
+                        content_dict["cPages"]["lastOpened"] = {}
+                    content_dict["cPages"]["lastOpened"]["value"] = page_id
+                    content_dict["cPages"]["lastOpened"]["timestamp"] = f"1:{page_idx + 1}"
+
+                new_content_bytes = json.dumps(content_dict, indent=2).encode("utf-8")
+                new_content_hash = hashlib.sha256(new_content_bytes).hexdigest()
+                self.blob_store.put(new_content_hash, new_content_bytes)
+            except Exception as e:
+                logger.warning("Could not update .content for position on doc %s: %s", doc_id, e)
+
+        # Rebuild files list
+        for f_id, f_data in file_map.items():
+            if f_id == meta_key and new_meta_hash and new_meta_bytes:
+                updated_files.append({
+                    "file_id": meta_key,
+                    "blob_hash": new_meta_hash,
+                    "file_type": "metadata",
+                    "size": len(new_meta_bytes),
+                })
+            elif f_id == content_key and new_content_hash and new_content_bytes:
+                updated_files.append({
+                    "file_id": content_key,
+                    "blob_hash": new_content_hash,
+                    "file_type": "content",
+                    "size": len(new_content_bytes),
+                })
+            else:
+                updated_files.append(f_data)
+
+        # Compute new doc_hash if files exist
+        if updated_files:
+            entries = [
+                Entry(
+                    hash=f["blob_hash"],
+                    type="0",
+                    doc_id=f["file_id"],
+                    subfiles=0,
+                    size=f["size"],
+                )
+                for f in updated_files
+            ]
+            new_doc_hash = compute_doc_index_hash(entries)
+        else:
+            new_doc_hash = doc.get("doc_hash", "")
+
+        # Update doc record in database
+        doc["last_opened_page"] = page_idx
+        doc["last_opened"] = now_ms
+        if new_doc_hash:
+            doc["doc_hash"] = new_doc_hash
+        self.db.upsert_document(doc)
+        if new_doc_hash and updated_files:
+            self.db.set_document_files(new_doc_hash, updated_files)
+            self.db.set_document_pages(new_doc_hash, pages)
+
+        logger.info("Updated position for doc %s to page %d", doc_id, page_idx)
+        return {
+            "id": doc_id,
+            "last_opened_page": page_idx,
+            "last_opened": now_ms,
+            "doc_hash": new_doc_hash,
+        }
+
     def append_task_to_tasks_notebook(
         self,
         task_text: str,
