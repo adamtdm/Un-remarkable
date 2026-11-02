@@ -227,6 +227,12 @@ const el = {
   readerTitle: document.getElementById("reader-title"),
   readerExcludeBadge: document.getElementById("reader-exclude-badge"),
   readerPageIndicator: document.getElementById("reader-page-indicator"),
+  readerPageDisplay: document.getElementById("reader-page-display"),
+  readerPageCurrent: document.getElementById("reader-page-current"),
+  readerPageTotal: document.getElementById("reader-page-total"),
+  readerPageJumpForm: document.getElementById("reader-page-jump-form"),
+  readerPageInput: document.getElementById("reader-page-input"),
+  readerPageTotalEdit: document.getElementById("reader-page-total-edit"),
   readerPageSpinner: document.getElementById("reader-page-spinner"),
   btnPagePrev: document.getElementById("btn-page-prev"),
   btnPageNext: document.getElementById("btn-page-next"),
@@ -2001,6 +2007,7 @@ el.btnReaderConvert.addEventListener("click", () => {
 });
 
 function closeReader() {
+  closePageJumpInput(false);
   if (state.isFullscreen) {
     toggleFullscreenMode(false);
   }
@@ -2036,7 +2043,17 @@ async function loadCurrentPage() {
   const pageIdx = Math.min(state.currentPageIdx, totalPages - 1);
   state.currentPageIdx = pageIdx;
 
-  el.readerPageIndicator.textContent = `Page ${pageIdx + 1} of ${totalPages}`;
+  if (el.readerPageCurrent && el.readerPageTotal) {
+    el.readerPageCurrent.textContent = String(pageIdx + 1);
+    el.readerPageTotal.textContent = String(totalPages);
+    if (el.readerPageTotalEdit) el.readerPageTotalEdit.textContent = String(totalPages);
+    if (el.readerPageInput && document.activeElement !== el.readerPageInput) {
+      el.readerPageInput.value = String(pageIdx + 1);
+      el.readerPageInput.max = String(totalPages);
+    }
+  } else if (el.readerPageIndicator) {
+    el.readerPageIndicator.textContent = `Page ${pageIdx + 1} of ${totalPages}`;
+  }
   el.btnPagePrev.disabled = pageIdx <= 0;
   el.btnPageNext.disabled = pageIdx >= totalPages - 1;
 
@@ -2097,6 +2114,81 @@ async function loadCurrentPage() {
     if (el.readerPageSpinner) el.readerPageSpinner.style.display = "none";
     if (el.readerCanvasWrapper) el.readerCanvasWrapper.classList.remove("is-page-loading");
   }
+}
+
+// --- Reader Page Jump Controller ---
+function openPageJumpInput() {
+  if (!state.currentDoc) return;
+  const pages = (state.currentDoc.pages || []).filter((p) => !p.deleted);
+  const totalPages = Math.max(pages.length, 1);
+
+  if (!el.readerPageDisplay || !el.readerPageJumpForm || !el.readerPageInput) return;
+
+  el.readerNav?.classList.add("is-editing");
+  el.readerPageDisplay.style.display = "none";
+  el.readerPageJumpForm.style.display = "inline-flex";
+  el.readerPageInput.value = String(state.currentPageIdx + 1);
+  el.readerPageInput.max = String(totalPages);
+  if (el.readerPageTotalEdit) el.readerPageTotalEdit.textContent = String(totalPages);
+
+  setTimeout(() => {
+    el.readerPageInput.focus();
+    el.readerPageInput.select();
+  }, 10);
+}
+
+function closePageJumpInput(applyJump = false) {
+  if (!el.readerPageDisplay || !el.readerPageJumpForm || !el.readerPageInput) return;
+  if (el.readerPageJumpForm.style.display === "none") return;
+
+  if (applyJump && state.currentDoc) {
+    const pages = (state.currentDoc.pages || []).filter((p) => !p.deleted);
+    const totalPages = Math.max(pages.length, 1);
+    const val = parseInt(el.readerPageInput.value, 10);
+    if (!isNaN(val)) {
+      const targetIdx = Math.max(0, Math.min(val - 1, totalPages - 1));
+      if (targetIdx !== state.currentPageIdx) {
+        state.currentPageIdx = targetIdx;
+        loadCurrentPage();
+      }
+    }
+  }
+
+  el.readerPageJumpForm.style.display = "none";
+  el.readerPageDisplay.style.display = "inline-flex";
+  el.readerNav?.classList.remove("is-editing");
+  el.readerPageInput.value = String(state.currentPageIdx + 1);
+}
+
+if (el.readerPageIndicator) {
+  el.readerPageIndicator.addEventListener("click", (e) => {
+    if (e.target.closest("#reader-page-jump-form")) return;
+    openPageJumpInput();
+  });
+  el.readerPageIndicator.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && el.readerPageJumpForm?.style.display === "none") {
+      e.preventDefault();
+      openPageJumpInput();
+    }
+  });
+}
+
+if (el.readerPageInput) {
+  el.readerPageInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      closePageJumpInput(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      closePageJumpInput(false);
+    }
+  });
+
+  el.readerPageInput.addEventListener("blur", () => {
+    closePageJumpInput(true);
+  });
 }
 
 el.btnPagePrev.addEventListener("click", () => {
@@ -2578,17 +2670,25 @@ window.addEventListener("keydown", (e) => {
   }
 
   if (el.readerView.style.display === "flex") {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") {
+      if (e.target === el.readerPageInput && e.key === "Escape") {
+        e.preventDefault();
+        closePageJumpInput(false);
+      }
+      return;
+    }
     if (e.key === "Escape") {
       if (state.isFullscreen) {
         toggleFullscreenMode(false);
       } else {
         closeReader();
       }
+    } else if (e.key === "g" || e.key === "G") {
+      e.preventDefault();
+      openPageJumpInput();
     } else if (e.key === "f" || e.key === "F") {
-      if (e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA") {
-        e.preventDefault();
-        toggleFullscreenMode();
-      }
+      e.preventDefault();
+      toggleFullscreenMode();
     } else if (e.key === "ArrowLeft" || e.key === "k" || e.key === "p") {
       el.btnPagePrev.click();
     } else if (e.key === "ArrowRight" || e.key === "j" || e.key === "n" || e.key === " ") {

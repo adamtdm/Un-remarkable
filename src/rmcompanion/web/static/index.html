@@ -387,14 +387,47 @@
 
     <!-- Navigation Pill: positioned cleanly at bottom -->
     <div class="reader-nav" id="reader-nav">
-      <button id="btn-page-prev" class="btn btn-icon" title="Previous Page (Left Arrow)">◀</button>
-      <span id="reader-page-indicator" style="font-size: 0.85rem; font-weight: 500; min-width: 90px; text-align: center;">Page 1 of 1</span>
+      <button id="btn-page-prev" class="btn btn-icon" title="Previous Page (Left Arrow, K, or P)" aria-label="Previous Page">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+
+      <div id="reader-page-indicator" class="reader-page-indicator" role="button" tabindex="0" title="Click or press 'g' to jump to page" aria-label="Page jump indicator">
+        <span class="reader-page-display" id="reader-page-display">
+          <span class="reader-page-label">Page</span>
+          <span class="reader-page-current-pill" id="reader-page-current-pill"><span id="reader-page-current">1</span></span>
+          <span class="reader-page-separator">of</span>
+          <span id="reader-page-total">1</span>
+        </span>
+        <form class="reader-page-jump-form" id="reader-page-jump-form" style="display: none;" onsubmit="return false;">
+          <span class="reader-page-label">Page</span>
+          <input
+            type="number"
+            id="reader-page-input"
+            class="reader-page-input"
+            min="1"
+            value="1"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            aria-label="Target page number"
+          />
+          <span class="reader-page-separator">of</span>
+          <span id="reader-page-total-edit">1</span>
+        </form>
+      </div>
+
       <span id="reader-page-spinner" class="reader-page-spinner" style="display: none;" title="Loading page...">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="10"></circle>
         </svg>
       </span>
-      <button id="btn-page-next" class="btn btn-icon" title="Next Page (Right Arrow)">▶</button>
+
+      <button id="btn-page-next" class="btn btn-icon" title="Next Page (Right Arrow, Space, J, or N)" aria-label="Next Page">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
+      </button>
     </div>
   </div>
 

@@ -41,6 +41,9 @@ def test_static_index_html(test_client):
     assert "Un-remarkable" in res.text
     assert "<html" in res.text
     assert 'data-type="folder">Folders<' in res.text
+    assert 'id="reader-page-indicator"' in res.text
+    assert 'id="reader-page-input"' in res.text
+    assert 'id="reader-page-jump-form"' in res.text
     assert "no-cache" in res.headers.get("cache-control", "")
 
     # PWA files and cache control
