@@ -33,7 +33,9 @@ class Exporter:
         self.blob_store = blob_store or BlobStore(settings=self.settings)
 
     def _get_cache_path(self, key: str, ext: str) -> Path:
-        filename = f"{hashlib.sha256(key.encode('utf-8')).hexdigest()[:24]}.{ext}"
+        prefix = "thumb_" if key.startswith("thumb_") else ("page_" if key.startswith("page_") else "")
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:20]
+        filename = f"{prefix}{digest}.{ext}"
         return self.settings.cache_dir / filename
 
     def render_page_svg(
@@ -311,15 +313,16 @@ class Exporter:
             logger.debug("Thumbnail warm error for %s: %s", doc_id, e)
 
     def clear_thumbnail_cache(self) -> int:
-        """Purge all cached thumbnail images."""
+        """Purge all cached thumbnail and page rendering images."""
         count = 0
         try:
-            for p in self.settings.cache_dir.glob("thumb_*.png"):
-                try:
-                    p.unlink()
-                    count += 1
-                except OSError:
-                    pass
+            for pattern in ("thumb_*.png", "page_*.svg", "*.png", "*.svg"):
+                for p in self.settings.cache_dir.glob(pattern):
+                    try:
+                        p.unlink()
+                        count += 1
+                    except OSError:
+                        pass
         except Exception as e:
             logger.warning("Failed to clear thumbnail cache: %s", e)
         return count

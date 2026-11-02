@@ -450,7 +450,7 @@ function applyAppTheme(pref) {
   document.querySelectorAll(".doc-card-thumb img[data-doc-id]").forEach((img) => {
     const docId = img.getAttribute("data-doc-id");
     const docHash = img.getAttribute("data-doc-hash") || "";
-    img.src = `/api/documents/${docId}/thumbnail?h=${encodeURIComponent(docHash)}&dark=${isDark}`;
+    img.src = `/api/documents/${docId}/thumbnail?h=${encodeURIComponent(docHash)}&dark=${isDark}&v=4`;
   });
 
   if (el.themeChoiceAuto) el.themeChoiceAuto.checked = pref === "auto";
@@ -1018,7 +1018,7 @@ function renderDocumentGrid(docs) {
         `;
       } else {
         const isDark = state.appTheme === "dark";
-        const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}&dark=${isDark}`;
+        const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}&dark=${isDark}&v=4`;
         iconHtml = `<img src="${thumbUrl}" data-doc-id="${escapeHtml(doc.id)}" data-doc-hash="${escapeHtml(doc.doc_hash || "")}" alt="${escapeHtml(doc.visible_name)} preview" loading="lazy" width="320" height="426">`;
       }
 
@@ -1917,7 +1917,7 @@ function preloadAdjacentPages(docId, currentPageIdx, totalPages, darkMode) {
         const key = `${docId}_${pIdx}_${darkMode}`;
         if (!pageSvgCache.has(key)) {
           try {
-            const res = await fetch(`/api/documents/${docId}/pages/${pIdx}/svg?dark=${darkMode}`);
+            const res = await fetch(`/api/documents/${docId}/pages/${pIdx}/svg?dark=${darkMode}&v=4`);
             if (res.ok) {
               const svg = await res.text();
               pageSvgCache.set(key, svg);
@@ -2165,7 +2165,7 @@ async function loadCurrentPage() {
 
   try {
     const res = await fetch(
-      `/api/documents/${state.currentDoc.id}/pages/${pageIdx}/svg?dark=${state.pageDarkMode}`
+      `/api/documents/${state.currentDoc.id}/pages/${pageIdx}/svg?dark=${state.pageDarkMode}&v=4`
     );
     if (!res.ok) throw new Error("Failed to render page");
     const svgText = await res.text();
