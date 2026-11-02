@@ -385,8 +385,8 @@ main {
 /* Grid View */
 .doc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(150px, 18vw, 220px), 1fr));
+  gap: clamp(0.75rem, 1.5vw, 1.25rem);
 }
 
 .doc-card {
@@ -401,6 +401,8 @@ main {
               box-shadow 0.2s var(--ease-out-expo);
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  width: 100%;
 }
 
 .doc-card:hover {
@@ -425,7 +427,8 @@ main {
 }
 
 .doc-card-thumb {
-  height: 200px;
+  width: 100%;
+  aspect-ratio: 3 / 4;
   background-color: var(--bg-tertiary);
   display: flex;
   align-items: center;
@@ -450,6 +453,33 @@ main {
   transform: scale(1.025);
 }
 
+/* Folder Card Specific Proportions */
+.doc-card-folder .doc-card-thumb {
+  aspect-ratio: 16 / 10;
+  max-height: 120px;
+  background: linear-gradient(180deg, var(--bg-tertiary) 0%, rgba(36, 36, 34, 0.45) 100%);
+}
+
+[data-theme="light"] .doc-card-folder .doc-card-thumb {
+  background: linear-gradient(180deg, var(--bg-tertiary) 0%, rgba(236, 234, 227, 0.55) 100%);
+}
+
+.doc-card-folder .folder-icon {
+  width: 44px;
+  height: 44px;
+  color: var(--text-secondary);
+  transition: transform 0.3s var(--ease-out-expo), color 0.2s ease;
+}
+
+.doc-card-folder:hover .folder-icon {
+  transform: scale(1.08);
+  color: var(--accent);
+}
+
+.doc-card-folder .doc-card-body {
+  padding: 0.75rem 0.85rem;
+}
+
 .doc-card-thumb .folder-icon {
   color: var(--text-secondary);
   transition: transform 0.3s var(--ease-out-expo), color 0.2s ease;
@@ -466,6 +496,7 @@ main {
   flex-direction: column;
   gap: 0.35rem;
   flex: 1;
+  min-width: 0;
 }
 
 .doc-card-title {
@@ -475,6 +506,8 @@ main {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
 }
 
 .doc-card-meta {
@@ -909,8 +942,10 @@ main {
 .card-header-row {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.4rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .card-menu-wrapper {
@@ -1598,12 +1633,28 @@ main {
 
 /* --- Responsive Mobile & Touch Polish --- */
 @media (max-width: 768px) {
-  /* Increase ellipsis tap area to comfortable 44px */
+  main {
+    padding: 0.85rem;
+  }
+
+  /* Compact ellipsis button with expanded 44x44px touch target without layout overflow */
   .btn-card-menu {
-    min-width: 44px;
-    min-height: 44px;
-    padding: 10px;
-    margin: -8px -6px -8px 0;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 6px;
+    margin: 0;
+    position: relative;
+  }
+
+  .btn-card-menu::after {
+    content: "";
+    position: absolute;
+    top: -6px;
+    bottom: -6px;
+    left: -6px;
+    right: -6px;
   }
 
   /* Hide desktop dropdown on mobile */
@@ -1702,8 +1753,18 @@ main {
   }
 
   .doc-grid {
-    grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 0.75rem;
+  }
+
+  .doc-card-folder .doc-card-thumb {
+    aspect-ratio: 16 / 10;
+    max-height: 100px;
+  }
+
+  .doc-card-folder .folder-icon {
+    width: 38px;
+    height: 38px;
   }
 
   .doc-list-item {
@@ -1765,8 +1826,31 @@ main {
 }
 
 @media (max-width: 480px) {
+  header {
+    padding: 0.5rem 0.65rem;
+    gap: 0.35rem;
+  }
+
+  .brand {
+    font-size: 1.05rem;
+    gap: 0.4rem;
+  }
+
   .brand span {
     font-size: 1.05rem;
+  }
+
+  .header-actions {
+    gap: 0.25rem;
+  }
+
+  .header-actions .btn,
+  .header-actions .sync-status-icon-btn {
+    padding: 0.38rem 0.45rem;
+  }
+
+  .split-btn-group .btn {
+    padding: 0.38rem 0.45rem;
   }
 
   .sync-badge span {
@@ -1774,11 +1858,93 @@ main {
   }
 
   .sync-badge {
-    padding: 0.4rem;
+    padding: 0.35rem;
+  }
+
+  main {
+    padding: 0.55rem 0.65rem;
   }
 
   .doc-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+
+  .doc-card-folder .doc-card-thumb {
+    aspect-ratio: 16 / 9;
+    max-height: 84px;
+  }
+
+  .doc-card-folder .folder-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .doc-card-folder .doc-card-body {
+    padding: 0.55rem 0.65rem;
+    gap: 0.2rem;
+  }
+
+  .doc-card-body {
+    padding: 0.6rem 0.65rem;
+    gap: 0.25rem;
+  }
+
+  .doc-card-title {
+    font-size: 0.86rem;
+  }
+
+  .doc-card-meta {
+    font-size: 0.7rem;
+  }
+
+  .doc-badge {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.35rem;
+  }
+
+  .btn-card-menu {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+    padding: 5px;
+  }
+
+  .btn-card-menu::after {
+    top: -8px;
+    bottom: -8px;
+    left: -8px;
+    right: -8px;
+  }
+
+  .btn-card-menu svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+@media (max-width: 340px) {
+  main {
+    padding: 0.45rem 0.5rem;
+  }
+
+  .doc-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+  }
+
+  .doc-card-folder .doc-card-thumb {
+    max-height: 70px;
+  }
+
+  .doc-card-folder .folder-icon {
+    width: 26px;
+    height: 26px;
+  }
+
+  .doc-card-title {
+    font-size: 0.8rem;
   }
 }
 
@@ -2592,6 +2758,10 @@ main {
 }
 
 @media (max-width: 640px) {
+  .settings-view {
+    padding: 1.25rem 0.75rem 3rem;
+  }
+
   .settings-form-grid {
     grid-template-columns: 1fr;
   }

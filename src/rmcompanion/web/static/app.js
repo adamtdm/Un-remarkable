@@ -968,7 +968,7 @@ function renderDocumentGrid(docs) {
     `;
 
     if (state.viewMode === "list") {
-      element.className = "doc-list-item";
+      element.className = isFolder ? "doc-list-item doc-list-folder" : "doc-list-item";
       let listIcon = "";
       if (isFolder) {
         listIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`;
@@ -994,11 +994,11 @@ function renderDocumentGrid(docs) {
         </div>
       `;
     } else {
-      element.className = "doc-card";
+      element.className = isFolder ? "doc-card doc-card-folder" : "doc-card";
       let iconHtml = "";
       if (isFolder) {
         iconHtml = `
-          <svg class="folder-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
           </svg>
         `;
