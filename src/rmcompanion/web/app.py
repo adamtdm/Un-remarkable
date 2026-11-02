@@ -165,12 +165,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     class CacheBustingStaticFiles(StaticFiles):
         async def get_response(self, path: str, scope: Any) -> Response:
             response = await super().get_response(path, scope)
-            if path in ("", ".") or path.endswith(".html") or path.endswith("sw.js") or path.endswith("manifest.json"):
-                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-                response.headers["Pragma"] = "no-cache"
-                response.headers["Expires"] = "0"
-            elif path.endswith(".css") or path.endswith(".js"):
-                response.headers["Cache-Control"] = "no-cache, must-revalidate"
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
             return response
 
     if static_dir.is_dir():

@@ -1,55 +1,23 @@
-// Service Worker for reMarkable Companion PWA
-const CACHE_NAME = "rmc-shell-v20261102a";
-const STATIC_ASSETS = [
-  "/",
-  "/index.html",
-  "/style.css?v=20261102a",
-  "/app.js?v=20261102a",
-  "/manifest.json",
-  "/icon.svg"
-];
+// Self-destructing Service Worker: purges all rmc-shell caches and unregisters itself
+const CACHE_PREFIX = "rmc-shell";
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
-  );
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
-      return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-      );
-    }).then(() => self.clients.claim())
+      return Promise.all(keys.map((key) => caches.delete(key)));
+    }).then(() => {
+      return self.registration.unregister();
+    }).then(() => {
+      return self.clients.claim();
+    })
   );
 });
 
 self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-
-  // Network-only for API calls, MCP endpoints, and dynamic SVG pages
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/mcp")) {
-    return;
-  }
-
-  // Network-first for static shell assets with offline fallback
-  event.respondWith(
-    fetch(event.request)
-      .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
-          const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
-        }
-        return networkResponse;
-      })
-      .catch(() => {
-        return caches.match(event.request);
-      })
-  );
+  // Always bypass cache and go straight to network
+  event.respondWith(fetch(event.request));
 });

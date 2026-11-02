@@ -48,12 +48,13 @@ def create_mcp_server(
 
     @server.tool(
         name="list_documents",
-        description="List documents and folders in your reMarkable library. Optionally filter by parent folder.",
+        description="List documents and folders in your reMarkable library. Optionally filter by parent folder. Respects excluded folders and files by default.",
     )
     def list_documents(
         parent_id: str = "",
         include_deleted: bool = False,
         file_type: str = "",
+        include_excluded: bool = False,
     ) -> list[dict[str, Any]]:
         """List documents and folders.
 
@@ -61,10 +62,12 @@ def create_mcp_server(
             parent_id: Folder UUID, or empty string "" for the root library.
             include_deleted: Whether to include documents currently in the trash.
             file_type: Optional filter: 'folder', 'notebook', 'pdf', or 'epub'.
+            include_excluded: Whether to include documents and folders excluded from search and AI access (default False).
         """
         pid = parent_id if parent_id else ""
         ft = file_type if file_type else None
         docs = app_db.list_documents(parent_id=pid, include_deleted=include_deleted, file_type=ft)
+        excluded_ids = app_db.get_all_excluded_ids()
         return [
             {
                 "id": d["id"],
@@ -77,11 +80,12 @@ def create_mcp_server(
                 "parent_id": d["parent_id"],
             }
             for d in docs
+            if include_excluded or (d["id"] not in excluded_ids and not d.get("effective_exclude"))
         ]
 
     @server.tool(
         name="search",
-        description="Search across all notebooks, typed text, tags, and PDF text in your reMarkable library.",
+        description="Search across all notebooks, typed text, tags, and PDF text in your reMarkable library. Excluded folders and files are strictly omitted.",
     )
     def search(query: str, limit: int = 20) -> list[dict[str, Any]]:
         """Search your library.
@@ -90,7 +94,9 @@ def create_mcp_server(
             query: Keywords or phrases to search for.
             limit: Maximum number of search results to return (default 20).
         """
-        return app_db.search(query=query, limit=limit)
+        results = app_db.search(query=query, limit=limit, include_excluded=False)
+        excluded_ids = app_db.get_all_excluded_ids()
+        return [r for r in results if r.get("doc_id") not in excluded_ids]
 
     @server.tool(
         name="get_document",
@@ -102,6 +108,9 @@ def create_mcp_server(
         Args:
             doc_id: UUID of the document.
         """
+        if app_db.is_excluded_from_search(doc_id):
+            raise ValueError(f"Document with ID {doc_id} is excluded from AI access")
+
         doc = app_db.get_document(doc_id)
         if not doc:
             raise ValueError(f"Document with ID {doc_id} was not found")
@@ -136,6 +145,9 @@ def create_mcp_server(
             doc_id: UUID of the document.
             page_idx: 0-based page index.
         """
+        if app_db.is_excluded_from_search(doc_id):
+            raise ValueError(f"Document with ID {doc_id} is excluded from AI access")
+
         with app_db.connect() as conn:
             rows = conn.execute(
                 "SELECT source, content FROM search_index WHERE doc_id = ? AND page_idx = ? AND source != 'title'",
@@ -164,15 +176,19 @@ def create_mcp_server(
             page_idx: 0-based page index.
             dark_mode: Whether to render with dark mode colors (default False).
         """
+        if app_db.is_excluded_from_search(doc_id):
+            raise ValueError(f"Document with ID {doc_id} is excluded from AI access")
+
         png_bytes = app_exporter.render_page_png(doc_id, page_idx=page_idx, dark_mode=dark_mode)
         return Image(data=png_bytes, format="png")
 
     @server.tool(
         name="recent_changes",
-        description="Get a list of documents that were modified or synced recently.",
+        description="Get a list of documents that were modified or synced recently. Excluded documents and folders are omitted.",
     )
     def recent_changes(limit: int = 15) -> list[dict[str, Any]]:
         """List recently modified documents."""
+        excluded_ids = app_db.get_all_excluded_ids()
         with app_db.connect() as conn:
             rows = conn.execute(
                 """
@@ -182,9 +198,10 @@ def create_mcp_server(
                 ORDER BY updated_at DESC, last_modified DESC
                 LIMIT ?
                 """,
-                (limit,),
+                (limit * 2,),
             ).fetchall()
-            return [dict(r) for r in rows]
+            results = [dict(r) for r in rows if r["id"] not in excluded_ids]
+            return results[:limit]
 
     @server.tool(
         name="sync_status",
@@ -294,11 +311,13 @@ def create_mcp_server(
 
     @server.tool(
         name="list_folders",
-        description="List all folders in the reMarkable library including full nesting paths and hierarchy.",
+        description="List all folders in the reMarkable library including full nesting paths and hierarchy. Excluded folders and their children are omitted.",
     )
     def list_folders() -> list[dict[str, Any]]:
         """List folders with hierarchical path, depth, and IDs."""
-        return app_db.get_folder_tree()
+        folders = app_db.get_folder_tree()
+        excluded_ids = app_db.get_all_excluded_ids()
+        return [f for f in folders if f.get("id") not in excluded_ids]
 
     @server.tool(
         name="create_folder",

@@ -82,3 +82,40 @@ def test_mcp_sync_status(populated_env):
     status = tool_func()
     assert "status" in status
     assert "total_blobs" in status
+
+
+def test_mcp_respects_exclusions(populated_env):
+    server, db = populated_env
+
+    # Exclude doc-alpha
+    db.set_exclude_from_search("doc-alpha", True)
+
+    list_docs_fn = server._tool_manager._tools["list_documents"].fn
+    search_fn = server._tool_manager._tools["search"].fn
+    get_doc_fn = server._tool_manager._tools["get_document"].fn
+    get_text_fn = server._tool_manager._tools["get_page_text"].fn
+    recent_fn = server._tool_manager._tools["recent_changes"].fn
+
+    # list_documents should not return doc-alpha by default
+    docs = list_docs_fn(parent_id="", include_deleted=False)
+    assert not any(d["id"] == "doc-alpha" for d in docs)
+
+    # list_documents with include_excluded=True should return it
+    docs_all = list_docs_fn(parent_id="", include_deleted=False, include_excluded=True)
+    assert any(d["id"] == "doc-alpha" for d in docs_all)
+
+    # search should omit doc-alpha
+    results = search_fn(query="architecture")
+    assert not any(r["doc_id"] == "doc-alpha" for r in results)
+
+    # get_document should raise ValueError
+    with pytest.raises(ValueError, match="excluded from AI access"):
+        get_doc_fn(doc_id="doc-alpha")
+
+    # get_page_text should raise ValueError
+    with pytest.raises(ValueError, match="excluded from AI access"):
+        get_text_fn(doc_id="doc-alpha", page_idx=0)
+
+    # recent_changes should omit doc-alpha
+    recent = recent_fn(limit=10)
+    assert not any(r["id"] == "doc-alpha" for r in recent)

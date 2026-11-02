@@ -11,7 +11,22 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
-  <link rel="stylesheet" href="/style.css?v=20261102a">
+  <link rel="stylesheet" href="/style.css?v=20261102b">
+  <script>
+    // Immediately unregister all Service Workers and clear CacheStorage
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (var i = 0; i < registrations.length; i++) {
+          registrations[i].unregister();
+        }
+      });
+    }
+    if ("caches" in window) {
+      caches.keys().then(function(keys) {
+        keys.forEach(function(k) { caches.delete(k); });
+      });
+    }
+  </script>
 </head>
 <body>
   <!-- Header -->
@@ -1461,34 +1476,6 @@
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-  <script src="/app.js?v=20261102a"></script>
-  <script>
-    // Purge legacy service worker caches immediately
-    if ("caches" in window) {
-      caches.keys().then((keys) => {
-        keys.forEach((key) => {
-          if (key.startsWith("rmc-shell-") && key !== "rmc-shell-v20261102a") {
-            caches.delete(key);
-          }
-        });
-      });
-    }
-
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js?v=20261102a").then((reg) => {
-          reg.update();
-        }).catch(() => {});
-      });
-
-      let refreshing = false;
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        if (!refreshing) {
-          refreshing = true;
-          window.location.reload();
-        }
-      });
-    }
-  </script>
+  <script src="/app.js?v=20261102b"></script>
 </body>
 </html>
