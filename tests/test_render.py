@@ -8,7 +8,7 @@ import pytest
 from rmcompanion.render.notebook import render_rm_to_svg
 from rmcompanion.render.palette import lookup_color
 
-SAMPLE_DIR = Path("/home/mcsbot/.gemini/antigravity/brain/fd0749e6-e1d3-47bc-b961-77d3e8b3ec6d/scratch/ref/rmscene/tests/data")
+SAMPLE_DIR = Path(__file__).parent / "fixtures" / "rm"
 
 
 def test_palette_lookup():

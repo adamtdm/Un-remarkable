@@ -45,7 +45,7 @@ class DailyNewspaperGenerator:
 
         # 1. Fetch content concurrently
         weather_str = ""
-        if include_weather and weather_location:
+        if include_weather:
             weather_str = await cls._fetch_weather(weather_location)
 
         wiki_article: dict[str, Any] | None = None
@@ -83,11 +83,11 @@ class DailyNewspaperGenerator:
         return doc.tobytes(), filename
 
     @classmethod
-    async def _fetch_weather(cls, location: str) -> str:
-        """Fetch current weather string from wttr.in."""
+    async def _fetch_weather(cls, location: str = "") -> str:
+        """Fetch current weather string from wttr.in (auto-detects by IP if blank)."""
         try:
-            loc = location.strip().replace(" ", "+")
-            url = f"https://wttr.in/{loc}?format=j1"
+            loc = location.strip().replace(" ", "+") if location else ""
+            url = f"https://wttr.in/{loc}?format=j1" if loc else "https://wttr.in/?format=j1"
             async with httpx.AsyncClient(timeout=4.0) as client:
                 resp = await client.get(url)
                 if resp.status_code == 200:
@@ -95,7 +95,9 @@ class DailyNewspaperGenerator:
                     curr = data["current_condition"][0]
                     temp = curr.get("temp_C", "")
                     desc = curr["weatherDesc"][0].get("value", "")
-                    return f"{location}: {temp}°C, {desc}"
+                    nearest = data.get("nearest_area", [{}])[0].get("areaName", [{}])[0].get("value", "")
+                    label = location.strip() if location.strip() else nearest
+                    return f"{label}: {temp}°C, {desc}" if label else f"{temp}°C, {desc}"
         except Exception as e:
             logger.debug("Weather fetch skipped: %s", e)
         return ""

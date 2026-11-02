@@ -21,6 +21,8 @@ from rmcompanion.store.blob_store import BlobStore
 from rmcompanion.store.db import Database
 from rmcompanion.sync.engine import SyncEngine
 
+SAMPLE_RM = Path(__file__).parent / "fixtures" / "rm" / "Bold_Heading_Bullet_Normal.rm"
+
 
 class MockCloudTransport(httpx.AsyncBaseTransport):
     """Mock HTTP transport returning realistic reMarkable sync responses."""
@@ -80,8 +82,7 @@ def mock_cloud():
     }).encode("utf-8")
     meta_hash = cloud.put_blob(metadata_bytes)
 
-    sample_rm = Path("/home/mcsbot/.gemini/antigravity/brain/fd0749e6-e1d3-47bc-b961-77d3e8b3ec6d/scratch/ref/rmscene/tests/data/Bold_Heading_Bullet_Normal.rm")
-    rm_bytes = sample_rm.read_bytes() if sample_rm.exists() else b"\x00" * 32
+    rm_bytes = SAMPLE_RM.read_bytes() if SAMPLE_RM.exists() else b"\x00" * 32
     rm_hash = cloud.put_blob(rm_bytes)
 
     content_bytes = json.dumps({
@@ -154,7 +155,7 @@ async def test_full_sync_cycle(tmp_path, mock_cloud):
 
     # Verify Search Indexing
     search_res = db.search("alphabet")
-    if Path("/home/mcsbot/.gemini/antigravity/brain/fd0749e6-e1d3-47bc-b961-77d3e8b3ec6d/scratch/ref/rmscene/tests/data/Bold_Heading_Bullet_Normal.rm").exists():
+    if SAMPLE_RM.exists():
         assert len(search_res) >= 1
         assert search_res[0]["doc_id"] == "test-doc-uuid"
 

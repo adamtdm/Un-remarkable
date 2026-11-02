@@ -22,7 +22,7 @@ class DeliverySettings(BaseModel):
     news_rss_feeds: list[str] = Field(default_factory=lambda: list(DEFAULT_RSS_FEEDS))
     news_include_wikipedia: bool = True
     news_include_weather: bool = True
-    news_weather_location: str = "London"
+    news_weather_location: str = ""
 
     # Crosswords & Puzzles
     puzzles_enabled: bool = False
