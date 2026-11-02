@@ -669,9 +669,14 @@ main {
   z-index: 90;
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
 }
 
 .reader-header {
+  flex-shrink: 0;
   background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
   padding: 0.6rem 1.25rem;
@@ -679,6 +684,8 @@ main {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  position: relative;
+  z-index: 60;
 }
 
 .reader-title {
@@ -851,12 +858,27 @@ main {
 
 .reader-content {
   flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 1rem 1rem 5rem;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+#reader-canvas-wrapper {
+  margin: auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
-  position: relative;
+  max-width: 100%;
+  transform-origin: center center;
+  will-change: transform;
 }
 
 .reader-canvas {
@@ -865,23 +887,38 @@ main {
   box-shadow: var(--shadow);
   border-radius: var(--radius-sm);
   background-color: #ffffff;
-  transition: transform 0.15s var(--ease-out-expo);
+  transition: opacity 0.15s var(--ease-out-expo);
   animation: pageTurn 0.18s var(--ease-out-expo);
+  display: block;
 }
 
 [data-page-theme="dark"] .reader-canvas {
   background-color: #18181b;
 }
 
+.fit-width #reader-canvas-wrapper {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
 .fit-width .reader-canvas {
-  width: 900px;
+  width: 100%;
   max-width: 100%;
   height: auto;
 }
 
+.fit-page #reader-canvas-wrapper {
+  margin: auto;
+}
+
 .fit-page .reader-canvas {
   height: calc(100vh - 120px);
+  height: calc(100dvh - 120px);
+  max-height: calc(100dvh - 120px);
+  max-width: 100%;
   width: auto;
+  object-fit: contain;
 }
 
 /* Search Dropdown */
@@ -1951,10 +1988,14 @@ main {
 
   /* Reader header mobile adjustments */
   .reader-header {
-    padding: 0.5rem 0.85rem;
-    position: sticky;
-    top: 0;
-    z-index: 40;
+    padding: 0.5rem 0.75rem;
+    position: relative;
+    flex-shrink: 0;
+    z-index: 60;
+  }
+
+  .reader-content {
+    padding: 0.5rem 0.5rem 4.5rem;
   }
 
   .reader-actions-desktop {
@@ -2359,22 +2400,41 @@ main {
   padding: 0;
   margin: 0;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
-  max-height: 100vh;
+  max-height: 100dvh;
   max-width: 100vw;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.reader-container.is-fullscreen.fit-page #reader-canvas-wrapper {
+  margin: auto;
+  height: 100%;
+  width: 100%;
 }
 
 .reader-container.is-fullscreen.fit-page .reader-canvas {
   height: 100vh;
-  max-height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
   width: auto;
   max-width: 100vw;
   border-radius: 0;
   box-shadow: none;
   object-fit: contain;
+  margin: auto;
+}
+
+.reader-container.is-fullscreen.fit-width #reader-canvas-wrapper {
+  margin: 0 auto;
+  width: 100vw;
+  max-width: 100vw;
 }
 
 .reader-container.is-fullscreen.fit-width .reader-canvas {
@@ -2423,6 +2483,7 @@ main {
   pointer-events: none;
   display: flex;
   z-index: 45;
+  touch-action: pan-x pan-y pinch-zoom;
 }
 
 .reader-container.is-fullscreen .reader-click-zones {

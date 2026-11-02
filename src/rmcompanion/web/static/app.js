@@ -249,6 +249,7 @@ const el = {
   readerMoreMenuDesktop: document.getElementById("reader-more-menu-desktop"),
   btnReaderOpenTab: document.getElementById("btn-reader-open-tab"),
   readerCanvasWrapper: document.getElementById("reader-canvas-wrapper"),
+  readerContent: document.getElementById("reader-content"),
   readerClickZones: document.getElementById("reader-click-zones"),
   zonePrev: document.getElementById("zone-prev"),
   zoneCenter: document.getElementById("zone-center"),
@@ -2008,6 +2009,7 @@ el.btnReaderConvert.addEventListener("click", () => {
 
 function closeReader() {
   closePageJumpInput(false);
+  resetZoom(false);
   if (state.isFullscreen) {
     toggleFullscreenMode(false);
   }
@@ -2038,6 +2040,11 @@ el.btnReaderClose.addEventListener("click", () => {
 
 async function loadCurrentPage() {
   if (!state.currentDoc) return;
+  resetZoom(false);
+  if (el.readerContent) {
+    el.readerContent.scrollTop = 0;
+    el.readerContent.scrollLeft = 0;
+  }
   const pages = (state.currentDoc.pages || []).filter((p) => !p.deleted);
   const totalPages = Math.max(pages.length, 1);
   const pageIdx = Math.min(state.currentPageIdx, totalPages - 1);
@@ -2208,6 +2215,11 @@ el.btnPageNext.addEventListener("click", () => {
 
 // Fit toggle
 el.btnFitToggle.addEventListener("click", () => {
+  resetZoom(false);
+  if (el.readerContent) {
+    el.readerContent.scrollTop = 0;
+    el.readerContent.scrollLeft = 0;
+  }
   if (el.readerView.classList.contains("fit-page")) {
     el.readerView.classList.remove("fit-page");
     el.readerView.classList.add("fit-width");
@@ -2251,6 +2263,7 @@ function flashPageIndicator() {
 function toggleFullscreenMode(forceState = null) {
   const next = forceState !== null ? forceState : !state.isFullscreen;
   state.isFullscreen = next;
+  resetZoom(false);
 
   if (state.isFullscreen) {
     el.readerView.classList.add("is-fullscreen");
@@ -2345,6 +2358,7 @@ if (el.readerView) {
 if (el.zonePrev) {
   el.zonePrev.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (readerZoomState.hasMoved || readerZoomState.scale > 1.05) return;
     if (state.currentPageIdx > 0) {
       state.currentPageIdx--;
       loadCurrentPage();
@@ -2355,6 +2369,7 @@ if (el.zonePrev) {
 if (el.zoneNext) {
   el.zoneNext.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (readerZoomState.hasMoved || readerZoomState.scale > 1.05) return;
     const pages = (state.currentDoc?.pages || []).filter((p) => !p.deleted);
     if (state.currentPageIdx < pages.length - 1) {
       state.currentPageIdx++;
@@ -2366,6 +2381,7 @@ if (el.zoneNext) {
 if (el.zoneCenter) {
   el.zoneCenter.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (readerZoomState.hasMoved || readerZoomState.scale > 1.05) return;
     toggleHud();
   });
 }
@@ -2373,6 +2389,274 @@ if (el.zoneCenter) {
 document.addEventListener("fullscreenchange", () => {
   if (!document.fullscreenElement && state.isFullscreen) {
     toggleFullscreenMode(false);
+  }
+});
+
+// --- Reader Pinch-to-Zoom & Pan Controller ---
+const readerZoomState = {
+  scale: 1,
+  minScale: 1,
+  maxScale: 4.5,
+  translateX: 0,
+  translateY: 0,
+  isPinching: false,
+  isPanning: false,
+  initialDistance: 0,
+  initialScale: 1,
+  initialTranslateX: 0,
+  initialTranslateY: 0,
+  pinchCenterX: 0,
+  pinchCenterY: 0,
+  lastTouchX: 0,
+  lastTouchY: 0,
+  lastTapTime: 0,
+  hasMoved: false,
+};
+
+function applyZoomTransform(animate = false) {
+  if (!el.readerCanvasWrapper) return;
+  if (animate) {
+    el.readerCanvasWrapper.style.transition = "transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)";
+  } else {
+    el.readerCanvasWrapper.style.transition = "none";
+  }
+
+  if (
+    readerZoomState.scale <= 1.01 &&
+    Math.abs(readerZoomState.translateX) < 1 &&
+    Math.abs(readerZoomState.translateY) < 1
+  ) {
+    el.readerCanvasWrapper.style.transform = "none";
+    if (el.readerClickZones) {
+      el.readerClickZones.style.pointerEvents = state.isFullscreen ? "auto" : "none";
+    }
+  } else {
+    el.readerCanvasWrapper.style.transform = `translate3d(${readerZoomState.translateX}px, ${readerZoomState.translateY}px, 0) scale(${readerZoomState.scale})`;
+    if (el.readerClickZones) {
+      el.readerClickZones.style.pointerEvents = "none";
+    }
+  }
+}
+
+function clampPanBounds() {
+  if (!el.readerCanvasWrapper || !el.readerContent) return;
+  const contentRect = el.readerContent.getBoundingClientRect();
+  const wrapperRect = el.readerCanvasWrapper.getBoundingClientRect();
+
+  const scaledWidth = (wrapperRect.width / (readerZoomState.scale || 1)) * readerZoomState.scale;
+  const scaledHeight = (wrapperRect.height / (readerZoomState.scale || 1)) * readerZoomState.scale;
+
+  const maxPanX = Math.max(0, (scaledWidth - contentRect.width) / 2 + 60);
+  const maxPanY = Math.max(0, (scaledHeight - contentRect.height) / 2 + 60);
+
+  readerZoomState.translateX = Math.max(-maxPanX, Math.min(readerZoomState.translateX, maxPanX));
+  readerZoomState.translateY = Math.max(-maxPanY, Math.min(readerZoomState.translateY, maxPanY));
+}
+
+function resetZoom(animate = true) {
+  readerZoomState.scale = 1;
+  readerZoomState.translateX = 0;
+  readerZoomState.translateY = 0;
+  readerZoomState.isPinching = false;
+  readerZoomState.isPanning = false;
+  readerZoomState.hasMoved = false;
+
+  applyZoomTransform(animate);
+
+  if (el.readerClickZones) {
+    el.readerClickZones.style.pointerEvents = state.isFullscreen ? "auto" : "none";
+  }
+
+  if (el.readerContent) {
+    el.readerContent.scrollTop = 0;
+    el.readerContent.scrollLeft = 0;
+  }
+}
+
+function zoomTo(targetScale, clientX, clientY, animate = true) {
+  if (!el.readerContent || !el.readerCanvasWrapper) return;
+  const contentRect = el.readerContent.getBoundingClientRect();
+  const rectCenter = {
+    x: contentRect.left + contentRect.width / 2,
+    y: contentRect.top + contentRect.height / 2,
+  };
+
+  const oldScale = readerZoomState.scale;
+  const newScale = Math.min(
+    Math.max(targetScale, readerZoomState.minScale),
+    readerZoomState.maxScale
+  );
+
+  if (newScale <= 1.05) {
+    resetZoom(animate);
+    return;
+  }
+
+  const focalX = (clientX !== undefined ? clientX : rectCenter.x) - rectCenter.x;
+  const focalY = (clientY !== undefined ? clientY : rectCenter.y) - rectCenter.y;
+
+  const scaleRatio = newScale / oldScale;
+  readerZoomState.translateX = (readerZoomState.translateX - focalX) * scaleRatio + focalX;
+  readerZoomState.translateY = (readerZoomState.translateY - focalY) * scaleRatio + focalY;
+  readerZoomState.scale = newScale;
+
+  clampPanBounds();
+  applyZoomTransform(animate);
+}
+
+if (el.readerContent) {
+  el.readerContent.addEventListener(
+    "touchstart",
+    (e) => {
+      if (
+        e.target.closest("button") ||
+        e.target.closest("input") ||
+        e.target.closest("textarea") ||
+        e.target.closest("#reader-nav")
+      ) {
+        return;
+      }
+
+      readerZoomState.hasMoved = false;
+
+      if (e.touches.length === 2) {
+        readerZoomState.isPinching = true;
+        readerZoomState.isPanning = false;
+        readerZoomState.hasMoved = true;
+        readerZoomState.initialDistance = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        readerZoomState.initialScale = readerZoomState.scale;
+        readerZoomState.initialTranslateX = readerZoomState.translateX;
+        readerZoomState.initialTranslateY = readerZoomState.translateY;
+        readerZoomState.pinchCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        readerZoomState.pinchCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      } else if (e.touches.length === 1 && readerZoomState.scale > 1.05) {
+        readerZoomState.isPanning = true;
+        readerZoomState.isPinching = false;
+        readerZoomState.lastTouchX = e.touches[0].clientX;
+        readerZoomState.lastTouchY = e.touches[0].clientY;
+      }
+    },
+    { passive: true }
+  );
+
+  el.readerContent.addEventListener(
+    "touchmove",
+    (e) => {
+      if (readerZoomState.isPinching && e.touches.length === 2) {
+        if (e.cancelable) e.preventDefault();
+        readerZoomState.hasMoved = true;
+
+        const currentDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        if (readerZoomState.initialDistance > 0) {
+          const ratio = currentDist / readerZoomState.initialDistance;
+          const targetScale = Math.min(
+            Math.max(readerZoomState.initialScale * ratio, 0.9),
+            readerZoomState.maxScale + 0.5
+          );
+
+          const curCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          const curCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          const dCenterX = curCenterX - readerZoomState.pinchCenterX;
+          const dCenterY = curCenterY - readerZoomState.pinchCenterY;
+
+          readerZoomState.scale = targetScale;
+          readerZoomState.translateX = readerZoomState.initialTranslateX + dCenterX;
+          readerZoomState.translateY = readerZoomState.initialTranslateY + dCenterY;
+          applyZoomTransform(false);
+        }
+      } else if (
+        readerZoomState.isPanning &&
+        e.touches.length === 1 &&
+        readerZoomState.scale > 1.05
+      ) {
+        const dx = e.touches[0].clientX - readerZoomState.lastTouchX;
+        const dy = e.touches[0].clientY - readerZoomState.lastTouchY;
+
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+          readerZoomState.hasMoved = true;
+          if (e.cancelable) e.preventDefault();
+
+          readerZoomState.translateX += dx;
+          readerZoomState.translateY += dy;
+          clampPanBounds();
+          applyZoomTransform(false);
+
+          readerZoomState.lastTouchX = e.touches[0].clientX;
+          readerZoomState.lastTouchY = e.touches[0].clientY;
+        }
+      }
+    },
+    { passive: false }
+  );
+
+  el.readerContent.addEventListener(
+    "touchend",
+    (e) => {
+      if (readerZoomState.isPinching && e.touches.length < 2) {
+        readerZoomState.isPinching = false;
+        if (readerZoomState.scale < 1.05) {
+          resetZoom(true);
+        } else {
+          readerZoomState.scale = Math.min(readerZoomState.scale, readerZoomState.maxScale);
+          clampPanBounds();
+          applyZoomTransform(true);
+        }
+      } else if (readerZoomState.isPanning && e.touches.length === 0) {
+        readerZoomState.isPanning = false;
+        clampPanBounds();
+        applyZoomTransform(true);
+      }
+
+      // Double-tap to zoom toggle
+      if (e.touches.length === 0 && !readerZoomState.hasMoved) {
+        const now = Date.now();
+        if (now - readerZoomState.lastTapTime < 320) {
+          readerZoomState.lastTapTime = 0;
+          if (readerZoomState.scale > 1.1) {
+            resetZoom(true);
+          } else {
+            const touch = e.changedTouches && e.changedTouches[0];
+            if (touch) {
+              zoomTo(2.2, touch.clientX, touch.clientY, true);
+            } else {
+              zoomTo(2.2, window.innerWidth / 2, window.innerHeight / 2, true);
+            }
+          }
+        } else {
+          readerZoomState.lastTapTime = now;
+        }
+      }
+    },
+    { passive: true }
+  );
+
+  // Wheel / Trackpad pinch-to-zoom support
+  el.readerContent.addEventListener(
+    "wheel",
+    (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = -e.deltaY * 0.006;
+        const newScale = Math.min(
+          Math.max(readerZoomState.scale + delta, readerZoomState.minScale),
+          readerZoomState.maxScale
+        );
+        zoomTo(newScale, e.clientX, e.clientY, false);
+      }
+    },
+    { passive: false }
+  );
+}
+
+window.addEventListener("resize", () => {
+  if (state.currentDoc && readerZoomState.scale > 1.05) {
+    resetZoom(false);
   }
 });
 
