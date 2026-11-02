@@ -18,7 +18,7 @@ def populated_env(tmp_path):
     # Insert test documents
     db.upsert_document({
         "id": "doc-alpha",
-        "visible_name": "Antigravity Research Notes",
+        "visible_name": "System Architecture Notes",
         "type": "DocumentType",
         "parent_id": "",
         "file_type": "notebook",
@@ -29,7 +29,7 @@ def populated_env(tmp_path):
         {"page_idx": 0, "page_id": "page-1", "deleted": False, "redir": -1},
         {"page_idx": 1, "page_id": "page-2", "deleted": False, "redir": -1},
     ])
-    db.index_content("doc-alpha", 0, "typed_text", "Agent architecture discussion with Claude")
+    db.index_content("doc-alpha", 0, "typed_text", "Technical architecture discussion notes")
 
     db.upsert_document({
         "id": "folder-work",
@@ -53,7 +53,7 @@ def test_mcp_list_documents(populated_env):
     docs = tool_func(parent_id="", include_deleted=False)
     assert len(docs) == 2
     names = [d["visible_name"] for d in docs]
-    assert "Antigravity Research Notes" in names
+    assert "System Architecture Notes" in names
     assert "Work Projects" in names
 
 
@@ -71,7 +71,7 @@ def test_mcp_get_document(populated_env):
     tool_func = server._tool_manager._tools["get_document"].fn
 
     doc = tool_func(doc_id="doc-alpha")
-    assert doc["visible_name"] == "Antigravity Research Notes"
+    assert doc["visible_name"] == "System Architecture Notes"
     assert len(doc["pages"]) == 2
 
 

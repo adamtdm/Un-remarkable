@@ -9,3 +9,17 @@ dist/
 build/
 *.egg-info/
 .env
+
+# AI assistants & editor configurations
+.gemini/
+.claude/
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs & OS metadata
+*.log
+.DS_Store
+Thumbs.db
