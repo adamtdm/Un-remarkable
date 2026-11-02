@@ -60,14 +60,18 @@ class Exporter:
         page_id = target_page.get("page_id", "")
         redir = target_page.get("redir", -1)
 
-        # Check cache
-        cache_key = f"{doc_hash}_{page_id}_{page_idx}_{redir}_{'dark' if dark_mode else 'light'}"
+        files = {f["file_id"]: f["blob_hash"] for f in doc.get("files", [])}
+        file_type = doc.get("file_type", "notebook")
+        pdf_file_key = next((k for k in files if k.endswith(".pdf")), None)
+        pdf_blob_hash = files.get(pdf_file_key, "") if pdf_file_key else ""
+        rm_file_key = f"{doc_id}/{page_id}.rm"
+        rm_blob_hash = files.get(rm_file_key, "")
+
+        # Cache key based on actual content blob hashes, not mutable metadata doc_hash
+        cache_key = f"page_{doc_id}_{page_idx}_{page_id}_{redir}_{pdf_blob_hash}_{rm_blob_hash}_{'dark' if dark_mode else 'light'}_v4"
         cache_file = self._get_cache_path(cache_key, "svg")
         if cache_file.is_file():
             return cache_file.read_text(encoding="utf-8")
-
-        file_type = doc.get("file_type", "notebook")
-        files = {f["file_id"]: f["blob_hash"] for f in doc.get("files", [])}
 
         # 1. Notebook rendering
         if file_type == "notebook" or not any(k.endswith(".pdf") for k in files):
@@ -89,11 +93,12 @@ class Exporter:
                 pdf_blob = self.blob_store.get(files[pdf_file_key])
                 actual_pdf_page = redir if redir >= 0 else page_idx
 
-                # Render PDF page to PNG
-                png_bytes, width, height = render_pdf_page_image(
+                # Render PDF page to image
+                img_bytes, width, height = render_pdf_page_image(
                     pdf_blob, actual_pdf_page, dark_mode=dark_mode, dpi=150
                 )
-                b64_img = base64.b64encode(png_bytes).decode("ascii")
+                b64_img = base64.b64encode(img_bytes).decode("ascii")
+                mime_type = "image/jpeg" if img_bytes.startswith(b"\xff\xd8") else "image/png"
 
                 # Check if there are stroke annotations for this page
                 rm_file_key = f"{doc_id}/{page_id}.rm"
@@ -117,7 +122,7 @@ class Exporter:
 
                 half_w = width // 2
                 svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="{-half_w} 0 {width} {height}" width="{width}" height="{height}">
-  <image href="data:image/png;base64,{b64_img}" x="{-half_w}" y="0" width="{width}" height="{height}" />
+  <image href="data:{mime_type};base64,{b64_img}" x="{-half_w}" y="0" width="{width}" height="{height}" />
   {ink_svg}
 </svg>"""
 
@@ -169,7 +174,7 @@ class Exporter:
 
         doc_hash = doc.get("doc_hash", "")
         mode_tag = "dark" if dark_mode else "light"
-        cache_key = f"thumb_{doc_hash}_{max_width}_{mode_tag}_v3"
+        cache_key = f"thumb_{doc_hash}_{max_width}_{mode_tag}_v4"
         cache_file = self._get_cache_path(cache_key, "png")
         if cache_file.is_file():
             return cache_file.read_bytes()
@@ -192,7 +197,7 @@ class Exporter:
 
         png_bytes = b""
 
-        # Case 1: PDF / EPUB document (auto-detect white-paper notes vs. illustrated book/comic covers)
+        # Case 1: PDF / EPUB document (covers are rendered in authentic original colors, never inverted)
         if pdf_file_key and self.blob_store.has(files[pdf_file_key]):
             try:
                 pdf_blob = self.blob_store.get(files[pdf_file_key])
@@ -203,72 +208,7 @@ class Exporter:
                         scale = max_width / max(float(p.rect.width), 1.0)
                         pix = p.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
 
-                        is_white_paper_note = False
-                        if dark_mode:
-                            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
-                                (pix.height, pix.width, 3)
-                            )
-                            white_mask = (
-                                (img[:, :, 0] > 235)
-                                & (img[:, :, 1] > 235)
-                                & (img[:, :, 2] > 235)
-                            )
-                            white_ratio = float(np.mean(white_mask))
-                            chroma = np.max(img, axis=2).astype(np.int16) - np.min(
-                                img, axis=2
-                            ).astype(np.int16)
-                            color_ratio = float(np.mean(chroma > 35))
-
-                            is_white_paper_note = (
-                                file_type != "epub"
-                                and white_ratio > 0.72
-                                and color_ratio < 0.08
-                            )
-
-                            if is_white_paper_note:
-                                # Invert white paper to #18181b (24,24,27) and dark ink to #f4f4f6
-                                inv = 255.0 - img.astype(np.float32)
-                                mapped = np.empty_like(img)
-                                mapped[:, :, 0] = np.clip(
-                                    inv[:, :, 0] * (220.0 / 255.0) + 24.0, 0, 255
-                                ).astype(np.uint8)
-                                mapped[:, :, 1] = np.clip(
-                                    inv[:, :, 1] * (220.0 / 255.0) + 24.0, 0, 255
-                                ).astype(np.uint8)
-                                mapped[:, :, 2] = np.clip(
-                                    inv[:, :, 2] * (219.0 / 255.0) + 27.0, 0, 255
-                                ).astype(np.uint8)
-                                # Preserve saturated color accents/highlights
-                                color_mask = chroma > 40
-                                mapped[color_mask] = img[color_mask]
-                                pix = pymupdf.Pixmap(
-                                    pymupdf.csRGB,
-                                    pix.width,
-                                    pix.height,
-                                    mapped.tobytes(),
-                                    False,
-                                )
-                            else:
-                                # Book / Comic / Magazine cover in dark mode:
-                                # Gently dim pure-white margins (brightness ~0.92) without altering rich cover colors
-                                dimmed = img.copy()
-                                bright_white = (
-                                    (img[:, :, 0] > 235)
-                                    & (img[:, :, 1] > 235)
-                                    & (img[:, :, 2] > 235)
-                                )
-                                dimmed[bright_white] = (
-                                    img[bright_white].astype(np.float32) * 0.92
-                                ).astype(np.uint8)
-                                pix = pymupdf.Pixmap(
-                                    pymupdf.csRGB,
-                                    pix.width,
-                                    pix.height,
-                                    dimmed.tobytes(),
-                                    False,
-                                )
-
-                        # Composite any handwritten .rm strokes on page 0
+                        # Composite any handwritten .rm strokes on page 0 if present
                         rm_file_key = f"{doc_id}/{page_id}.rm"
                         rm_blob_hash = files.get(rm_file_key)
                         if rm_blob_hash and self.blob_store.has(rm_blob_hash):
@@ -276,7 +216,7 @@ class Exporter:
                                 rm_bytes = self.blob_store.get(rm_blob_hash)
                                 stroke_svg = render_rm_to_svg(
                                     rm_bytes,
-                                    dark_mode=(dark_mode and is_white_paper_note),
+                                    dark_mode=False,
                                     include_background=False,
                                 )
                                 with pymupdf.open(

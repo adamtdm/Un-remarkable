@@ -15,11 +15,13 @@ def render_pdf_page_image(
     page_num: int,
     dark_mode: bool = False,
     dpi: int = 150,
+    max_dim: int = 1920,
+    format: str = "jpeg",
 ) -> tuple[bytes, int, int]:
-    """Render a single PDF page to PNG with optional smart dark inversion.
+    """Render a single PDF page to JPEG/PNG with optional smart dark inversion.
 
     Returns:
-        (png_bytes, width, height)
+        (image_bytes, width, height)
     """
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     try:
@@ -30,14 +32,22 @@ def render_pdf_page_image(
         idx = max(0, min(page_num, total_pages - 1))
         page = doc[idx]
 
-        zoom = dpi / 72.0
+        max_page_dim = max(float(page.rect.width), float(page.rect.height), 1.0)
+        target_zoom = dpi / 72.0
+        if max_page_dim * target_zoom > max_dim:
+            zoom = max_dim / max_page_dim
+        else:
+            zoom = target_zoom
+
         matrix = pymupdf.Matrix(zoom, zoom)
         pix = page.get_pixmap(matrix=matrix, alpha=False)
 
         width, height = pix.width, pix.height
+        img_fmt = "jpeg" if format.lower() == "jpeg" else "png"
+        img_kwargs = {"jpg_quality": 85} if img_fmt == "jpeg" else {}
 
         if not dark_mode:
-            return pix.tobytes("png"), width, height
+            return pix.tobytes(img_fmt, **img_kwargs), width, height
 
         # 1. Structural Comic / Graphic Novel Detection
         images = page.get_images()
@@ -49,7 +59,7 @@ def render_pdf_page_image(
         is_comic = image_coverage > 0.55 or (len(images) > 0 and text_len < 100 and image_coverage > 0.25)
         if is_comic:
             # Preserve authentic artwork without blanket inversion
-            return pix.tobytes("png"), width, height
+            return pix.tobytes(img_fmt, **img_kwargs), width, height
 
         # 2. Text Document Inversion
         img = np.frombuffer(pix.samples, dtype=np.uint8).reshape((height, width, 3)).copy()
@@ -70,6 +80,6 @@ def render_pdf_page_image(
                         mapped[ry0:ry1, rx0:rx1] = img[ry0:ry1, rx0:rx1]
 
         out_pix = pymupdf.Pixmap(pymupdf.csRGB, width, height, mapped.tobytes(), False)
-        return out_pix.tobytes("png"), width, height
+        return out_pix.tobytes(img_fmt, **img_kwargs), width, height
     finally:
         doc.close()

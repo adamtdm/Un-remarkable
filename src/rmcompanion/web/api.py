@@ -300,7 +300,7 @@ def get_router(
 
         doc_hash = doc.get("doc_hash", "")
         mode_tag = "dark" if dark else "light"
-        etag = f'"{doc_hash}_{mode_tag}_v3"'
+        etag = f'"{doc_hash}_{mode_tag}_v4"'
 
         if request:
             if_none_match = request.headers.get("if-none-match")

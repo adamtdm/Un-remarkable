@@ -1903,29 +1903,30 @@ el.filterTabs.forEach((tab) => {
 
 // --- Reader View & Page Preloading ---
 const pageSvgCache = new Map();
+let preloadTimer = null;
 
 function preloadAdjacentPages(docId, currentPageIdx, totalPages, darkMode) {
   if (!docId || totalPages <= 1) return;
-  const targets = [
-    currentPageIdx + 1,
-    currentPageIdx + 2,
-    currentPageIdx + 3,
-    currentPageIdx + 4,
-    currentPageIdx - 1,
-  ];
-  for (const pIdx of targets) {
-    if (pIdx >= 0 && pIdx < totalPages) {
-      const key = `${docId}_${pIdx}_${darkMode}`;
-      if (!pageSvgCache.has(key)) {
-        fetch(`/api/documents/${docId}/pages/${pIdx}/svg?dark=${darkMode}`)
-          .then((res) => (res.ok ? res.text() : null))
-          .then((svg) => {
-            if (svg) pageSvgCache.set(key, svg);
-          })
-          .catch(() => {});
+  if (preloadTimer) clearTimeout(preloadTimer);
+
+  preloadTimer = setTimeout(async () => {
+    // Sequentially preload next page (+1), then previous (-1) without flooding network/CPU
+    const targets = [currentPageIdx + 1, currentPageIdx - 1];
+    for (const pIdx of targets) {
+      if (pIdx >= 0 && pIdx < totalPages) {
+        const key = `${docId}_${pIdx}_${darkMode}`;
+        if (!pageSvgCache.has(key)) {
+          try {
+            const res = await fetch(`/api/documents/${docId}/pages/${pIdx}/svg?dark=${darkMode}`);
+            if (res.ok) {
+              const svg = await res.text();
+              pageSvgCache.set(key, svg);
+            }
+          } catch (_) {}
+        }
       }
     }
-  }
+  }, 160);
 }
 
 function renderSvgContent(svgText) {
