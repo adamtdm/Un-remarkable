@@ -9,9 +9,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Un-remarkable">
   <link rel="manifest" href="/manifest.json">
-  <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="icon" type="image/svg+xml" href="/icon.svg">
-  <link rel="stylesheet" href="/style.css?v=20261102b">
+  <link rel="apple-touch-icon" href="/icon.svg?v=20261102c">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg?v=20261102c">
+  <link rel="stylesheet" href="/style.css?v=20261102c">
   <script>
     // Immediately unregister all Service Workers and clear CacheStorage
     if ("serviceWorker" in navigator) {
@@ -31,11 +31,13 @@
 <body>
   <!-- Header -->
   <header>
-    <a class="brand" id="brand-home">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
-        <path d="M6 6h10"></path>
-        <path d="M6 10h10"></path>
+    <a class="brand" id="brand-home" title="Un-remarkable Home">
+      <svg class="brand-logo" width="28" height="28" viewBox="0 0 108 108" aria-hidden="true">
+        <rect class="brand-logo-bg" width="108" height="108" rx="26" fill="#18181b" stroke="#27272a" stroke-width="3"/>
+        <path class="brand-logo-monogram" d="M 32 34 L 32 58 C 32 68 40 75 43 75 C 46 75 54 68 54 58 L 54 34 L 65 34 C 73 34 76 39 76 44.5 C 76 50 73 55 65 55 L 54 55" 
+              fill="none" stroke="#f4f4f5" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path class="brand-logo-monogram" d="M 63 55 L 76 74" 
+              fill="none" stroke="#f4f4f5" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <span>Un-remarkable</span>
     </a>

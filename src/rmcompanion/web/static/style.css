@@ -151,6 +151,30 @@ header {
   color: var(--accent);
 }
 
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  display: block;
+}
+
+.brand-logo-bg {
+  fill: var(--bg-tertiary);
+  stroke: var(--border-strong);
+  transition: fill 0.2s ease, stroke 0.2s ease;
+}
+
+.brand-logo-monogram {
+  stroke: var(--text-primary);
+  transition: stroke 0.2s ease;
+}
+
+.brand:hover .brand-logo-bg {
+  fill: var(--border-color);
+  stroke: var(--accent);
+}
+
 .header-search {
   flex: 1;
   max-width: 500px;
