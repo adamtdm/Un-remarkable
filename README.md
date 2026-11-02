@@ -22,6 +22,40 @@ Mirror your entire reMarkable cloud library locally without jailbreaking, modify
 
 ---
 
+## Feature Comparison: Official reMarkable Web vs. Un-remarkable
+
+| Feature / Capability | Official reMarkable Web (`my.remarkable.com`) | Un-remarkable Companion |
+|---|:---:|:---:|
+| **Hosting & Data Ownership** | Proprietary cloud (subscription-based Connect plan) | 100% Self-Hosted Docker container; full local data sovereignty |
+| **Local Offline Storage** | Temporary browser session cache | Content-addressed immutable blob store (`./data/blobs/`) with point-in-time versioning |
+| **Two-Way Cloud Sync (`sync15`)** | Official cloud sync | Direct `sync15` WebSocket sync with Merkle root checks & 2-way notebook pushes |
+| **Live Sync Drawer & Transfer Metrics** | Simple spinner icon | Real-time stage indicators, file progress, transfer rates, and session activity logs |
+| **Dark Mode Reader** | Light mode only (blinding white background) | Perceptual OKLCH dark mode (inverts lightness while preserving color highlighter hues) |
+| **Fullscreen Distraction-Free Mode** | Standard browser view with browser Chrome | Dedicated HUD with auto-hide timer, exit pill, and edge tap zones (Prev / Menu / Next) |
+| **Reader Navigation & Quick Page Jump** | Step forward / back buttons | Prev/Next chevrons, interactive click-to-jump pill (`inputmode="numeric"`), and <kbd>g</kbd> shortcut |
+| **Comic & Document Optimization Engine** | None (uploads files as-is; heavy files lag on device) | Built-in 5-stop PyMuPDF optimizer for PDF, EPUB, and CBZ tuned for Paper Pro, RM2, and RM1 |
+| **Double-Spread Comic Split & Manga RTL** | None | Automatic landscape spread splitting and optional Right-to-Left manga paging order |
+| **Hardware Screen Profiles** | None | Native 1:1 hardware targets (Paper Pro 2160×1620 Color, RM2 1872×1404, RM1) |
+| **Full-Text Search (FTS5)** | Limited title and cloud OCR search | Instant local SQLite FTS5 search across titles, tags, typed text, and PDF contents |
+| **Selective Search & OCR Exclusions** | None (all or nothing) | Recursive folder and document exclusions (exclude comics/novels from body search and OCR) |
+| **Native Typed Notebook Creation** | Basic typed text (Connect subscription required) | Native `.rm` v6 binary stroke/CRDT generator; multi-page support using `---` dividers |
+| **Markdown (`.md`) Import** | None | Instant `.md` upload preserving headings, bullet points, and task checkboxes |
+| **Type Folio Drawer in Reader** | Edit mode switch | Seamless side drawer overlay allowing typing alongside notes with instant SVG preview |
+| **Automated Task Extraction** | None | Scans notebooks for checkboxes (`- [ ]`, `[ ]`), asterisks (`*`), and `TODO:` items |
+| **Vision OCR for Handwritten Tasks** | Cloud text conversion (full page only) | Multimodal Vision OCR (Gemini 2.0 Flash, OpenAI, Ollama) extracting handwritten tasks |
+| **Consolidated "Tasks" Tablet Notebook** | None | One-click or automated sync assembling a master checklist notebook pushed to your tablet |
+| **AI Assistant Integration (MCP)** | None | Built-in Model Context Protocol server (stdio & `/mcp` HTTP) for Claude, Antigravity, and Cursor |
+| **Automated Digests, RSS & Crosswords** | None (manual upload required) | Built-in configuration guide & delivery triggers for Goosepaper, RSS feeds, and daily crosswords |
+| **Folder Organization & Drag-and-Drop** | Basic web move dialogue | Desktop drag-and-drop file organization, nested breadcrumbs, and cycle prevention |
+| **Ellipsis Actions & Mobile Sheet** | Standard dropdown menu | Responsive ellipsis menu with native mobile bottom slide-up sheet |
+| **Folder ZIP & Document PDF Export** | Single document PDF export | Recursive folder ZIP packaging and single document annotated vector PDF downloads |
+| **Universal Command Palette** | None | Global <kbd>Cmd</kbd>+<kbd>K</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd> palette for instant navigation, search, and action execution |
+| **Thumbnail Performance** | On-demand cloud previews | Pre-warmed 320×426 PNG thumbnails with immutable SHA-256 ETags (< 1ms cache hits) |
+| **Mobile & Foldable Display Optimization** | Standard responsive web | PWA standalone app, safe area padding, and responsive scaling tested on Samsung Fold |
+| **Secure Remote Access** | Official cloud login | Zero-port-forwarding WireGuard access via Tailscale or local network |
+
+---
+
 ## Supported reMarkable Devices & Specifications
 
 Un-remarkable provides native hardware profiles and screen targets across all reMarkable devices:
