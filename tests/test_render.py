@@ -105,3 +105,77 @@ def test_render_pdf_page_image_comic_vs_text():
     assert c_img[50, 50][0] < 20
     assert c_img[50, 50][1] < 20
 
+
+def test_render_thumbnail_dark_mode_note_vs_cover(tmp_path):
+    import hashlib
+    import numpy as np
+    from rmcompanion.config import Settings
+    from rmcompanion.render.exporter import Exporter
+    from rmcompanion.store.blob_store import BlobStore
+    from rmcompanion.store.db import Database
+
+    settings = Settings(data_dir=tmp_path)
+    db = Database(settings=settings)
+    bs = BlobStore(settings=settings)
+    exporter = Exporter(db=db, blob_store=bs, settings=settings)
+
+    # 1. White-paper PDF note (should invert to dark ~24 in dark mode)
+    doc_note = pymupdf.open()
+    pn = doc_note.new_page(width=300, height=400)
+    pn.insert_text((30, 50), "Meeting - Monday, Nov 2", fontsize=14, color=(0, 0, 0))
+    note_pdf_bytes = doc_note.tobytes()
+    doc_note.close()
+    note_hash = hashlib.sha256(note_pdf_bytes).hexdigest()
+    bs.put(note_hash, note_pdf_bytes)
+
+    db.upsert_document({
+        "id": "note-pdf-1",
+        "doc_hash": "hash-note-1",
+        "visible_name": "Meeting Note",
+        "file_type": "pdf",
+        "type": "DocumentType",
+    })
+    db.set_document_pages("hash-note-1", [{"page_idx": 0, "page_id": "p0", "deleted": False, "redir": 0}])
+    db.set_document_files("hash-note-1", [{"file_id": "note-pdf-1.pdf", "blob_hash": note_hash, "size": len(note_pdf_bytes)}])
+
+    thumb_light = exporter.render_thumbnail("note-pdf-1", dark_mode=False)
+    pix_l = pymupdf.Pixmap(thumb_light)
+    arr_l = np.frombuffer(pix_l.samples, dtype=np.uint8).reshape((pix_l.height, pix_l.width, pix_l.n))
+    assert arr_l[5, 5][0] > 240  # white paper in light mode
+
+    thumb_dark = exporter.render_thumbnail("note-pdf-1", dark_mode=True)
+    pix_d = pymupdf.Pixmap(thumb_dark)
+    arr_d = np.frombuffer(pix_d.samples, dtype=np.uint8).reshape((pix_d.height, pix_d.width, pix_d.n))
+    assert 20 <= arr_d[5, 5][0] <= 30  # dark #18181b paper in dark mode
+
+    # 2. Illustrated Book / Comic Cover with white border (should NOT invert cover art, only dim border to ~0.92)
+    doc_cov = pymupdf.open()
+    pc = doc_cov.new_page(width=300, height=400)
+    # Draw large blue cover art with a 10px white margin
+    pc.draw_rect(pymupdf.Rect(10, 10, 290, 390), color=(0.1, 0.2, 0.8), fill=(0.1, 0.2, 0.8))
+    cov_pdf_bytes = doc_cov.tobytes()
+    doc_cov.close()
+    cov_hash = hashlib.sha256(cov_pdf_bytes).hexdigest()
+    bs.put(cov_hash, cov_pdf_bytes)
+
+    db.upsert_document({
+        "id": "book-cov-1",
+        "doc_hash": "hash-cov-1",
+        "visible_name": "Snow Crash",
+        "file_type": "pdf",
+        "type": "DocumentType",
+    })
+    db.set_document_pages("hash-cov-1", [{"page_idx": 0, "page_id": "p0", "deleted": False, "redir": 0}])
+    db.set_document_files("hash-cov-1", [{"file_id": "book-cov-1.pdf", "blob_hash": cov_hash, "size": len(cov_pdf_bytes)}])
+
+    cov_dark = exporter.render_thumbnail("book-cov-1", dark_mode=True)
+    pix_cd = pymupdf.Pixmap(cov_dark)
+    arr_cd = np.frombuffer(pix_cd.samples, dtype=np.uint8).reshape((pix_cd.height, pix_cd.width, pix_cd.n))
+    # Center should still be blue (B > 180, R < 50)
+    mid_y, mid_x = pix_cd.height // 2, pix_cd.width // 2
+    assert arr_cd[mid_y, mid_x][2] > 180
+    assert arr_cd[mid_y, mid_x][0] < 50
+    # Top-left white border should be dimmed (~230-238 instead of 255)
+    assert 225 <= arr_cd[1, 1][0] <= 240
+
+

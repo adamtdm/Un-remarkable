@@ -446,6 +446,13 @@ function applyAppTheme(pref) {
   document.documentElement.setAttribute("data-theme", effectiveTheme);
   localStorage.setItem("rmc_theme", effectiveTheme);
 
+  const isDark = effectiveTheme !== "light";
+  document.querySelectorAll(".doc-card-thumb img[data-doc-id]").forEach((img) => {
+    const docId = img.getAttribute("data-doc-id");
+    const docHash = img.getAttribute("data-doc-hash") || "";
+    img.src = `/api/documents/${docId}/thumbnail?h=${encodeURIComponent(docHash)}&dark=${isDark}`;
+  });
+
   if (el.themeChoiceAuto) el.themeChoiceAuto.checked = pref === "auto";
   if (el.themeChoiceDark) el.themeChoiceDark.checked = pref === "dark";
   if (el.themeChoiceLight) el.themeChoiceLight.checked = pref === "light";
@@ -1010,8 +1017,9 @@ function renderDocumentGrid(docs) {
           </svg>
         `;
       } else {
-        const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}`;
-        iconHtml = `<img src="${thumbUrl}" alt="${escapeHtml(doc.visible_name)} preview" loading="lazy" width="320" height="426">`;
+        const isDark = state.appTheme !== "light";
+        const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}&dark=${isDark}`;
+        iconHtml = `<img src="${thumbUrl}" data-doc-id="${escapeHtml(doc.id)}" data-doc-hash="${escapeHtml(doc.doc_hash || "")}" alt="${escapeHtml(doc.visible_name)} preview" loading="lazy" width="320" height="426">`;
       }
 
       element.innerHTML = `

@@ -282,7 +282,8 @@ def get_router(
             raise HTTPException(status_code=404, detail="Document not found")
 
         doc_hash = doc.get("doc_hash", "")
-        etag = f'"{doc_hash}_v2"'
+        mode_tag = "dark" if dark else "light"
+        etag = f'"{doc_hash}_{mode_tag}_v3"'
 
         if request:
             if_none_match = request.headers.get("if-none-match")
@@ -296,7 +297,7 @@ def get_router(
                 )
 
         try:
-            png_bytes = exporter.render_thumbnail(doc_id, dark_mode=False)
+            png_bytes = exporter.render_thumbnail(doc_id, dark_mode=dark)
             content = b"" if (request and request.method == "HEAD") else png_bytes
             return Response(
                 content=content,

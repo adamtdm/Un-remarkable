@@ -7,6 +7,7 @@ import hashlib
 import logging
 from pathlib import Path
 
+import numpy as np
 import pymupdf
 
 from rmcompanion.config import Settings, get_settings
@@ -161,21 +162,21 @@ class Exporter:
         dark_mode: bool = False,
         max_width: int = 320,
     ) -> bytes:
-        """Render a fast, lightweight, disk-cached thumbnail PNG in authentic cover colors."""
+        """Render a fast, lightweight, disk-cached thumbnail PNG with smart dark-mode note detection."""
         doc = self.db.get_document(doc_id)
         if not doc:
             raise FileNotFoundError(f"Document {doc_id} not found")
 
         doc_hash = doc.get("doc_hash", "")
-        # Thumbnails represent original book/notebook covers and are never inverted
-        cache_key = f"thumb_{doc_hash}_{max_width}_v2"
+        mode_tag = "dark" if dark_mode else "light"
+        cache_key = f"thumb_{doc_hash}_{max_width}_{mode_tag}_v3"
         cache_file = self._get_cache_path(cache_key, "png")
         if cache_file.is_file():
             return cache_file.read_bytes()
 
         pages = doc.get("pages", [])
         if not pages:
-            blank_png = self._blank_thumbnail(False, max_width)
+            blank_png = self._blank_thumbnail(dark_mode, max_width)
             try:
                 cache_file.write_bytes(blank_png)
             except OSError:
@@ -191,7 +192,7 @@ class Exporter:
 
         png_bytes = b""
 
-        # Case 1: PDF document (cover rendered in true original colors, never inverted)
+        # Case 1: PDF / EPUB document (auto-detect white-paper notes vs. illustrated book/comic covers)
         if pdf_file_key and self.blob_store.has(files[pdf_file_key]):
             try:
                 pdf_blob = self.blob_store.get(files[pdf_file_key])
@@ -200,37 +201,159 @@ class Exporter:
                     if 0 <= actual_page < len(pdf_doc):
                         p = pdf_doc[actual_page]
                         scale = max_width / max(float(p.rect.width), 1.0)
-                        pix = p.get_pixmap(matrix=pymupdf.Matrix(scale, scale))
+                        pix = p.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
+
+                        is_white_paper_note = False
+                        if dark_mode:
+                            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+                                (pix.height, pix.width, 3)
+                            )
+                            white_mask = (
+                                (img[:, :, 0] > 235)
+                                & (img[:, :, 1] > 235)
+                                & (img[:, :, 2] > 235)
+                            )
+                            white_ratio = float(np.mean(white_mask))
+                            chroma = np.max(img, axis=2).astype(np.int16) - np.min(
+                                img, axis=2
+                            ).astype(np.int16)
+                            color_ratio = float(np.mean(chroma > 35))
+
+                            is_white_paper_note = (
+                                file_type != "epub"
+                                and white_ratio > 0.72
+                                and color_ratio < 0.08
+                            )
+
+                            if is_white_paper_note:
+                                # Invert white paper to #18181b (24,24,27) and dark ink to #f4f4f6
+                                inv = 255.0 - img.astype(np.float32)
+                                mapped = np.empty_like(img)
+                                mapped[:, :, 0] = np.clip(
+                                    inv[:, :, 0] * (220.0 / 255.0) + 24.0, 0, 255
+                                ).astype(np.uint8)
+                                mapped[:, :, 1] = np.clip(
+                                    inv[:, :, 1] * (220.0 / 255.0) + 24.0, 0, 255
+                                ).astype(np.uint8)
+                                mapped[:, :, 2] = np.clip(
+                                    inv[:, :, 2] * (219.0 / 255.0) + 27.0, 0, 255
+                                ).astype(np.uint8)
+                                # Preserve saturated color accents/highlights
+                                color_mask = chroma > 40
+                                mapped[color_mask] = img[color_mask]
+                                pix = pymupdf.Pixmap(
+                                    pymupdf.csRGB,
+                                    pix.width,
+                                    pix.height,
+                                    mapped.tobytes(),
+                                    False,
+                                )
+                            else:
+                                # Book / Comic / Magazine cover in dark mode:
+                                # Gently dim pure-white margins (brightness ~0.92) without altering rich cover colors
+                                dimmed = img.copy()
+                                bright_white = (
+                                    (img[:, :, 0] > 235)
+                                    & (img[:, :, 1] > 235)
+                                    & (img[:, :, 2] > 235)
+                                )
+                                dimmed[bright_white] = (
+                                    img[bright_white].astype(np.float32) * 0.92
+                                ).astype(np.uint8)
+                                pix = pymupdf.Pixmap(
+                                    pymupdf.csRGB,
+                                    pix.width,
+                                    pix.height,
+                                    dimmed.tobytes(),
+                                    False,
+                                )
+
+                        # Composite any handwritten .rm strokes on page 0
+                        rm_file_key = f"{doc_id}/{page_id}.rm"
+                        rm_blob_hash = files.get(rm_file_key)
+                        if rm_blob_hash and self.blob_store.has(rm_blob_hash):
+                            try:
+                                rm_bytes = self.blob_store.get(rm_blob_hash)
+                                stroke_svg = render_rm_to_svg(
+                                    rm_bytes,
+                                    dark_mode=(dark_mode and is_white_paper_note),
+                                    include_background=False,
+                                )
+                                with pymupdf.open(
+                                    stream=stroke_svg.encode("utf-8"), filetype="svg"
+                                ) as sdoc:
+                                    spage = sdoc[0]
+                                    sx = pix.width / max(float(spage.rect.width), 1.0)
+                                    sy = pix.height / max(float(spage.rect.height), 1.0)
+                                    spix = spage.get_pixmap(
+                                        matrix=pymupdf.Matrix(sx, sy), alpha=True
+                                    )
+                                    if (
+                                        spix.width == pix.width
+                                        and spix.height == pix.height
+                                    ):
+                                        base_arr = (
+                                            np.frombuffer(pix.samples, dtype=np.uint8)
+                                            .reshape((pix.height, pix.width, 3))
+                                            .astype(np.float32)
+                                        )
+                                        over_arr = (
+                                            np.frombuffer(spix.samples, dtype=np.uint8)
+                                            .reshape((spix.height, spix.width, 4))
+                                            .astype(np.float32)
+                                        )
+                                        alpha = over_arr[:, :, 3:4] / 255.0
+                                        blended = (
+                                            over_arr[:, :, :3] * alpha
+                                            + base_arr * (1.0 - alpha)
+                                        ).clip(0, 255).astype(np.uint8)
+                                        pix = pymupdf.Pixmap(
+                                            pymupdf.csRGB,
+                                            pix.width,
+                                            pix.height,
+                                            blended.tobytes(),
+                                            False,
+                                        )
+                            except Exception as e:
+                                logger.debug(
+                                    "Failed to overlay strokes on PDF thumbnail %s: %s",
+                                    doc_id,
+                                    e,
+                                )
+
                         png_bytes = pix.tobytes("png")
                     else:
-                        png_bytes = self._blank_thumbnail(False, max_width)
+                        png_bytes = self._blank_thumbnail(dark_mode, max_width)
             except Exception as e:
                 logger.warning("Failed to render PDF thumbnail for %s: %s", doc_id, e)
-                png_bytes = self._blank_thumbnail(False, max_width)
+                png_bytes = self._blank_thumbnail(dark_mode, max_width)
 
-        # Case 2: Notebook (.rm file) (natural paper background and ink)
+        # Case 2: Native Notebook (.rm file) (theme-aware paper and ink)
         else:
             rm_file_key = f"{doc_id}/{page_id}.rm"
             rm_blob_hash = files.get(rm_file_key)
             if rm_blob_hash and self.blob_store.has(rm_blob_hash):
                 try:
                     rm_bytes = self.blob_store.get(rm_blob_hash)
-                    target_height = int(max_width * 4 / 3)
                     svg_content = render_rm_to_svg(
                         rm_bytes,
-                        dark_mode=False,
+                        dark_mode=dark_mode,
                         include_background=True,
-                        target_width=max_width,
-                        target_height=target_height,
                     )
-                    with pymupdf.open(stream=svg_content.encode("utf-8"), filetype="svg") as svg_doc:
-                        pix = svg_doc[0].get_pixmap()
+                    with pymupdf.open(
+                        stream=svg_content.encode("utf-8"), filetype="svg"
+                    ) as svg_doc:
+                        spage = svg_doc[0]
+                        scale = max_width / max(float(spage.rect.width), 1.0)
+                        pix = spage.get_pixmap(matrix=pymupdf.Matrix(scale, scale))
                         png_bytes = pix.tobytes("png")
                 except Exception as e:
-                    logger.warning("Failed to render notebook thumbnail for %s: %s", doc_id, e)
-                    png_bytes = self._blank_thumbnail(False, max_width)
+                    logger.warning(
+                        "Failed to render notebook thumbnail for %s: %s", doc_id, e
+                    )
+                    png_bytes = self._blank_thumbnail(dark_mode, max_width)
             else:
-                png_bytes = self._blank_thumbnail(False, max_width)
+                png_bytes = self._blank_thumbnail(dark_mode, max_width)
 
         try:
             cache_file.write_bytes(png_bytes)
@@ -240,8 +363,9 @@ class Exporter:
         return png_bytes
 
     def warm_thumbnail(self, doc_id: str, doc_hash: str = "") -> None:
-        """Pre-generate thumbnail in cache."""
+        """Pre-generate light and dark thumbnails in cache."""
         try:
+            self.render_thumbnail(doc_id, dark_mode=True)
             self.render_thumbnail(doc_id, dark_mode=False)
         except Exception as e:
             logger.debug("Thumbnail warm error for %s: %s", doc_id, e)
