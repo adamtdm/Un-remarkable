@@ -279,7 +279,7 @@ reMarkable Companion provides full native typing support generating authentic `.
 reMarkable Companion automatically finds action items and to-dos in your notebooks:
 
 - **Rule-Based Extraction:** Scans typed text for checkboxes (`- [ ]`, `[ ]`), asterisks (`*`), and `TODO:` / `FIXME:` tags.
-- **Vision OCR for Handwriting:** Connect Google Gemini (`gemini-2.0-flash` recommended) or OpenAI/Ollama compatible endpoints in **⚙️ Settings** to transcribe handwritten margin notes, starred action items, and circled tasks.
+- **Vision OCR for Handwriting:** Connect Google Gemini (`gemini-flash-lite-latest` recommended) or OpenAI/Ollama compatible endpoints in **⚙️ Settings** to transcribe handwritten margin notes, starred action items, and circled tasks. Live model options are dynamically queried directly from provider APIs.
 - **Task Consolidation:**
   - Click **☑ Tasks** in the header to review all discovered open and completed tasks across all documents.
   - Click **📓 Sync to 'Tasks' Notebook** to automatically assemble a master checklist notebook that syncs to your tablet.

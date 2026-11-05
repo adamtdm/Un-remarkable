@@ -8,6 +8,7 @@ const state = {
   currentPageIdx: 0,
   pageDarkMode: true,
   fitMode: "fit-page",
+  pageTurnMode: localStorage.getItem("rmc_page_turn_mode") || "both",
   appTheme: localStorage.getItem("rmc_theme") || "dark",
   themePreference: localStorage.getItem("rmc_theme_pref") || "auto",
   viewMode: localStorage.getItem("rmc_view_mode") || "grid",
@@ -182,6 +183,9 @@ const el = {
   themeChoiceAuto: document.getElementById("theme-choice-auto"),
   themeChoiceDark: document.getElementById("theme-choice-dark"),
   themeChoiceLight: document.getElementById("theme-choice-light"),
+  turnModeSwipe: document.getElementById("turn-mode-swipe"),
+  turnModeTap: document.getElementById("turn-mode-tap"),
+  turnModeBoth: document.getElementById("turn-mode-both"),
   btnCopyMcpConfig: document.getElementById("btn-copy-mcp-config"),
   btnCopyMcpUrl: document.getElementById("btn-copy-mcp-url"),
   btnCopyMcpLocal: document.getElementById("btn-copy-mcp-local"),
@@ -297,6 +301,10 @@ const el = {
   btnSettingsClose: document.getElementById("btn-settings-back"),
   settingsProvider: document.getElementById("settings-provider"),
   settingsModel: document.getElementById("settings-model"),
+  btnRefreshModels: document.getElementById("btn-refresh-models"),
+  settingsCustomModelGroup: document.getElementById("settings-custom-model-group"),
+  settingsCustomModel: document.getElementById("settings-custom-model"),
+  settingsModelHint: document.getElementById("settings-model-hint"),
   settingsApiKey: document.getElementById("settings-api-key"),
   btnToggleKeyVisibility: document.getElementById("btn-toggle-key-visibility"),
   settingsBaseUrlGroup: document.getElementById("settings-base-url-group"),
@@ -324,6 +332,8 @@ const el = {
   deliveryIncludeWeather: document.getElementById("delivery-include-weather"),
   deliveryWeatherLocation: document.getElementById("delivery-weather-location"),
   deliveryIncludeWikipedia: document.getElementById("delivery-include-wikipedia"),
+  deliveryNewspaperArticlesPerFeed: document.getElementById("delivery-newspaper-articles-per-feed"),
+  deliveryNewspaperFullBody: document.getElementById("delivery-newspaper-full-body"),
   deliveryRssFeeds: document.getElementById("delivery-rss-feeds"),
   btnDeliveryNewspaperNow: document.getElementById("btn-delivery-newspaper-now"),
   deliveryNewspaperStatus: document.getElementById("delivery-newspaper-status"),
@@ -338,6 +348,27 @@ const el = {
   deliveryPuzzlesStatus: document.getElementById("delivery-puzzles-status"),
   btnDeliverySave: document.getElementById("btn-delivery-save"),
   deliverySaveStatus: document.getElementById("delivery-save-status"),
+
+  // RSS Feed Manager elements
+  rssActiveList: document.getElementById("rss-active-list"),
+  rssActiveCount: document.getElementById("rss-active-count"),
+  rssPresetPicker: document.getElementById("rss-preset-picker"),
+  btnRssResetDefaults: document.getElementById("btn-rss-reset-defaults"),
+  btnToggleRawRss: document.getElementById("btn-toggle-raw-rss"),
+  rssRawContainer: document.getElementById("rss-raw-container"),
+  rssSearchInput: document.getElementById("rss-search-input"),
+  btnRssSearch: document.getElementById("btn-rss-search"),
+  rssSearchStatus: document.getElementById("rss-search-status"),
+  rssCategoryPills: document.getElementById("rss-category-pills"),
+  rssCatalogGrid: document.getElementById("rss-catalog-grid"),
+  rssPreviewModal: document.getElementById("rss-preview-modal"),
+  rssPreviewFeedTitle: document.getElementById("rss-preview-feed-title"),
+  rssPreviewFeedDesc: document.getElementById("rss-preview-feed-desc"),
+  rssPreviewFeedUrl: document.getElementById("rss-preview-feed-url"),
+  rssPreviewArticlesList: document.getElementById("rss-preview-articles-list"),
+  btnRssPreviewClose: document.getElementById("btn-rss-preview-close"),
+  btnRssPreviewDismiss: document.getElementById("btn-rss-preview-dismiss"),
+  btnRssPreviewAdd: document.getElementById("btn-rss-preview-add"),
 
   // New notebook & typed editor elements
   btnNewNotebook: document.getElementById("btn-new-notebook"),
@@ -478,6 +509,23 @@ if (el.btnThemeToggle) {
   });
 }
 applyAppTheme(state.themePreference);
+
+// --- Reading & Gesture Preferences ---
+function applyPageTurnMode(mode) {
+  if (mode !== "swipe" && mode !== "tap" && mode !== "both") {
+    mode = "both";
+  }
+  state.pageTurnMode = mode;
+  localStorage.setItem("rmc_page_turn_mode", mode);
+  if (el.turnModeSwipe) el.turnModeSwipe.checked = mode === "swipe";
+  if (el.turnModeTap) el.turnModeTap.checked = mode === "tap";
+  if (el.turnModeBoth) el.turnModeBoth.checked = mode === "both";
+}
+
+if (el.turnModeSwipe) el.turnModeSwipe.addEventListener("change", () => applyPageTurnMode("swipe"));
+if (el.turnModeTap) el.turnModeTap.addEventListener("change", () => applyPageTurnMode("tap"));
+if (el.turnModeBoth) el.turnModeBoth.addEventListener("change", () => applyPageTurnMode("both"));
+applyPageTurnMode(state.pageTurnMode);
 
 // --- Sync Progress Drawer ---
 function setSyncDrawer(open) {
@@ -2418,9 +2466,14 @@ if (el.zonePrev) {
   el.zonePrev.addEventListener("click", (e) => {
     e.stopPropagation();
     if (readerZoomState.hasMoved || readerZoomState.scale > 1.05) return;
-    if (state.currentPageIdx > 0) {
-      state.currentPageIdx--;
-      loadCurrentPage();
+    const canTap = state.pageTurnMode === "tap" || state.pageTurnMode === "both";
+    if (canTap) {
+      if (state.currentPageIdx > 0) {
+        state.currentPageIdx--;
+        loadCurrentPage();
+      }
+    } else {
+      toggleHud();
     }
   });
 }
@@ -2429,10 +2482,15 @@ if (el.zoneNext) {
   el.zoneNext.addEventListener("click", (e) => {
     e.stopPropagation();
     if (readerZoomState.hasMoved || readerZoomState.scale > 1.05) return;
-    const pages = (state.currentDoc?.pages || []).filter((p) => !p.deleted);
-    if (state.currentPageIdx < pages.length - 1) {
-      state.currentPageIdx++;
-      loadCurrentPage();
+    const canTap = state.pageTurnMode === "tap" || state.pageTurnMode === "both";
+    if (canTap) {
+      const pages = (state.currentDoc?.pages || []).filter((p) => !p.deleted);
+      if (state.currentPageIdx < pages.length - 1) {
+        state.currentPageIdx++;
+        loadCurrentPage();
+      }
+    } else {
+      toggleHud();
     }
   });
 }
@@ -2468,6 +2526,10 @@ const readerZoomState = {
   pinchCenterY: 0,
   lastTouchX: 0,
   lastTouchY: 0,
+  touchStartX: 0,
+  touchStartY: 0,
+  swipeDeltaX: 0,
+  swipeDeltaY: 0,
   lastTapTime: 0,
   hasMoved: false,
 };
@@ -2591,11 +2653,18 @@ if (el.readerContent) {
         readerZoomState.initialTranslateY = readerZoomState.translateY;
         readerZoomState.pinchCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         readerZoomState.pinchCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      } else if (e.touches.length === 1 && readerZoomState.scale > 1.05) {
-        readerZoomState.isPanning = true;
-        readerZoomState.isPinching = false;
-        readerZoomState.lastTouchX = e.touches[0].clientX;
-        readerZoomState.lastTouchY = e.touches[0].clientY;
+      } else if (e.touches.length === 1) {
+        readerZoomState.touchStartX = e.touches[0].clientX;
+        readerZoomState.touchStartY = e.touches[0].clientY;
+        readerZoomState.swipeDeltaX = 0;
+        readerZoomState.swipeDeltaY = 0;
+
+        if (readerZoomState.scale > 1.05) {
+          readerZoomState.isPanning = true;
+          readerZoomState.isPinching = false;
+          readerZoomState.lastTouchX = e.touches[0].clientX;
+          readerZoomState.lastTouchY = e.touches[0].clientY;
+        }
       }
     },
     { passive: true }
@@ -2649,6 +2718,14 @@ if (el.readerContent) {
           readerZoomState.lastTouchX = e.touches[0].clientX;
           readerZoomState.lastTouchY = e.touches[0].clientY;
         }
+      } else if (e.touches.length === 1 && readerZoomState.scale <= 1.05) {
+        const dx = e.touches[0].clientX - readerZoomState.touchStartX;
+        const dy = e.touches[0].clientY - readerZoomState.touchStartY;
+        readerZoomState.swipeDeltaX = dx;
+        readerZoomState.swipeDeltaY = dy;
+        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+          readerZoomState.hasMoved = true;
+        }
       }
     },
     { passive: false }
@@ -2670,6 +2747,30 @@ if (el.readerContent) {
         readerZoomState.isPanning = false;
         clampPanBounds();
         applyZoomTransform(true);
+      } else if (
+        e.touches.length === 0 &&
+        readerZoomState.scale <= 1.05 &&
+        readerZoomState.hasMoved
+      ) {
+        const canSwipe = state.pageTurnMode === "swipe" || state.pageTurnMode === "both";
+        const absX = Math.abs(readerZoomState.swipeDeltaX);
+        const absY = Math.abs(readerZoomState.swipeDeltaY);
+        if (canSwipe && absX > 45 && absX > absY * 1.35) {
+          if (readerZoomState.swipeDeltaX < 0) {
+            // Swipe left -> Next page
+            const pages = (state.currentDoc?.pages || []).filter((p) => !p.deleted);
+            if (state.currentPageIdx < pages.length - 1) {
+              state.currentPageIdx++;
+              loadCurrentPage();
+            }
+          } else if (readerZoomState.swipeDeltaX > 0) {
+            // Swipe right -> Previous page
+            if (state.currentPageIdx > 0) {
+              state.currentPageIdx--;
+              loadCurrentPage();
+            }
+          }
+        }
       }
 
       // Double-tap to zoom toggle
@@ -3213,6 +3314,7 @@ function navigateToView(viewName, updateHistory = true) {
     loadDeliverySettings();
     updateSettingsSystemStats();
     applyAppTheme(state.themePreference);
+    applyPageTurnMode(state.pageTurnMode);
 
     if (updateHistory) {
       try {
@@ -3441,13 +3543,45 @@ async function updateSettingsSystemStats() {
 }
 
 let modelFetchDebounce = null;
-async function fetchAndPopulateVisionModels(currentSelected = null) {
+
+function getEffectiveModel() {
+  if (el.settingsModel && el.settingsModel.value === "__custom__") {
+    return el.settingsCustomModel ? el.settingsCustomModel.value.trim() : "";
+  }
+  return el.settingsModel ? el.settingsModel.value.trim() : "gemini-flash-lite-latest";
+}
+
+if (el.settingsModel) {
+  el.settingsModel.addEventListener("change", () => {
+    if (el.settingsCustomModelGroup) {
+      const isCustom = el.settingsModel.value === "__custom__";
+      el.settingsCustomModelGroup.style.display = isCustom ? "block" : "none";
+      if (isCustom && el.settingsCustomModel) {
+        el.settingsCustomModel.focus();
+      }
+    }
+  });
+}
+
+if (el.btnRefreshModels) {
+  el.btnRefreshModels.addEventListener("click", () => {
+    fetchAndPopulateVisionModels(getEffectiveModel(), true);
+  });
+}
+
+async function fetchAndPopulateVisionModels(currentSelected = null, forceRefresh = false) {
   if (!el.settingsModel) return;
   const payload = {
     provider: el.settingsProvider ? el.settingsProvider.value : "gemini",
     api_key: el.settingsApiKey ? el.settingsApiKey.value.trim() : "",
     base_url: el.settingsBaseUrl ? el.settingsBaseUrl.value.trim() : "",
+    force_refresh: forceRefresh,
   };
+
+  if (el.btnRefreshModels) {
+    el.btnRefreshModels.disabled = true;
+    el.btnRefreshModels.textContent = "↻ Pulling...";
+  }
 
   try {
     const res = await fetch("/api/settings/vision/models", {
@@ -3460,7 +3594,8 @@ async function fetchAndPopulateVisionModels(currentSelected = null) {
     const models = data.models || [];
     el.settingsModel.innerHTML = "";
 
-    const targetModel = currentSelected || el.settingsModel.value || data.default_model;
+    const targetModel = currentSelected || getEffectiveModel() || data.default_model || "gemini-flash-lite-latest";
+    let matched = false;
 
     models.forEach((m) => {
       const opt = document.createElement("option");
@@ -3468,43 +3603,78 @@ async function fetchAndPopulateVisionModels(currentSelected = null) {
       opt.textContent = m.name;
       if (m.id === targetModel || (!targetModel && m.is_recommended)) {
         opt.selected = true;
+        matched = true;
       }
       el.settingsModel.appendChild(opt);
     });
 
-    if (targetModel && !models.some((m) => m.id === targetModel)) {
+    if (targetModel && targetModel !== "__custom__" && !models.some((m) => m.id === targetModel)) {
       const customOpt = document.createElement("option");
       customOpt.value = targetModel;
       customOpt.textContent = `${targetModel} (Current)`;
       customOpt.selected = true;
-      el.settingsModel.appendChild(customOpt);
+      matched = true;
+      el.settingsModel.insertBefore(customOpt, el.settingsModel.firstChild);
+    }
+
+    const enterCustomOpt = document.createElement("option");
+    enterCustomOpt.value = "__custom__";
+    enterCustomOpt.textContent = "+ Enter custom model name...";
+    if (!matched && targetModel) {
+      enterCustomOpt.selected = true;
+      if (el.settingsCustomModel) el.settingsCustomModel.value = targetModel;
+      if (el.settingsCustomModelGroup) el.settingsCustomModelGroup.style.display = "block";
+    }
+    el.settingsModel.appendChild(enterCustomOpt);
+
+    if (el.settingsModel.value !== "__custom__" && el.settingsCustomModelGroup) {
+      el.settingsCustomModelGroup.style.display = "none";
+    }
+
+    if (el.settingsModelHint) {
+      if (data.live) {
+        el.settingsModelHint.textContent = `✓ Pulled live models directly from ${data.provider} API (${models.length} available).`;
+        el.settingsModelHint.style.color = "var(--success)";
+      } else {
+        el.settingsModelHint.textContent = "Standard model options (configure API key to pull live models).";
+        el.settingsModelHint.style.color = "var(--text-muted)";
+      }
     }
   } catch (e) {
     console.debug("Failed to query vision models", e);
+  } finally {
+    if (el.btnRefreshModels) {
+      el.btnRefreshModels.disabled = false;
+      el.btnRefreshModels.textContent = "↻ Pull Live Models";
+    }
   }
 }
 
 if (el.settingsProvider) {
   el.settingsProvider.addEventListener("change", () => {
-    const isOllama = el.settingsProvider.value === "openai";
+    const prov = el.settingsProvider.value;
+    const needsBaseUrl = prov === "openai" || prov === "ollama";
     if (el.settingsBaseUrlGroup) {
-      el.settingsBaseUrlGroup.style.display = isOllama ? "block" : "none";
+      el.settingsBaseUrlGroup.style.display = needsBaseUrl ? "block" : "none";
+      if (prov === "ollama" && el.settingsBaseUrl && !el.settingsBaseUrl.value.trim()) {
+        el.settingsBaseUrl.value = "http://localhost:11434";
+      }
     }
-    fetchAndPopulateVisionModels();
+    fetchAndPopulateVisionModels(null, true);
   });
 }
 
 if (el.settingsApiKey) {
   el.settingsApiKey.addEventListener("input", () => {
     clearTimeout(modelFetchDebounce);
-    modelFetchDebounce = setTimeout(() => fetchAndPopulateVisionModels(), 600);
+    modelFetchDebounce = setTimeout(() => fetchAndPopulateVisionModels(getEffectiveModel(), true), 600);
   });
 }
 
 if (el.settingsBaseUrl) {
   el.settingsBaseUrl.addEventListener("input", () => {
     clearTimeout(modelFetchDebounce);
-    modelFetchDebounce = setTimeout(() => fetchAndPopulateVisionModels(), 600);
+    modelFetchDebounce = setTimeout(() => fetchAndPopulateVisionModels(getEffectiveModel(), true), 600);
   });
 }
 
@@ -3517,15 +3687,23 @@ async function loadVisionSettings() {
     if (el.settingsProvider) el.settingsProvider.value = conf.provider || "gemini";
     if (el.settingsBaseUrl) el.settingsBaseUrl.value = conf.base_url || "";
     if (el.settingsBaseUrlGroup) {
-      el.settingsBaseUrlGroup.style.display = conf.provider === "openai" ? "block" : "none";
+      const needsBaseUrl = conf.provider === "openai" || conf.provider === "ollama";
+      el.settingsBaseUrlGroup.style.display = needsBaseUrl ? "block" : "none";
     }
 
-    await fetchAndPopulateVisionModels(conf.model || "gemini-2.0-flash");
+    await fetchAndPopulateVisionModels(conf.model || "gemini-flash-lite-latest");
 
     if (el.settingsKeyStatus) {
       if (conf.api_key_set) {
-        el.settingsKeyStatus.textContent = `✓ Key saved: ${conf.api_key_masked}`;
+        if (conf.api_key_source === "environment") {
+          el.settingsKeyStatus.textContent = `✓ Key active from container environment (${conf.api_key_masked})`;
+        } else {
+          el.settingsKeyStatus.textContent = `✓ Key saved in database (${conf.api_key_masked})`;
+        }
         el.settingsKeyStatus.style.color = "var(--success)";
+        if (el.settingsApiKey) {
+          el.settingsApiKey.placeholder = "Key is set (enter new key to replace)...";
+        }
       } else {
         el.settingsKeyStatus.textContent = "No API key configured (cloud handwriting OCR inactive)";
         el.settingsKeyStatus.style.color = "var(--text-muted)";
@@ -3540,7 +3718,7 @@ if (el.btnSettingsSave) {
   el.btnSettingsSave.addEventListener("click", async () => {
     const payload = {
       provider: el.settingsProvider ? el.settingsProvider.value : "gemini",
-      model: el.settingsModel ? el.settingsModel.value.trim() : "gemini-2.0-flash",
+      model: getEffectiveModel() || "gemini-flash-lite-latest",
       api_key: el.settingsApiKey ? el.settingsApiKey.value.trim() : "",
       base_url: el.settingsBaseUrl ? el.settingsBaseUrl.value.trim() : "",
     };
@@ -3578,12 +3756,12 @@ if (el.btnSettingsTest) {
       el.settingsTestResult.style.display = "block";
       el.settingsTestResult.style.backgroundColor = "var(--bg-tertiary)";
       el.settingsTestResult.style.color = "var(--text-secondary)";
-      el.settingsTestResult.textContent = "Sending test image to vision provider...";
+      el.settingsTestResult.textContent = "Sending test ping to vision provider...";
     }
 
     const payload = {
       provider: el.settingsProvider ? el.settingsProvider.value : "gemini",
-      model: el.settingsModel ? el.settingsModel.value.trim() : "gemini-2.0-flash",
+      model: getEffectiveModel() || "gemini-flash-lite-latest",
       api_key: el.settingsApiKey ? el.settingsApiKey.value.trim() : "",
       base_url: el.settingsBaseUrl ? el.settingsBaseUrl.value.trim() : "",
     };
@@ -3630,9 +3808,17 @@ async function loadDeliverySettings() {
     if (el.deliveryIncludeWeather) el.deliveryIncludeWeather.checked = (settings.news_include_weather ?? settings.include_weather) !== false;
     if (el.deliveryWeatherLocation) el.deliveryWeatherLocation.value = settings.news_weather_location || settings.weather_location || "";
     if (el.deliveryIncludeWikipedia) el.deliveryIncludeWikipedia.checked = (settings.news_include_wikipedia ?? settings.include_wikipedia) !== false;
+    if (el.deliveryNewspaperArticlesPerFeed) el.deliveryNewspaperArticlesPerFeed.value = String(settings.news_articles_per_feed || 2);
+    if (el.deliveryNewspaperFullBody) el.deliveryNewspaperFullBody.checked = settings.news_full_body !== false;
     if (el.deliveryRssFeeds) {
       const feeds = settings.news_rss_feeds || settings.rss_feeds || [];
       el.deliveryRssFeeds.value = feeds.join("\n");
+      if (!rssCatalogData || !rssCatalogData.feeds || rssCatalogData.feeds.length === 0) {
+        await loadRssCatalog();
+      } else {
+        renderActiveRssFeeds();
+        renderRssCatalog();
+      }
     }
     if (el.deliveryNewspaperStatus) {
       const lastNews = settings.last_news_delivery || settings.last_newspaper_delivery;
@@ -3679,6 +3865,8 @@ async function saveDeliverySettings() {
     news_include_weather: el.deliveryIncludeWeather ? el.deliveryIncludeWeather.checked : true,
     news_weather_location: el.deliveryWeatherLocation ? el.deliveryWeatherLocation.value.trim() : "",
     news_include_wikipedia: el.deliveryIncludeWikipedia ? el.deliveryIncludeWikipedia.checked : true,
+    news_articles_per_feed: parseInt(el.deliveryNewspaperArticlesPerFeed ? el.deliveryNewspaperArticlesPerFeed.value : "2", 10) || 2,
+    news_full_body: el.deliveryNewspaperFullBody ? el.deliveryNewspaperFullBody.checked : true,
     news_rss_feeds: rawFeeds,
 
     puzzles_enabled: el.deliveryPuzzlesEnabled ? el.deliveryPuzzlesEnabled.checked : false,
@@ -3790,6 +3978,481 @@ async function triggerPuzzlesDelivery() {
 if (el.btnDeliverySave) el.btnDeliverySave.addEventListener("click", saveDeliverySettings);
 if (el.btnDeliveryNewspaperNow) el.btnDeliveryNewspaperNow.addEventListener("click", triggerNewspaperDelivery);
 if (el.btnDeliveryPuzzlesNow) el.btnDeliveryPuzzlesNow.addEventListener("click", triggerPuzzlesDelivery);
+
+// --- RSS Feed Directory & Discovery Controller ---
+let rssCatalogData = { categories: [], presets: [], feeds: [] };
+let currentRssCategory = "All";
+let pendingPreviewFeed = null;
+
+function getActiveRssFeeds() {
+  if (!el.deliveryRssFeeds) return [];
+  return el.deliveryRssFeeds.value
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function setActiveRssFeeds(feedUrls) {
+  const uniqueUrls = [];
+  const seen = new Set();
+  for (const u of feedUrls) {
+    const trimmed = u.trim();
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      uniqueUrls.push(trimmed);
+    }
+  }
+  if (el.deliveryRssFeeds) {
+    el.deliveryRssFeeds.value = uniqueUrls.join("\n");
+  }
+  renderActiveRssFeeds();
+  renderRssCatalog();
+}
+
+function addRssFeed(url, name = "") {
+  const trimmed = (url || "").trim();
+  if (!trimmed) return;
+  const current = getActiveRssFeeds();
+  if (current.includes(trimmed)) {
+    showToast(`Feed already in your newspaper: ${name || trimmed}`, "info");
+    return;
+  }
+  current.push(trimmed);
+  setActiveRssFeeds(current);
+  showToast(`Added feed: ${name || trimmed}`, "success");
+}
+
+function removeRssFeed(url) {
+  const trimmed = (url || "").trim();
+  const current = getActiveRssFeeds();
+  const filtered = current.filter((u) => u !== trimmed);
+  setActiveRssFeeds(filtered);
+  showToast("Removed feed", "info");
+}
+
+function renderActiveRssFeeds() {
+  if (!el.rssActiveList) return;
+  const current = getActiveRssFeeds();
+  if (el.rssActiveCount) {
+    el.rssActiveCount.textContent = `${current.length} feed${current.length === 1 ? "" : "s"}`;
+  }
+
+  if (current.length === 0) {
+    el.rssActiveList.innerHTML = `
+      <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic; padding: 0.5rem 0;">
+        No feeds selected. Pick from popular feeds below or search/enter a website URL.
+      </div>
+    `;
+    return;
+  }
+
+  const feedsList = rssCatalogData.feeds || [];
+  el.rssActiveList.innerHTML = current
+    .map((feedUrl) => {
+      const match = feedsList.find((f) => f.url === feedUrl);
+      let displayName = match ? match.name : "";
+      if (!displayName) {
+        try {
+          const u = new URL(feedUrl);
+          displayName = u.hostname.replace(/^www\./, "");
+        } catch (_) {
+          displayName = feedUrl;
+        }
+      }
+      const categoryBadge = match ? `<span class="rss-card-category" style="margin-left: 0.4rem;">${escapeHtml(match.category)}</span>` : "";
+
+      return `
+        <div class="rss-active-item" data-url="${escapeHtml(feedUrl)}">
+          <div class="rss-active-info">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent); flex-shrink: 0;"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>
+            <div style="min-width: 0; display: flex; align-items: baseline; gap: 0.35rem; flex: 1;">
+              <span class="rss-active-title" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span>
+              ${categoryBadge}
+              <span class="rss-active-url" title="${escapeHtml(feedUrl)}">${escapeHtml(feedUrl)}</span>
+            </div>
+          </div>
+          <div class="rss-active-actions">
+            <button type="button" class="btn btn-xs btn-rss-preview-item" data-url="${escapeHtml(feedUrl)}" title="Preview recent headlines">
+              Preview
+            </button>
+            <button type="button" class="btn btn-xs btn-rss-remove-item" data-url="${escapeHtml(feedUrl)}" title="Remove feed" style="color: var(--danger); padding: 0 0.35rem;">
+              ✕
+            </button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  el.rssActiveList.querySelectorAll(".btn-rss-remove-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const url = btn.getAttribute("data-url");
+      removeRssFeed(url);
+    });
+  });
+
+  el.rssActiveList.querySelectorAll(".btn-rss-preview-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const url = btn.getAttribute("data-url");
+      openRssPreview(url);
+    });
+  });
+}
+
+function renderRssCategoryPills() {
+  if (!el.rssCategoryPills) return;
+  const categories = rssCatalogData.categories || ["All", "News", "Tech", "Science", "Business", "Culture", "Sports"];
+  el.rssCategoryPills.innerHTML = categories
+    .map(
+      (cat) => `
+        <button type="button" class="rss-pill ${cat === currentRssCategory ? "active" : ""}" data-category="${escapeHtml(cat)}">
+          ${escapeHtml(cat)}
+        </button>
+      `
+    )
+    .join("");
+
+  el.rssCategoryPills.querySelectorAll(".rss-pill").forEach((pill) => {
+    pill.addEventListener("click", () => {
+      currentRssCategory = pill.getAttribute("data-category") || "All";
+      renderRssCategoryPills();
+      renderRssCatalog();
+    });
+  });
+}
+
+function renderRssCatalog(extraDiscovered = []) {
+  if (!el.rssCatalogGrid) return;
+  const activeUrls = new Set(getActiveRssFeeds());
+  const query = (el.rssSearchInput ? el.rssSearchInput.value.trim().toLowerCase() : "");
+
+  let displayFeeds = [];
+
+  if (extraDiscovered && extraDiscovered.length > 0) {
+    displayFeeds.push(...extraDiscovered.map((d) => ({
+      name: d.title || "Discovered Feed",
+      url: d.url,
+      category: "Discovered",
+      description: d.description || `Discovered from website (${d.source || 'Auto-detected'})`,
+      site_url: d.url,
+    })));
+  }
+
+  let filtered = rssCatalogData.feeds || [];
+  if (currentRssCategory !== "All") {
+    filtered = filtered.filter((f) => f.category && f.category.toLowerCase() === currentRssCategory.toLowerCase());
+  }
+  if (query) {
+    filtered = filtered.filter(
+      (f) =>
+        (f.name && f.name.toLowerCase().includes(query)) ||
+        (f.description && f.description.toLowerCase().includes(query)) ||
+        (f.category && f.category.toLowerCase().includes(query)) ||
+        (f.url && f.url.toLowerCase().includes(query))
+    );
+  }
+
+  displayFeeds.push(...filtered);
+
+  if (displayFeeds.length === 0) {
+    el.rssCatalogGrid.innerHTML = `
+      <div style="grid-column: 1 / -1; padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+        No feeds match your search. Enter a website URL above (e.g. <code>nytimes.com</code>) to discover its live RSS feed.
+      </div>
+    `;
+    return;
+  }
+
+  el.rssCatalogGrid.innerHTML = displayFeeds
+    .map((feed) => {
+      const isAdded = activeUrls.has(feed.url);
+      const category = feed.category || "General";
+      return `
+        <div class="rss-card" data-url="${escapeHtml(feed.url)}">
+          <div class="rss-card-top">
+            <span class="rss-card-title">${escapeHtml(feed.name)}</span>
+            <span class="rss-card-category">${escapeHtml(category)}</span>
+          </div>
+          <div class="rss-card-desc" title="${escapeHtml(feed.description || '')}">${escapeHtml(feed.description || "")}</div>
+          <div class="rss-card-url" title="${escapeHtml(feed.url)}">${escapeHtml(feed.url)}</div>
+          <div class="rss-card-actions">
+            <button type="button" class="btn btn-xs btn-rss-card-preview" data-url="${escapeHtml(feed.url)}" title="Preview headlines">
+              Preview
+            </button>
+            ${
+              isAdded
+                ? `
+                <button type="button" class="btn btn-xs btn-rss-card-toggle" data-url="${escapeHtml(feed.url)}" style="background: var(--bg-tertiary); color: var(--success); font-weight: 600;">
+                  ✓ Added
+                </button>
+              `
+                : `
+                <button type="button" class="btn btn-xs btn-primary btn-rss-card-toggle" data-url="${escapeHtml(feed.url)}" data-name="${escapeHtml(feed.name)}">
+                  + Add
+                </button>
+              `
+            }
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  el.rssCatalogGrid.querySelectorAll(".btn-rss-card-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const url = btn.getAttribute("data-url");
+      const name = btn.getAttribute("data-name") || "";
+      if (activeUrls.has(url)) {
+        removeRssFeed(url);
+      } else {
+        addRssFeed(url, name);
+      }
+    });
+  });
+
+  el.rssCatalogGrid.querySelectorAll(".btn-rss-card-preview").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const url = btn.getAttribute("data-url");
+      openRssPreview(url);
+    });
+  });
+}
+
+async function openRssPreview(feedUrl) {
+  if (!el.rssPreviewModal) return;
+  pendingPreviewFeed = feedUrl;
+  if (el.rssPreviewFeedTitle) el.rssPreviewFeedTitle.textContent = "Loading Feed Preview...";
+  if (el.rssPreviewFeedDesc) el.rssPreviewFeedDesc.textContent = "Fetching channel info and latest articles...";
+  if (el.rssPreviewFeedUrl) el.rssPreviewFeedUrl.textContent = feedUrl;
+  if (el.rssPreviewArticlesList) {
+    el.rssPreviewArticlesList.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); font-size: 0.85rem; padding: 1rem 0;">
+        <svg class="spinning" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+        <span>Validating feed and retrieving headlines...</span>
+      </div>
+    `;
+  }
+
+  const activeUrls = new Set(getActiveRssFeeds());
+  if (el.btnRssPreviewAdd) {
+    if (activeUrls.has(feedUrl)) {
+      el.btnRssPreviewAdd.textContent = "✓ In Newspaper (Remove)";
+      el.btnRssPreviewAdd.className = "btn";
+    } else {
+      el.btnRssPreviewAdd.textContent = "+ Add to Newspaper";
+      el.btnRssPreviewAdd.className = "btn btn-primary";
+    }
+  }
+
+  el.rssPreviewModal.style.display = "flex";
+
+  try {
+    const res = await fetch("/api/delivery/rss/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: feedUrl }),
+    });
+    if (!res.ok) throw new Error(`Validation HTTP ${res.status}`);
+    const data = await res.json();
+    const result = data.result || {};
+
+    if (!result.valid) {
+      if (el.rssPreviewFeedTitle) el.rssPreviewFeedTitle.textContent = "Feed Error";
+      if (el.rssPreviewFeedDesc) el.rssPreviewFeedDesc.textContent = `Could not load RSS feed: ${result.error || "Invalid XML or unreachable host"}`;
+      if (el.rssPreviewArticlesList) el.rssPreviewArticlesList.innerHTML = "";
+      return;
+    }
+
+    if (el.rssPreviewFeedTitle) el.rssPreviewFeedTitle.textContent = result.title || "RSS Feed Preview";
+    if (el.rssPreviewFeedDesc) el.rssPreviewFeedDesc.textContent = result.description || "Active RSS / Atom Feed";
+    if (el.rssPreviewFeedUrl) el.rssPreviewFeedUrl.textContent = result.url || feedUrl;
+
+    if (el.rssPreviewArticlesList) {
+      const articles = result.articles || [];
+      if (articles.length === 0) {
+        el.rssPreviewArticlesList.innerHTML = `<div style="font-size: 0.85rem; color: var(--text-muted); font-style: italic;">No articles found in feed channel.</div>`;
+      } else {
+        el.rssPreviewArticlesList.innerHTML = articles
+          .map(
+            (art, idx) => `
+            <div class="rss-preview-item">
+              <div style="display: flex; align-items: baseline; gap: 0.4rem;">
+                <span style="font-size: 0.75rem; color: var(--accent); font-weight: 600;">${idx + 1}.</span>
+                <span class="rss-preview-title">${escapeHtml(art.title)}</span>
+              </div>
+            </div>
+          `
+          )
+          .join("");
+      }
+    }
+  } catch (err) {
+    console.error("RSS validation error:", err);
+    if (el.rssPreviewFeedTitle) el.rssPreviewFeedTitle.textContent = "Error Loading Feed";
+    if (el.rssPreviewFeedDesc) el.rssPreviewFeedDesc.textContent = err.message || "Failed to contact feed URL";
+    if (el.rssPreviewArticlesList) el.rssPreviewArticlesList.innerHTML = "";
+  }
+}
+
+function closeRssPreview() {
+  if (el.rssPreviewModal) el.rssPreviewModal.style.display = "none";
+  pendingPreviewFeed = null;
+}
+
+async function performRssSearchOrDiscover() {
+  if (!el.rssSearchInput) return;
+  const q = el.rssSearchInput.value.trim();
+  if (!q) {
+    if (el.rssSearchStatus) el.rssSearchStatus.textContent = "";
+    renderRssCatalog();
+    return;
+  }
+
+  const isUrlLike = !q.includes(" ") && (q.startsWith("http://") || q.startsWith("https://") || (q.includes(".") && !q.endsWith(".")));
+
+  if (isUrlLike) {
+    if (el.rssSearchStatus) {
+      el.rssSearchStatus.textContent = "Discovering feed from website...";
+      el.rssSearchStatus.style.color = "var(--accent)";
+    }
+    if (el.btnRssSearch) el.btnRssSearch.disabled = true;
+
+    try {
+      const res = await fetch(`/api/delivery/rss/discover?url=${encodeURIComponent(q)}`);
+      if (!res.ok) throw new Error(`Discovery HTTP ${res.status}`);
+      const data = await res.json();
+      const discovered = data.discovered || [];
+
+      if (discovered.length === 0) {
+        if (el.rssSearchStatus) {
+          el.rssSearchStatus.textContent = "No RSS feeds found on website.";
+          el.rssSearchStatus.style.color = "var(--text-muted)";
+        }
+        renderRssCatalog();
+      } else {
+        if (el.rssSearchStatus) {
+          el.rssSearchStatus.textContent = `Found ${discovered.length} feed(s) from website!`;
+          el.rssSearchStatus.style.color = "var(--success)";
+        }
+        renderRssCatalog(discovered);
+      }
+    } catch (err) {
+      console.error("Discovery error:", err);
+      if (el.rssSearchStatus) {
+        el.rssSearchStatus.textContent = "Failed to discover feeds from site.";
+        el.rssSearchStatus.style.color = "var(--danger)";
+      }
+      renderRssCatalog();
+    } finally {
+      if (el.btnRssSearch) el.btnRssSearch.disabled = false;
+    }
+  } else {
+    if (el.rssSearchStatus) el.rssSearchStatus.textContent = "";
+    renderRssCatalog();
+  }
+}
+
+async function loadRssCatalog() {
+  try {
+    const res = await fetch("/api/delivery/rss/catalog");
+    if (!res.ok) return;
+    rssCatalogData = await res.json();
+
+    if (el.rssPresetPicker && rssCatalogData.presets) {
+      el.rssPresetPicker.innerHTML = `
+        <option value="">★ Curated Feed Presets...</option>
+        ${rssCatalogData.presets.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("")}
+      `;
+    }
+
+    renderRssCategoryPills();
+    renderRssCatalog();
+    renderActiveRssFeeds();
+  } catch (err) {
+    console.error("Failed to load RSS catalog:", err);
+  }
+}
+
+// Attach RSS Feed Manager Event Listeners
+if (el.rssPresetPicker) {
+  el.rssPresetPicker.addEventListener("change", (e) => {
+    const presetId = e.target.value;
+    if (!presetId) return;
+    const preset = (rssCatalogData.presets || []).find((p) => p.id === presetId);
+    if (preset && preset.feeds) {
+      setActiveRssFeeds(preset.feeds);
+      showToast(`Loaded "${preset.name}" preset!`, "success");
+    }
+    e.target.value = "";
+  });
+}
+
+if (el.btnRssResetDefaults) {
+  el.btnRssResetDefaults.addEventListener("click", () => {
+    const balanced = (rssCatalogData.presets || []).find((p) => p.id === "balanced");
+    const defaultFeeds = (balanced && balanced.feeds) ? balanced.feeds : [
+      "https://feeds.bbci.co.uk/news/rss.xml",
+      "https://www.theguardian.com/world/rss",
+      "https://feeds.npr.org/1001/rss.xml",
+      "https://news.ycombinator.com/rss",
+      "https://www.theverge.com/rss/index.xml",
+      "https://feeds.arstechnica.com/arstechnica/index",
+      "https://www.nature.com/nature.rss"
+    ];
+    setActiveRssFeeds(defaultFeeds);
+    showToast("Reset to default daily feeds", "info");
+  });
+}
+
+if (el.btnToggleRawRss) {
+  el.btnToggleRawRss.addEventListener("click", () => {
+    if (!el.rssRawContainer) return;
+    const isHidden = el.rssRawContainer.style.display === "none";
+    el.rssRawContainer.style.display = isHidden ? "block" : "none";
+    el.btnToggleRawRss.textContent = isHidden ? "Hide Text" : "Edit as Text";
+  });
+}
+
+if (el.deliveryRssFeeds) {
+  el.deliveryRssFeeds.addEventListener("input", () => {
+    renderActiveRssFeeds();
+    renderRssCatalog();
+  });
+}
+
+if (el.btnRssSearch) {
+  el.btnRssSearch.addEventListener("click", performRssSearchOrDiscover);
+}
+
+if (el.rssSearchInput) {
+  el.rssSearchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      performRssSearchOrDiscover();
+    }
+  });
+  el.rssSearchInput.addEventListener("input", () => {
+    const val = el.rssSearchInput.value.trim();
+    if (!val.includes(".") && !val.startsWith("http")) {
+      renderRssCatalog();
+    }
+  });
+}
+
+if (el.btnRssPreviewClose) el.btnRssPreviewClose.addEventListener("click", closeRssPreview);
+if (el.btnRssPreviewDismiss) el.btnRssPreviewDismiss.addEventListener("click", closeRssPreview);
+if (el.btnRssPreviewAdd) {
+  el.btnRssPreviewAdd.addEventListener("click", () => {
+    if (!pendingPreviewFeed) return;
+    const activeUrls = new Set(getActiveRssFeeds());
+    if (activeUrls.has(pendingPreviewFeed)) {
+      removeRssFeed(pendingPreviewFeed);
+    } else {
+      addRssFeed(pendingPreviewFeed);
+    }
+    closeRssPreview();
+  });
+}
 
 // --- Phase 4: Typed Notebook Editor & Markdown Import ---
 async function loadTypingPaneText() {

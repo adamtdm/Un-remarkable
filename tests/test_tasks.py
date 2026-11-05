@@ -127,7 +127,7 @@ def test_tasks_api_endpoints(tmp_path):
 
     save_res = client.post("/api/settings/vision", json={
         "provider": "gemini",
-        "model": "gemini-2.0-flash",
+        "model": "gemini-flash-lite-latest",
         "api_key": "AIzaSyTest1234567890",
     })
     assert save_res.status_code == 200

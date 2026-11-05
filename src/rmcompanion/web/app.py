@@ -56,7 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db=db, blob_store=blob_store, settings=app_settings, sync_engine=sync_engine
     )
 
-    vision_provider = get_vision_provider(db)
+    vision_provider = get_vision_provider(db, settings=app_settings)
     task_extractor = TaskExtractor(
         db=db,
         blob_store=blob_store,
@@ -107,7 +107,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="reMarkable Companion",
         description="Local cloud mirror, dark mode web reader, and MCP server for reMarkable devices (Paper Pro, RM2, RM1)",
-        version="0.1.0",
+        version="0.1.1",
         lifespan=lifespan,
     )
 

@@ -6,9 +6,12 @@ import asyncio
 import io
 import json
 import logging
+import time
 import zipfile
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel
@@ -18,6 +21,14 @@ from rmcompanion.config import Settings
 from rmcompanion.converter.engine import QUALITY_PROFILES, ConverterEngine
 from rmcompanion.delivery.manager import DeliveryManager
 from rmcompanion.delivery.models import DeliverySettings
+from rmcompanion.delivery.rss_directory import (
+    CATEGORIES,
+    POPULAR_FEEDS,
+    PRESETS,
+    discover_feed_url,
+    search_popular_feeds,
+    validate_feed,
+)
 from rmcompanion.editor.notebook_editor import NotebookEditor
 from rmcompanion.index.text_indexer import TextIndexer
 from rmcompanion.intelligence.task_extractor import TaskExtractor
@@ -27,6 +38,8 @@ from rmcompanion.store.db import Database
 from rmcompanion.sync.engine import SyncEngine
 
 logger = logging.getLogger(__name__)
+
+_LIVE_MODELS_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
 
 class RegisterCodeRequest(BaseModel):
@@ -51,7 +64,7 @@ class TaskStatusRequest(BaseModel):
 class VisionSettingsRequest(BaseModel):
     provider: str = "gemini"
     api_key: str = ""
-    model: str = "gemini-2.0-flash"
+    model: str = "gemini-flash-lite-latest"
     base_url: str = ""
 
 
@@ -59,6 +72,10 @@ class CreateNotebookRequest(BaseModel):
     title: str
     initial_text: str = ""
     parent_id: str = ""
+
+
+class FeedValidateRequest(BaseModel):
+    url: str
 
 
 class UpdatePageTextRequest(BaseModel):
@@ -626,33 +643,26 @@ def get_router(
 
     @r.get("/settings/vision")
     def get_vision_settings() -> dict[str, Any]:
-        """Get vision provider settings (API key masked)."""
-        raw = db.get_state("vision_settings", "")
-        if not raw:
-            return {
-                "provider": "gemini",
-                "model": "gemini-2.0-flash",
-                "api_key_set": False,
-                "api_key_masked": "",
-                "base_url": "",
-            }
-        try:
-            conf = json.loads(raw)
-        except Exception:
-            conf = {}
+        """Get vision provider settings with container environment fallback (API key masked)."""
+        from rmcompanion.intelligence.provider import get_effective_vision_config
+        conf = get_effective_vision_config(db, settings=settings)
         key = conf.get("api_key", "")
         masked = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else ("****" if key else "")
         return {
             "provider": conf.get("provider", "gemini"),
-            "model": conf.get("model", "gemini-2.0-flash"),
+            "model": conf.get("model", "gemini-flash-lite-latest"),
             "api_key_set": bool(key),
             "api_key_masked": masked,
+            "api_key_source": conf.get("api_key_source", "none"),
             "base_url": conf.get("base_url", ""),
         }
 
     @r.post("/settings/vision")
     def save_vision_settings(payload: VisionSettingsRequest) -> dict[str, Any]:
         """Save vision provider settings."""
+        from rmcompanion.intelligence.provider import get_effective_vision_config, get_vision_provider
+        effective = get_effective_vision_config(db, settings=settings)
+
         curr_raw = db.get_state("vision_settings", "")
         existing_key = ""
         if curr_raw:
@@ -661,136 +671,272 @@ def get_router(
             except Exception:
                 pass
 
-        final_key = payload.api_key.strip() if payload.api_key.strip() else existing_key
+        final_key = payload.api_key.strip() if payload.api_key.strip() else (existing_key or effective.get("api_key", ""))
         conf = {
-            "provider": payload.provider.lower(),
+            "provider": payload.provider.lower().strip(),
             "api_key": final_key,
-            "model": payload.model.strip(),
+            "model": payload.model.strip() or "gemini-flash-lite-latest",
             "base_url": payload.base_url.strip(),
         }
         db.set_state("vision_settings", json.dumps(conf))
 
         if task_extractor:
-            from rmcompanion.intelligence.provider import get_vision_provider
-            task_extractor.vision_provider = get_vision_provider(db)
+            task_extractor.vision_provider = get_vision_provider(db, settings=settings)
 
         return {"ok": True, "provider": conf["provider"], "model": conf["model"]}
 
     @r.post("/settings/vision/test")
     async def test_vision_settings(payload: VisionSettingsRequest) -> dict[str, Any]:
-        """Test API key and latency for vision provider."""
-        from rmcompanion.intelligence.provider import VisionProvider
+        """Test API key and latency for vision provider with automatic environment key fallback."""
+        from rmcompanion.intelligence.provider import VisionProvider, get_effective_vision_config
+        effective = get_effective_vision_config(db, settings=settings)
+
+        provider_name = (payload.provider or effective.get("provider", "gemini")).lower().strip()
+        api_key = payload.api_key.strip() or effective.get("api_key", "").strip()
+        model = payload.model.strip() or effective.get("model", "gemini-flash-lite-latest").strip()
+        base_url = payload.base_url.strip() or effective.get("base_url", "").strip()
+
         provider = VisionProvider(
-            provider=payload.provider,
-            api_key=payload.api_key,
-            model=payload.model,
-            base_url=payload.base_url,
+            provider=provider_name,
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
         )
         try:
             return await provider.test_connection()
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @r.post("/settings/vision/models")
-    async def list_vision_models(payload: VisionSettingsRequest) -> dict[str, Any]:
-        """Query available vision models for the provider and API key, defaulting to newest."""
-        provider = (payload.provider or "gemini").lower()
-        api_key = payload.api_key.strip()
-        base_url = payload.base_url.strip()
+    @r.api_route("/settings/vision/models", methods=["GET", "POST"])
+    async def list_vision_models(
+        payload: VisionSettingsRequest | None = None,
+        provider: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        force_refresh: bool = False,
+    ) -> dict[str, Any]:
+        """Query available vision models dynamically from provider APIs, supporting live discovery."""
+        from rmcompanion.intelligence.provider import get_effective_vision_config
+        effective = get_effective_vision_config(db, settings=settings)
 
-        # If key is empty in request, check if we have a saved key in database
-        if not api_key:
-            raw = db.get_state("vision_settings", "")
-            if raw:
-                try:
-                    saved = json.loads(raw)
-                    if saved.get("provider") == provider:
-                        api_key = saved.get("api_key", "")
-                        if not base_url:
-                            base_url = saved.get("base_url", "")
-                except Exception:
-                    pass
+        req_provider = (payload.provider if payload else provider) or effective.get("provider", "gemini")
+        req_provider = req_provider.lower().strip()
+
+        req_key = (payload.api_key if payload and payload.api_key.strip() else (api_key or "")).strip()
+        if not req_key:
+            req_key = effective.get("api_key", "").strip()
+
+        req_base_url = (payload.base_url if payload and payload.base_url.strip() else (base_url or "")).strip()
+        if not req_base_url:
+            req_base_url = effective.get("base_url", "").strip()
+        if not req_base_url and req_provider == "ollama":
+            req_base_url = "http://localhost:11434"
 
         models: list[dict[str, Any]] = []
-        default_model = "gemini-2.0-flash" if provider == "gemini" else "gpt-4o-mini"
+        is_live = False
+        default_model = "gemini-flash-lite-latest" if req_provider == "gemini" else "gpt-4o-mini"
 
-        if provider == "gemini":
-            if api_key:
+        cache_key = f"{req_provider}:{req_key[-8:] if req_key else ''}:{req_base_url}"
+        now = time.time()
+        if not force_refresh and cache_key in _LIVE_MODELS_CACHE:
+            ts, cached_models = _LIVE_MODELS_CACHE[cache_key]
+            if now - ts < 300:
+                return {
+                    "ok": True,
+                    "provider": req_provider,
+                    "models": cached_models,
+                    "default_model": default_model,
+                    "live": True,
+                    "cached": True,
+                }
+
+        if req_provider == "gemini":
+            if req_key:
                 try:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-                    async with httpx.AsyncClient(timeout=4.0) as client:
-                        resp = await client.get(url)
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={req_key}"
+                    headers = {"x-goog-api-key": req_key}
+                    async with httpx.AsyncClient(timeout=6.0) as client:
+                        resp = await client.get(url, headers=headers)
                         if resp.status_code == 200:
                             data = resp.json()
                             raw_models = data.get("models", [])
-                            found_ids = []
+                            seen: set[str] = set()
                             for m in raw_models:
-                                mid = m.get("name", "").replace("models/", "")
-                                if "gemini" in mid and "vision" not in mid and not mid.endswith("-latest"):
-                                    methods = m.get("supportedGenerationMethods", [])
-                                    if "generateContent" in methods:
-                                        found_ids.append(mid)
+                                mid = m.get("name", "").replace("models/", "").strip()
+                                if not mid or "gemini" not in mid.lower():
+                                    continue
+                                # Strictly filter out legacy deprecated models (2.5, 2.0, 1.5, 3.0) per gemini-api-dev skill
+                                if any(dep in mid.lower() for dep in ("gemini-2.5", "gemini-2.0", "gemini-1.5", "gemini-3.0")):
+                                    continue
+                                methods = m.get("supportedGenerationMethods", [])
+                                if methods and "generateContent" not in methods:
+                                    continue
+                                if any(x in mid.lower() for x in ("embedding", "aqa", "imagen", "tts", "transcribe")):
+                                    continue
 
-                            priority = [
-                                "gemini-2.5-pro",
-                                "gemini-2.0-flash",
-                                "gemini-2.0-flash-lite",
-                                "gemini-1.5-flash",
-                                "gemini-1.5-pro",
+                                display = m.get("displayName") or mid
+                                desc = ""
+                                if "flash-lite-latest" in mid:
+                                    desc = "Recommended — Fast & Economical"
+                                elif "3.5-flash-lite" in mid:
+                                    desc = "Fastest & Lowest Cost Execution"
+                                elif "3.1-flash-lite" in mid:
+                                    desc = "High Frequency & Lightweight"
+                                elif "3.8-flash" in mid:
+                                    desc = "Balanced Multimodal & Accurate"
+                                elif "4-argon" in mid or "argon" in mid:
+                                    desc = "High Capability & Reasoning"
+                                elif "flash-lite" in mid:
+                                    desc = "Fast & Lightweight"
+                                elif "flash" in mid:
+                                    desc = "Multimodal Flash"
+
+                                label = f"{mid} ({desc})" if desc else f"{mid} ({display})"
+                                models.append({
+                                    "id": mid,
+                                    "name": label,
+                                    "is_recommended": (mid == "gemini-flash-lite-latest"),
+                                })
+                                seen.add(mid)
+
+                            # Guarantee current active models are present
+                            active_current_defaults = [
+                                ("gemini-flash-lite-latest", "gemini-flash-lite-latest (Recommended — Fast & Economical)", True),
+                                ("gemini-3.5-flash-lite", "gemini-3.5-flash-lite (Fastest & Lowest Cost Execution)", False),
+                                ("gemini-3.1-flash-lite", "gemini-3.1-flash-lite (Cost-Efficient & Lightweight)", False),
+                                ("gemini-3.8-flash", "gemini-3.8-flash (Balanced Multimodal & Accurate)", False),
+                                ("gemini-4-argon", "gemini-4-argon (Most Powerful Reasoning & Analysis)", False),
                             ]
-                            seen = set()
-                            for p in priority:
-                                for f in found_ids:
-                                    if f.startswith(p) and f not in seen:
-                                        seen.add(f)
-                                        desc = "Newest — Fast & Accurate" if p == "gemini-2.0-flash" else ("Lightweight & Economical" if "lite" in p else "High Capability")
-                                        models.append({"id": f, "name": f"{f} ({desc})", "is_recommended": (f == "gemini-2.0-flash")})
+                            for def_id, def_name, is_rec in active_current_defaults:
+                                if def_id not in seen:
+                                    models.append({
+                                        "id": def_id,
+                                        "name": def_name,
+                                        "is_recommended": is_rec,
+                                    })
+                                    seen.add(def_id)
 
-                            if not any(m["is_recommended"] for m in models) and models:
-                                models[0]["is_recommended"] = True
+                            # Sort models: current models prioritized
+                            def _gemini_sort(x: dict[str, Any]) -> tuple[int, str]:
+                                i = x["id"]
+                                if i == "gemini-flash-lite-latest":
+                                    return (0, i)
+                                if i == "gemini-3.5-flash-lite":
+                                    return (1, i)
+                                if i == "gemini-3.1-flash-lite":
+                                    return (2, i)
+                                if i == "gemini-3.8-flash":
+                                    return (3, i)
+                                if "4-argon" in i or "argon" in i:
+                                    return (4, i)
+                                if "3.5" in i:
+                                    return (5, i)
+                                if "3.8" in i:
+                                    return (6, i)
+                                return (10, i)
+
+                            models.sort(key=_gemini_sort)
+                            is_live = True
                 except Exception as e:
                     logger.debug("Failed to query Gemini API for live models: %s", e)
 
             if not models:
                 models = [
-                    {"id": "gemini-2.0-flash", "name": "gemini-2.0-flash (Newest Recommended — Fast & High Accuracy)", "is_recommended": True},
-                    {"id": "gemini-2.0-flash-lite", "name": "gemini-2.0-flash-lite (Cost Effective & Lightweight)", "is_recommended": False},
-                    {"id": "gemini-1.5-flash", "name": "gemini-1.5-flash (Standard Balanced)", "is_recommended": False},
-                    {"id": "gemini-1.5-pro", "name": "gemini-1.5-pro (High Reasoning)", "is_recommended": False},
+                    {"id": "gemini-flash-lite-latest", "name": "gemini-flash-lite-latest (Recommended — Fast & Economical)", "is_recommended": True},
+                    {"id": "gemini-3.5-flash-lite", "name": "gemini-3.5-flash-lite (Fastest & Lowest Cost Execution)", "is_recommended": False},
+                    {"id": "gemini-3.1-flash-lite", "name": "gemini-3.1-flash-lite (Cost-Efficient & Lightweight)", "is_recommended": False},
+                    {"id": "gemini-3.8-flash", "name": "gemini-3.8-flash (Balanced Multimodal & Accurate)", "is_recommended": False},
+                    {"id": "gemini-4-argon", "name": "gemini-4-argon (Most Powerful Reasoning & Analysis)", "is_recommended": False},
                 ]
-            default_model = "gemini-2.0-flash"
+            default_model = "gemini-flash-lite-latest"
 
-        elif provider == "openai":
-            if base_url:
+        elif req_provider in ("openai", "ollama"):
+            base = req_base_url or ("http://localhost:11434" if req_provider == "ollama" else "https://api.openai.com")
+            headers = {"Authorization": f"Bearer {req_key}"} if req_key else {}
+
+            # Try /v1/models endpoint
+            try:
+                url = f"{base.rstrip('/')}/v1/models"
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    resp = await client.get(url, headers=headers)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        for m in data.get("data", []):
+                            mid = m.get("id", "").strip()
+                            if not mid:
+                                continue
+                            low = mid.lower()
+                            if any(x in low for x in ("embedding", "whisper", "tts", "dall-e", "davinci", "babbage", "moderation")):
+                                continue
+                            desc = ""
+                            if mid == "gpt-4o-mini":
+                                desc = "Recommended — Fast Vision"
+                            elif mid == "gpt-4o":
+                                desc = "Omni Multimodal"
+                            elif "vision" in low or "vl" in low:
+                                desc = "Vision Capable"
+                            label = f"{mid} ({desc})" if desc else mid
+                            models.append({
+                                "id": mid,
+                                "name": label,
+                                "is_recommended": (mid == "gpt-4o-mini"),
+                            })
+                        if models:
+                            is_live = True
+            except Exception as e:
+                logger.debug("Failed /v1/models query: %s", e)
+
+            # If Ollama and no models found via /v1/models, try Ollama /api/tags
+            if not models and (req_provider == "ollama" or "11434" in base):
                 try:
-                    url = f"{base_url.rstrip('/')}/v1/models"
-                    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-                    async with httpx.AsyncClient(timeout=3.0) as client:
-                        resp = await client.get(url, headers=headers)
+                    url = f"{base.rstrip('/')}/api/tags"
+                    async with httpx.AsyncClient(timeout=4.0) as client:
+                        resp = await client.get(url)
                         if resp.status_code == 200:
                             data = resp.json()
-                            for m in data.get("data", []):
-                                mid = m.get("id", "")
-                                if mid:
-                                    models.append({"id": mid, "name": mid, "is_recommended": False})
-                except Exception:
-                    pass
+                            for m in data.get("models", []):
+                                mname = m.get("name", "").strip()
+                                if mname:
+                                    is_vis = any(x in mname.lower() for x in ("vision", "vl", "llava"))
+                                    desc = "Vision Capable" if is_vis else "Local Model"
+                                    models.append({
+                                        "id": mname,
+                                        "name": f"{mname} ({desc})",
+                                        "is_recommended": is_vis,
+                                    })
+                            if models:
+                                is_live = True
+                except Exception as e:
+                    logger.debug("Failed /api/tags query: %s", e)
 
             if not models:
-                models = [
-                    {"id": "gpt-4o-mini", "name": "gpt-4o-mini (Newest Recommended — Fast Vision)", "is_recommended": True},
-                    {"id": "gpt-4o", "name": "gpt-4o (Omni Multimodal)", "is_recommended": False},
-                    {"id": "llama3.2-vision", "name": "llama3.2-vision (Local Ollama Vision)", "is_recommended": False},
-                    {"id": "llava", "name": "llava (Local Ollama Vision)", "is_recommended": False},
-                    {"id": "qwen2.5-vl", "name": "qwen2.5-vl (Local Ollama Vision)", "is_recommended": False},
-                ]
-            default_model = "gpt-4o-mini"
+                if req_provider == "ollama":
+                    models = [
+                        {"id": "llama3.2-vision", "name": "llama3.2-vision (Local Vision)", "is_recommended": True},
+                        {"id": "llava", "name": "llava (Local Vision)", "is_recommended": False},
+                        {"id": "qwen2.5-vl", "name": "qwen2.5-vl (Local Vision)", "is_recommended": False},
+                    ]
+                    default_model = "llama3.2-vision"
+                else:
+                    models = [
+                        {"id": "gpt-4o-mini", "name": "gpt-4o-mini (Recommended — Fast Vision)", "is_recommended": True},
+                        {"id": "gpt-4o", "name": "gpt-4o (Omni Multimodal)", "is_recommended": False},
+                        {"id": "chatgpt-4o-latest", "name": "chatgpt-4o-latest (Latest Omni)", "is_recommended": False},
+                        {"id": "llama3.2-vision", "name": "llama3.2-vision (Local Ollama Vision)", "is_recommended": False},
+                        {"id": "llava", "name": "llava (Local Ollama Vision)", "is_recommended": False},
+                        {"id": "qwen2.5-vl", "name": "qwen2.5-vl (Local Ollama Vision)", "is_recommended": False},
+                    ]
+                    default_model = "gpt-4o-mini"
+
+        if is_live and models:
+            _LIVE_MODELS_CACHE[cache_key] = (now, models)
 
         return {
             "ok": True,
-            "provider": provider,
+            "provider": req_provider,
             "models": models,
             "default_model": default_model,
+            "live": is_live,
         }
 
     @r.post("/settings/rescan")
@@ -1083,5 +1229,39 @@ def get_router(
         except Exception as e:
             logger.error("Failed delivering puzzles: %s", e)
             raise HTTPException(status_code=500, detail=str(e))
+
+    @r.get("/delivery/rss/catalog")
+    def get_rss_catalog(
+        query: str = Query("", description="Keyword search query"),
+        category: str = Query("All", description="Category filter"),
+    ) -> dict[str, Any]:
+        """Get curated list of popular RSS feeds and preset packages."""
+        feeds = search_popular_feeds(query=query, category=category)
+        return {
+            "ok": True,
+            "categories": CATEGORIES,
+            "presets": PRESETS,
+            "feeds": feeds,
+            "total_curated": len(POPULAR_FEEDS),
+        }
+
+    @r.get("/delivery/rss/discover")
+    async def discover_rss_feeds(
+        url: str = Query(..., description="Website URL or domain to auto-discover RSS/Atom feeds from"),
+    ) -> dict[str, Any]:
+        """Auto-discover RSS/Atom feeds from a given website URL or domain."""
+        discovered = await discover_feed_url(url)
+        return {
+            "ok": True,
+            "query": url,
+            "count": len(discovered),
+            "discovered": discovered,
+        }
+
+    @r.post("/delivery/rss/validate")
+    async def validate_rss_feed(payload: FeedValidateRequest) -> dict[str, Any]:
+        """Validate an RSS feed URL and preview its recent articles."""
+        result = await validate_feed(payload.url)
+        return {"ok": True, "result": result}
 
     return r

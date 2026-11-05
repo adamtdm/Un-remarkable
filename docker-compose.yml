@@ -13,3 +13,10 @@ services:
       - RMC_PORT=8099
       - RMC_SYNC_INTERVAL_SECONDS=120
       - RMC_LOG_LEVEL=INFO
+      # Vision OCR & Handwriting extraction settings (pulled live by container)
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - RMC_GEMINI_API_KEY=${RMC_GEMINI_API_KEY:-}
+      - VISION_PROVIDER=${VISION_PROVIDER:-gemini}
+      - VISION_MODEL=${VISION_MODEL:-gemini-flash-lite-latest}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}

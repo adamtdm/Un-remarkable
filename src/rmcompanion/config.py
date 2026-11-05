@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +29,28 @@ class Settings(BaseSettings):
     # Security
     app_password: str = ""
     mcp_bearer_token: str = ""
+
+    # Vision & OCR Settings
+    gemini_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("RMC_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    )
+    openai_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("RMC_OPENAI_API_KEY", "OPENAI_API_KEY"),
+    )
+    openai_base_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("RMC_OPENAI_BASE_URL", "OPENAI_BASE_URL"),
+    )
+    vision_provider: str = Field(
+        default="gemini",
+        validation_alias=AliasChoices("RMC_VISION_PROVIDER", "VISION_PROVIDER"),
+    )
+    vision_model: str = Field(
+        default="gemini-flash-lite-latest",
+        validation_alias=AliasChoices("RMC_VISION_MODEL", "VISION_MODEL", "GEMINI_MODEL"),
+    )
 
     # reMarkable Cloud endpoints (overrideable for tests or proxying)
     rm_auth_host: str = "https://webapp-prod.cloud.remarkable.engineering"

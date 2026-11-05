@@ -8,7 +8,23 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+# Environment files & secret keys (NEVER commit secrets or API keys)
 .env
+.env.*
+!.env.example
+*.env
+*.key
+*.pem
+*.crt
+*.cert
+secrets/
+*token*.json
+*.sqlite
+*.sqlite3
+
+# Docker local overrides
+docker-compose.override.yml
+docker-compose.local.yml
 
 # AI assistants & editor configurations
 .gemini/

@@ -89,6 +89,8 @@ class DeliveryManager:
             include_weather=settings.news_include_weather,
             weather_location=settings.news_weather_location,
             device=settings.news_device,
+            articles_per_feed=settings.news_articles_per_feed,
+            full_body=settings.news_full_body,
         )
 
         folder_id = await self.ensure_folder(settings.news_folder)

@@ -6,8 +6,12 @@ from pydantic import BaseModel, Field
 
 DEFAULT_RSS_FEEDS = [
     "https://feeds.bbci.co.uk/news/rss.xml",
+    "https://www.theguardian.com/world/rss",
+    "https://feeds.npr.org/1001/rss.xml",
     "https://news.ycombinator.com/rss",
     "https://www.theverge.com/rss/index.xml",
+    "https://feeds.arstechnica.com/arstechnica/index",
+    "https://www.nature.com/nature.rss",
 ]
 
 
@@ -23,6 +27,8 @@ class DeliverySettings(BaseModel):
     news_include_wikipedia: bool = True
     news_include_weather: bool = True
     news_weather_location: str = ""
+    news_articles_per_feed: int = 2
+    news_full_body: bool = True
 
     # Crosswords & Puzzles
     puzzles_enabled: bool = False
