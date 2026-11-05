@@ -2428,7 +2428,7 @@ main {
   align-items: center;
   justify-content: flex-start;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x pan-y pinch-zoom;
+  touch-action: none;
 }
 
 .reader-container.is-fullscreen.fit-page #reader-canvas-wrapper {
@@ -2501,7 +2501,7 @@ main {
   pointer-events: none;
   display: flex;
   z-index: 45;
-  touch-action: pan-x pan-y pinch-zoom;
+  touch-action: none;
 }
 
 .reader-container.is-fullscreen .reader-click-zones {

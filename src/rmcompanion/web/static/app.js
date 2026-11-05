@@ -2723,84 +2723,89 @@ if (el.readerContent) {
         const dy = e.touches[0].clientY - readerZoomState.touchStartY;
         readerZoomState.swipeDeltaX = dx;
         readerZoomState.swipeDeltaY = dy;
-        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
           readerZoomState.hasMoved = true;
+          // Prevent mobile browser gesture navigation/history back-swipes when swiping horizontally
+          if (Math.abs(dx) > Math.abs(dy) && e.cancelable) {
+            e.preventDefault();
+          }
         }
       }
     },
     { passive: false }
   );
 
-  el.readerContent.addEventListener(
-    "touchend",
-    (e) => {
-      if (readerZoomState.isPinching && e.touches.length < 2) {
-        readerZoomState.isPinching = false;
-        if (readerZoomState.scale < 1.05) {
-          resetZoom(true);
-        } else {
-          readerZoomState.scale = Math.min(readerZoomState.scale, readerZoomState.maxScale);
-          clampPanBounds();
-          applyZoomTransform(true);
-        }
-      } else if (readerZoomState.isPanning && e.touches.length === 0) {
-        readerZoomState.isPanning = false;
+  const handleTouchEnd = (e) => {
+    if (readerZoomState.isPinching && e.touches.length < 2) {
+      readerZoomState.isPinching = false;
+      if (readerZoomState.scale < 1.05) {
+        resetZoom(true);
+      } else {
+        readerZoomState.scale = Math.min(readerZoomState.scale, readerZoomState.maxScale);
         clampPanBounds();
         applyZoomTransform(true);
-      } else if (
-        e.touches.length === 0 &&
-        readerZoomState.scale <= 1.05 &&
-        readerZoomState.hasMoved
-      ) {
-        const canSwipe = state.pageTurnMode === "swipe" || state.pageTurnMode === "both";
-        const absX = Math.abs(readerZoomState.swipeDeltaX);
-        const absY = Math.abs(readerZoomState.swipeDeltaY);
-        if (canSwipe && absX > 45 && absX > absY * 1.35) {
-          if (readerZoomState.swipeDeltaX < 0) {
-            // Swipe left -> Next page
-            const pages = (state.currentDoc?.pages || []).filter((p) => !p.deleted);
-            if (state.currentPageIdx < pages.length - 1) {
-              state.currentPageIdx++;
-              loadCurrentPage();
-            }
-          } else if (readerZoomState.swipeDeltaX > 0) {
-            // Swipe right -> Previous page
-            if (state.currentPageIdx > 0) {
-              state.currentPageIdx--;
-              loadCurrentPage();
-            }
+      }
+    } else if (readerZoomState.isPanning && e.touches.length === 0) {
+      readerZoomState.isPanning = false;
+      clampPanBounds();
+      applyZoomTransform(true);
+    } else if (e.touches.length === 0 && readerZoomState.scale <= 1.05) {
+      const endTouch = e.changedTouches && e.changedTouches[0];
+      if (endTouch && readerZoomState.touchStartX) {
+        readerZoomState.swipeDeltaX = endTouch.clientX - readerZoomState.touchStartX;
+        readerZoomState.swipeDeltaY = endTouch.clientY - readerZoomState.touchStartY;
+      }
+      const canSwipe = state.pageTurnMode === "swipe" || state.pageTurnMode === "both";
+      const absX = Math.abs(readerZoomState.swipeDeltaX);
+      const absY = Math.abs(readerZoomState.swipeDeltaY);
+      if (canSwipe && absX > 32 && absX > absY * 1.2) {
+        readerZoomState.hasMoved = true;
+        if (readerZoomState.swipeDeltaX < 0) {
+          // Swipe left -> Next page
+          const pages = (state.currentDoc?.pages || []).filter((p) => !p.deleted);
+          if (state.currentPageIdx < pages.length - 1) {
+            state.currentPageIdx++;
+            loadCurrentPage();
+          }
+        } else if (readerZoomState.swipeDeltaX > 0) {
+          // Swipe right -> Previous page
+          if (state.currentPageIdx > 0) {
+            state.currentPageIdx--;
+            loadCurrentPage();
           }
         }
       }
+    }
 
-      // Double-tap to zoom toggle
-      if (e.touches.length === 0 && !readerZoomState.hasMoved) {
-        const now = Date.now();
-        if (now - readerZoomState.lastTapTime < 320) {
-          readerZoomState.lastTapTime = 0;
-          if (readerZoomState.scale > 1.1) {
-            resetZoom(true);
-          } else {
-            const touch = e.changedTouches && e.changedTouches[0];
-            if (touch) {
-              zoomTo(2.2, touch.clientX, touch.clientY, true);
-            } else {
-              zoomTo(2.2, window.innerWidth / 2, window.innerHeight / 2, true);
-            }
-          }
+    // Double-tap to zoom toggle
+    if (e.touches.length === 0 && !readerZoomState.hasMoved) {
+      const now = Date.now();
+      if (now - readerZoomState.lastTapTime < 320) {
+        readerZoomState.lastTapTime = 0;
+        if (readerZoomState.scale > 1.1) {
+          resetZoom(true);
         } else {
-          readerZoomState.lastTapTime = now;
+          const touch = e.changedTouches && e.changedTouches[0];
+          if (touch) {
+            zoomTo(2.2, touch.clientX, touch.clientY, true);
+          } else {
+            zoomTo(2.2, window.innerWidth / 2, window.innerHeight / 2, true);
+          }
         }
+      } else {
+        readerZoomState.lastTapTime = now;
       }
+    }
 
-      if (readerZoomState.hasMoved && e.touches.length === 0) {
-        setTimeout(() => {
-          readerZoomState.hasMoved = false;
-        }, 320);
-      }
-    },
-    { passive: true }
-  );
+    if (readerZoomState.hasMoved && e.touches.length === 0) {
+      setTimeout(() => {
+        readerZoomState.hasMoved = false;
+      }, 320);
+    }
+  };
+
+  el.readerContent.addEventListener("touchend", handleTouchEnd, { passive: true });
+  el.readerContent.addEventListener("touchcancel", handleTouchEnd, { passive: true });
 
   // Wheel / Trackpad pinch-to-zoom support
   el.readerContent.addEventListener(
