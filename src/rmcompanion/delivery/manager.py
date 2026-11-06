@@ -192,16 +192,22 @@ class DeliveryManager:
             cur_time_str = now.strftime("%H:%M")
 
             # Check newspaper
-            if settings.news_enabled and settings.last_news_delivery != today_str:
-                if cur_time_str >= settings.news_delivery_time:
-                    logger.info("Scheduled time reached for Daily Newspaper (%s >= %s)", cur_time_str, settings.news_delivery_time)
-                    await self.deliver_newspaper(force=False)
+            if (
+                settings.news_enabled
+                and settings.last_news_delivery != today_str
+                and cur_time_str >= settings.news_delivery_time
+            ):
+                logger.info("Scheduled time reached for Daily Newspaper (%s >= %s)", cur_time_str, settings.news_delivery_time)
+                await self.deliver_newspaper(force=False)
 
             # Check puzzles
-            if settings.puzzles_enabled and settings.last_puzzles_delivery != today_str:
-                if cur_time_str >= settings.puzzles_delivery_time:
-                    logger.info("Scheduled time reached for Daily Puzzles (%s >= %s)", cur_time_str, settings.puzzles_delivery_time)
-                    await self.deliver_puzzles(force=False)
+            if (
+                settings.puzzles_enabled
+                and settings.last_puzzles_delivery != today_str
+                and cur_time_str >= settings.puzzles_delivery_time
+            ):
+                logger.info("Scheduled time reached for Daily Puzzles (%s >= %s)", cur_time_str, settings.puzzles_delivery_time)
+                await self.deliver_puzzles(force=False)
 
         except Exception as e:
             logger.error("Error during scheduled delivery check: %s", e)

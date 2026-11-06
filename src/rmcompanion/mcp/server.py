@@ -8,6 +8,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.utilities.types import Image
 
+from rmcompanion import __version__
 from rmcompanion.config import Settings, get_settings
 from rmcompanion.editor.notebook_editor import NotebookEditor
 from rmcompanion.intelligence.task_extractor import TaskExtractor
@@ -39,11 +40,20 @@ def create_mcp_server(
         task_extractor=task_extractor,
     )
 
+    # Write tools are async so cloud pushes can be scheduled on the running event loop.
+    def _push_pdf(res: dict[str, Any], title: str) -> None:
+        if sync_engine:
+            sync_engine.push_notebook_pdf(res["id"], title)
+
+    def _push_tasks(res: dict[str, Any]) -> None:
+        if sync_engine:
+            sync_engine.spawn(sync_engine.push_local_notebook(res["id"]))
+
     server = MCPServer(
         name="remarkable-companion",
         title="reMarkable Companion",
         description="Search, read, and inspect handwritten notebooks, PDFs, and notes mirrored from your reMarkable tablet.",
-        version="0.1.0",
+        version=__version__,
     )
 
     @server.tool(
@@ -209,14 +219,15 @@ def create_mcp_server(
     )
     def sync_status() -> dict[str, Any]:
         """Get current synchronization status."""
+        blob_count, blob_bytes = app_blobs.stats()
         return {
             "status": app_db.get_state("sync_status", "idle"),
             "last_sync_time": float(app_db.get_state("last_sync_time", "0")),
             "last_generation": int(app_db.get_state("last_generation", "0")),
             "last_root_hash": app_db.get_state("last_root_hash", ""),
             "last_error": app_db.get_state("sync_error", ""),
-            "total_blobs": app_blobs.stats()[0],
-            "total_blob_bytes": app_blobs.stats()[1],
+            "total_blobs": blob_count,
+            "total_blob_bytes": blob_bytes,
         }
 
     @server.tool(
@@ -238,13 +249,15 @@ def create_mcp_server(
         name="complete_task",
         description="Mark an action item or task as completed.",
     )
-    def complete_task(task_id: str) -> dict[str, Any]:
+    async def complete_task(task_id: str) -> dict[str, Any]:
         """Mark task completed.
 
         Args:
             task_id: The ID of the task to complete.
         """
         ok = app_db.set_task_status(task_id, "completed")
+        if ok and sync_engine:
+            sync_engine.refresh_tasks_notebook(app_editor)
         return {"ok": ok, "task_id": task_id, "status": "completed"}
 
     @server.tool(
@@ -265,20 +278,22 @@ def create_mcp_server(
         name="append_task",
         description="Append an action item or task checkbox to the synced reMarkable Tasks notebook.",
     )
-    def append_task(text: str, notebook_title: str = "Tasks") -> dict[str, Any]:
+    async def append_task(text: str, notebook_title: str = "Tasks") -> dict[str, Any]:
         """Append a task to the Tasks notebook.
 
         Args:
             text: The task description to add (e.g. 'Order stylus replacement tips').
             notebook_title: Target notebook title (defaults to 'Tasks').
         """
-        return app_editor.append_task_to_tasks_notebook(task_text=text, notebook_title=notebook_title)
+        res = app_editor.append_task_to_tasks_notebook(task_text=text, notebook_title=notebook_title)
+        _push_tasks(res)
+        return res
 
     @server.tool(
         name="quick_capture",
         description="Quickly capture a note entry or action item to your reMarkable tablet.",
     )
-    def quick_capture(
+    async def quick_capture(
         text: str,
         is_task: bool = True,
         notebook_title: str = "",
@@ -291,15 +306,19 @@ def create_mcp_server(
             notebook_title: Target notebook title (defaults to 'Tasks' for tasks, 'Quick Notes' for notes).
         """
         if is_task:
-            return app_editor.append_task_to_tasks_notebook(task_text=text, notebook_title=notebook_title or "Tasks")
+            res = app_editor.append_task_to_tasks_notebook(task_text=text, notebook_title=notebook_title or "Tasks")
+            _push_tasks(res)
         else:
-            return app_editor.append_note_to_notebook(text=text, notebook_title=notebook_title or "Quick Notes")
+            title = notebook_title or "Quick Notes"
+            res = app_editor.append_note_to_notebook(text=text, notebook_title=title)
+            _push_pdf(res, title)
+        return res
 
     @server.tool(
         name="update_page_text",
         description="Update or replace typed text on a specific page of a reMarkable notebook.",
     )
-    def update_page_text(doc_id: str, page_idx: int, text: str) -> dict[str, Any]:
+    async def update_page_text(doc_id: str, page_idx: int, text: str) -> dict[str, Any]:
         """Update typed text of a page.
 
         Args:
@@ -307,7 +326,13 @@ def create_mcp_server(
             page_idx: Zero-based page index.
             text: The full new typed text for the page.
         """
-        return app_editor.update_page_typed_text(doc_id=doc_id, page_idx=page_idx, text=text)
+        res = app_editor.update_page_typed_text(doc_id=doc_id, page_idx=page_idx, text=text)
+        doc = app_db.get_document(doc_id)
+        if sync_engine and doc:
+            title = doc.get("visible_name", "document")
+            pid = "" if title.strip().lower() == "tasks" else doc.get("parent_id", "")
+            sync_engine.push_notebook_pdf(doc_id, title, parent_id=pid)
+        return res
 
     @server.tool(
         name="list_folders",
@@ -323,38 +348,47 @@ def create_mcp_server(
         name="create_folder",
         description="Create a new folder or nested subfolder in the reMarkable library.",
     )
-    def create_folder(name: str, parent_id: str = "") -> dict[str, Any]:
+    async def create_folder(name: str, parent_id: str = "") -> dict[str, Any]:
         """Create a folder.
 
         Args:
             name: Folder visible name.
             parent_id: Optional parent folder UUID for nested folders, or empty string for root.
         """
-        return app_editor.create_folder(name=name, parent_id=parent_id)
+        folder = app_editor.create_folder(name=name, parent_id=parent_id)
+        if sync_engine:
+            sync_engine.spawn(sync_engine.create_remote_folder(folder["id"], name, parent_id))
+        return folder
 
     @server.tool(
         name="move_document",
         description="Move a document or folder to another folder or back to root in the reMarkable library.",
     )
-    def move_document(doc_id: str, parent_id: str = "") -> dict[str, Any]:
+    async def move_document(doc_id: str, parent_id: str = "") -> dict[str, Any]:
         """Move document or folder.
 
         Args:
             doc_id: UUID of document or folder to move.
             parent_id: Target folder UUID, or empty string "" for root library.
         """
-        return app_editor.move_document(doc_id=doc_id, new_parent_id=parent_id)
+        res = app_editor.move_document(doc_id=doc_id, new_parent_id=parent_id)
+        if sync_engine:
+            sync_engine.spawn(sync_engine.move_remote_document(doc_id, parent_id))
+        return res
 
     @server.tool(
         name="delete_document",
         description="Delete a document or folder (and all nested contents) from the reMarkable library.",
     )
-    def delete_document(doc_id: str) -> dict[str, Any]:
+    async def delete_document(doc_id: str) -> dict[str, Any]:
         """Delete document or folder.
 
         Args:
             doc_id: UUID of document or folder to delete.
         """
-        return app_editor.delete_document(doc_id=doc_id)
+        res = app_editor.delete_document(doc_id=doc_id)
+        if sync_engine:
+            sync_engine.spawn(sync_engine.delete_remote_document(doc_id))
+        return res
 
     return server

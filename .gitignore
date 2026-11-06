@@ -28,6 +28,8 @@ docker-compose.local.yml
 
 # AI assistants & editor configurations
 .gemini/
+.agents/
+skills-lock.json
 .claude/
 .cursor/
 .vscode/

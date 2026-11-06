@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import logging
 import time
@@ -78,11 +79,8 @@ class VisionProvider:
             resp = await client.post(url, headers=headers, params=params, json=payload)
             if resp.status_code != 200:
                 err_detail = resp.text
-                try:
-                    err_json = resp.json()
-                    err_detail = err_json.get("error", {}).get("message", err_detail)
-                except Exception:
-                    pass
+                with contextlib.suppress(ValueError):  # error body may not be JSON
+                    err_detail = resp.json().get("error", {}).get("message", err_detail)
                 raise RuntimeError(f"Gemini API error ({resp.status_code}): {err_detail}")
 
             data = resp.json()
@@ -158,10 +156,8 @@ class VisionProvider:
                 resp = await client.post(url, headers=headers, params=params, json=payload)
                 if resp.status_code != 200:
                     err_msg = resp.text
-                    try:
+                    with contextlib.suppress(ValueError):  # error body may not be JSON
                         err_msg = resp.json().get("error", {}).get("message", err_msg)
-                    except Exception:
-                        pass
                     raise RuntimeError(f"Gemini API error ({resp.status_code}): {err_msg}")
                 data = resp.json()
                 candidates = data.get("candidates", [])
@@ -224,9 +220,7 @@ def get_effective_vision_config(db: Any = None, settings: Any = None) -> dict[st
 
     # Resolve API key
     db_key = ""
-    if db_conf.get("provider") == provider:
-        db_key = db_conf.get("api_key", "").strip()
-    elif not db_conf.get("provider"):
+    if db_conf.get("provider") == provider or not db_conf.get("provider"):
         db_key = db_conf.get("api_key", "").strip()
 
     if db_key:

@@ -3,7 +3,7 @@
 import pytest
 
 from rmcompanion.config import Settings
-from rmcompanion.editor.notebook_editor import NotebookEditor, extract_page_typed_text
+from rmcompanion.editor.notebook_editor import NotebookEditor
 from rmcompanion.intelligence.task_extractor import TaskExtractor
 from rmcompanion.render.exporter import Exporter
 from rmcompanion.store.blob_store import BlobStore
@@ -86,7 +86,6 @@ def test_update_page_typed_text(test_env):
 
 def test_tasks_notebook_sync(test_env):
     editor = test_env["editor"]
-    db = test_env["db"]
 
     # Append tasks to dedicated "Tasks" notebook
     res1 = editor.append_task_to_tasks_notebook("Order replacement pen tips")
@@ -132,6 +131,7 @@ Welcome to page 2.
 
 def test_api_editor_endpoints(test_env):
     from fastapi.testclient import TestClient
+
     from rmcompanion.web.app import create_app
 
     settings = Settings(data_dir=test_env["db"].settings.data_dir, cache_dir=test_env["db"].settings.cache_dir)
@@ -267,6 +267,7 @@ def test_delete_document_and_recursive_folder(test_env):
 
 def test_api_folder_and_move_delete_endpoints(test_env):
     from fastapi.testclient import TestClient
+
     from rmcompanion.web.app import create_app
 
     settings = Settings(data_dir=test_env["db"].settings.data_dir)

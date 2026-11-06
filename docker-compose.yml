@@ -4,15 +4,16 @@ services:
     container_name: rmcompanion
     restart: unless-stopped
     ports:
-      - "8099:8099"
+      - "${RMC_PORT:-8099}:8099"
     volumes:
       - ./data:/data
     environment:
       - RMC_DATA_DIR=/data
       - RMC_HOST=0.0.0.0
       - RMC_PORT=8099
-      - RMC_SYNC_INTERVAL_SECONDS=120
-      - RMC_LOG_LEVEL=INFO
+      - RMC_SYNC_INTERVAL_SECONDS=${RMC_SYNC_INTERVAL_SECONDS:-120}
+      - RMC_MAX_CONCURRENT_DOWNLOADS=${RMC_MAX_CONCURRENT_DOWNLOADS:-6}
+      - RMC_LOG_LEVEL=${RMC_LOG_LEVEL:-INFO}
       # Vision OCR & Handwriting extraction settings (pulled live by container)
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - RMC_GEMINI_API_KEY=${RMC_GEMINI_API_KEY:-}

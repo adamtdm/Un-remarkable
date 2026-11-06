@@ -4,12 +4,10 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import httpx
-import pytest
 from fastapi.testclient import TestClient
 
 from rmcompanion.config import Settings
 from rmcompanion.intelligence.provider import (
-    VisionProvider,
     get_effective_vision_config,
     get_vision_provider,
 )

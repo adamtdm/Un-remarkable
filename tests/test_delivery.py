@@ -5,13 +5,13 @@ from __future__ import annotations
 import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 import pymupdf
+import pytest
 
+from rmcompanion.delivery.manager import DeliveryManager
 from rmcompanion.delivery.models import DeliverySettings
 from rmcompanion.delivery.newspaper import DailyNewspaperGenerator
 from rmcompanion.delivery.puzzles import DailyPuzzlesGenerator, crop_pdf_to_content
-from rmcompanion.delivery.manager import DeliveryManager
 from rmcompanion.delivery.rss_directory import (
     CATEGORIES,
     POPULAR_FEEDS,
@@ -155,8 +155,9 @@ async def test_rss_validate_and_discover_mocked():
 
 def test_rss_api_endpoints():
     from fastapi.testclient import TestClient
-    from rmcompanion.web.app import create_app
+
     from rmcompanion.config import Settings
+    from rmcompanion.web.app import create_app
 
     app = create_app(Settings())
     client = TestClient(app)
@@ -179,8 +180,9 @@ def test_rss_api_endpoints():
 
 @pytest.mark.asyncio
 async def test_article_extractor():
-    from rmcompanion.delivery.article_extractor import extract_article_content
     import httpx
+
+    from rmcompanion.delivery.article_extractor import extract_article_content
 
     # 1. Fallback when URL empty
     async with httpx.AsyncClient() as client:

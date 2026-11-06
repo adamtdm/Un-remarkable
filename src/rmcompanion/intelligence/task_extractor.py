@@ -89,11 +89,13 @@ def extract_tasks_from_text(text: str) -> list[dict[str, Any]]:
                 else:
                     task_text = seg
                 task_text = re.sub(r"^[-•]\s*", "", task_text).strip()
-                if task_text and len(task_text) > 2:
-                    if not any(t["text"].lower() == task_text.lower() for t in tasks):
-                        tasks.append({"text": task_text, "marker": "star", "status": "open"})
+                if len(task_text) > 2 and not any(t["text"].lower() == task_text.lower() for t in tasks):
+                    tasks.append({"text": task_text, "marker": "star", "status": "open"})
 
     return tasks
+
+
+TASKS_NOTEBOOK_STATE_KEY = "tasks_notebook_id"
 
 
 class TaskExtractor:
@@ -111,8 +113,14 @@ class TaskExtractor:
         self.exporter = exporter
         self.vision_provider = vision_provider
 
+    def is_tasks_notebook(self, doc_id: str) -> bool:
+        """The consolidated Tasks notebook is generated from the task list, so never mine it for tasks."""
+        return doc_id == self.db.get_state(TASKS_NOTEBOOK_STATE_KEY, "")
+
     def extract_from_typed_page(self, doc_id: str, page_idx: int, typed_text: str) -> list[dict[str, Any]]:
         """Extract tasks from typed text and save into database."""
+        if self.is_tasks_notebook(doc_id):
+            return []
         extracted = extract_tasks_from_text(typed_text)
         saved: list[dict[str, Any]] = []
 
@@ -157,15 +165,13 @@ class TaskExtractor:
         png_bytes = self.exporter.render_page_png(doc_id, page_idx=page_idx, dark_mode=False)
 
         prompt = (
-            "Analyze this notebook page and extract all to-do items and tasks marked with:\n"
-            "1. An asterisk (*)\n"
-            "2. A checkbox ([ ], [x], ☐, or ☑)\n"
-            "3. The word 'TODO' or 'TASK'\n"
-            "4. Handwritten bullet points indicating action items.\n\n"
+            "Analyze this handwritten notebook page and extract every task marked with an asterisk (*) "
+            "written before it. Ignore everything else, including plain bullet points and checkboxes.\n\n"
             "Rules:\n"
             "- A task starting with * runs until the next *, a sentence-ending period, or a line/paragraph break.\n"
+            "- Status is \"completed\" only if the task is crossed out or struck through, otherwise \"open\".\n"
             "- Return strictly valid JSON array without Markdown code blocks:\n"
-            '[{"text": "task text", "marker": "star"|"checkbox"|"todo", "status": "open"|"completed"}]\n'
+            '[{"text": "task text", "marker": "star", "status": "open"|"completed"}]\n'
             "If no tasks are present on this page, return []"
         )
 
@@ -213,14 +219,20 @@ class TaskExtractor:
             logger.warning("Vision OCR task extraction failed for %s p%d: %s", doc_id, page_idx, e)
             return []
 
-    async def scan_document_for_tasks(self, doc_id: str) -> list[dict[str, Any]]:
-        """Scan all pages of a document for tasks (typed text + vision if available)."""
+    async def scan_document_for_tasks(self, doc_id: str, page_idxs: list[int] | None = None) -> list[dict[str, Any]]:
+        """Scan a document for tasks (typed text + vision if available).
+
+        page_idxs limits the scan to those pages, so a sync only pays for vision OCR on pages that changed.
+        """
         doc = self.db.get_document(doc_id)
-        if not doc or doc.get("deleted"):
+        if not doc or doc.get("deleted") or self.is_tasks_notebook(doc_id):
             return []
 
         all_tasks: list[dict[str, Any]] = []
-        pages = doc.get("pages", [])
+        pages = [
+            p for p in doc.get("pages", [])
+            if not p.get("deleted") and (page_idxs is None or p.get("page_idx", 0) in page_idxs)
+        ]
 
         # 1. First, check typed text indexed in FTS5
         with self.db.connect() as conn:
@@ -230,15 +242,14 @@ class TaskExtractor:
             )
             for row in cur.fetchall():
                 p_idx = row["page_idx"]
-                text = row["content"]
-                tasks = self.extract_from_typed_page(doc_id, p_idx, text)
+                if page_idxs is not None and p_idx not in page_idxs:
+                    continue
+                tasks = self.extract_from_typed_page(doc_id, p_idx, row["content"])
                 all_tasks.extend(tasks)
 
         # 2. If vision provider is configured, scan handwriting pages
         if self.vision_provider and not self.db.is_excluded_from_search(doc_id):
             for p in pages:
-                if p.get("deleted"):
-                    continue
                 p_idx = p.get("page_idx", 0)
                 try:
                     vision_tasks = await self.extract_from_handwriting_page(doc_id, p_idx)

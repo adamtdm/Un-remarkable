@@ -7,13 +7,19 @@ import hashlib
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from rmcompanion.cloud.auth import AuthManager
 from rmcompanion.cloud.client import RMCloudClient
-from rmcompanion.cloud.index import Entry, compute_doc_index_hash, compute_root_hash, format_index
+from rmcompanion.cloud.index import (
+    Entry,
+    compute_doc_index_hash,
+    compute_root_hash,
+    format_index,
+)
 from rmcompanion.config import Settings, get_settings
+from rmcompanion.intelligence.task_extractor import TASKS_NOTEBOOK_STATE_KEY
 from rmcompanion.render.exporter import Exporter
 from rmcompanion.store.blob_store import BlobStore
 from rmcompanion.store.db import Database
@@ -34,6 +40,7 @@ class SyncEngine:
         on_doc_indexed: Callable[[str, str], None] | None = None,
         exporter: Exporter | None = None,
         delivery_manager: Any = None,
+        on_pages_changed: Callable[[dict[str, list[int]]], Awaitable[None]] | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.auth = auth or AuthManager(self.settings)
@@ -43,8 +50,10 @@ class SyncEngine:
         self.on_doc_indexed = on_doc_indexed
         self.exporter = exporter or Exporter(db=self.db, blob_store=self.blob_store, settings=self.settings)
         self.delivery_manager = delivery_manager
+        self.on_pages_changed = on_pages_changed
 
         self._task: asyncio.Task[None] | None = None
+        self._bg_tasks: set[asyncio.Task[Any]] = set()
         self._running = False
         self._sync_lock = asyncio.Lock()
         self._progress: dict[str, Any] = {
@@ -129,6 +138,7 @@ class SyncEngine:
                 self.blob_store.put(root_hash, root_raw, verify=True)
 
                 doc_tuples: list[tuple[str, str]] = []
+                changed_pages: dict[str, list[int]] = {}
                 updated_count = 0
                 self._progress["stage"] = "syncing_documents"
                 self._progress["total_docs"] = len(root_entries)
@@ -148,7 +158,9 @@ class SyncEngine:
                     if existing_doc and existing_doc.get("doc_hash") == doc_hash:
                         continue
 
-                    await self._sync_document(doc_id, doc_hash, name_hint=doc_name)
+                    page_idxs = await self._sync_document(doc_id, doc_hash, name_hint=doc_name)
+                    if page_idxs:
+                        changed_pages[doc_id] = page_idxs
                     updated_count += 1
                     self._progress["docs_updated"] = updated_count
 
@@ -162,6 +174,10 @@ class SyncEngine:
                 self._progress["stage"] = "idle"
                 self._progress["current_file"] = ""
                 self._progress["current_doc_name"] = ""
+
+                # Skipped on the first sync of a library: that would OCR every page ever written.
+                if changed_pages and last_root and self.on_pages_changed:
+                    self.spawn(self.on_pages_changed(changed_pages))
 
                 logger.info(
                     "Sync complete in %.2fs: %d documents in cloud, %d updated",
@@ -189,9 +205,14 @@ class SyncEngine:
                 self._progress["stage"] = "error"
                 return {"status": "error", "error": str(e)}
 
-    async def _sync_document(self, doc_id: str, doc_hash: str, name_hint: str = "") -> None:
-        """Fetch index and all subfiles for a single document."""
+    async def _sync_document(self, doc_id: str, doc_hash: str, name_hint: str = "") -> list[int]:
+        """Fetch index and all subfiles for a single document.
+
+        Returns the indexes of pages whose handwriting (.rm file) is new or changed.
+        """
         logger.debug("Syncing document %s (hash %s)", doc_id, doc_hash[:12])
+        old_doc = self.db.get_document(doc_id)
+        old_files = {f["file_id"]: f["blob_hash"] for f in (old_doc or {}).get("files", [])}
         file_entries, _, doc_index_raw = await self.client.get_doc_index(doc_hash, doc_id)
         # Note: Document schema indexes are addressed by HashEntries (Merkle hash of children)
         self.blob_store.put(doc_hash, doc_index_raw, verify=False)
@@ -325,6 +346,14 @@ class SyncEngine:
         self.db.set_document_pages(doc_hash, pages)
         self.db.set_document_tags(doc_id, tags)
 
+        new_files = {f["file_id"]: f["blob_hash"] for f in files_meta}
+        changed_page_idxs = [
+            p["page_idx"] for p in pages
+            if not p["deleted"]
+            and (rm := new_files.get(f"{doc_id}/{p['page_id']}.rm"))
+            and rm != old_files.get(f"{doc_id}/{p['page_id']}.rm")
+        ]
+
         self._add_recent_activity({
             "timestamp": time.time(),
             "doc_id": doc_id,
@@ -346,6 +375,8 @@ class SyncEngine:
             except Exception as e:
                 logger.warning("Error running on_doc_indexed callback for %s: %s", doc_id, e)
 
+        return [] if doc_record["deleted"] else changed_page_idxs
+
     async def push_document(
         self,
         file_bytes: bytes,
@@ -365,7 +396,7 @@ class SyncEngine:
                 file_type=file_type,
             )
             # Schedule immediate sync cycle to ingest the new cloud document
-            asyncio.create_task(self.sync_once())
+            self.spawn(self.sync_once())
             return {"status": "ok", "result": res}
         except Exception as e:
             logger.error("Failed to push document %s to reMarkable Cloud: %s", filename, e)
@@ -547,6 +578,69 @@ class SyncEngine:
             logger.warning("Failed to delete remote document %s on cloud: %s", doc_id, e)
             return False
 
+    def refresh_tasks_notebook(self, editor: Any, title: str | None = None) -> dict[str, Any]:
+        """Rebuild the consolidated Tasks notebook and update it in the cloud. Call on the event loop.
+
+        With no title, keeps the notebook's current name (or "Tasks" the first time).
+        """
+        if title is None:
+            known = self.db.get_state(TASKS_NOTEBOOK_STATE_KEY, "")
+            title = ((self.db.get_document(known) or {}).get("visible_name") if known else None) or "Tasks"
+        res = editor.sync_tasks_to_notebook(title)
+        self.spawn(self.push_local_notebook(res["id"]))
+        return res
+
+    async def push_local_notebook(self, doc_id: str) -> bool:
+        """Upload a locally built notebook to the cloud under its own ID, replacing any older copy.
+
+        Used for generated notebooks (the consolidated Tasks notebook) so the tablet keeps one
+        document that updates in place.
+        """
+        if not self.auth.tokens.is_authenticated:
+            return False
+        doc = self.db.get_document(doc_id)
+        if not doc:
+            return False
+
+        try:
+            files = doc.get("files", [])
+            for f in files:
+                await self.client.put_blob(f["blob_hash"], self.blob_store.get(f["blob_hash"]), f["file_id"])
+
+            file_entries = [
+                Entry(hash=f["blob_hash"], type="0", doc_id=f["file_id"], subfiles=0, size=f["size"]) for f in files
+            ]
+            doc_schema_bytes = format_index(file_entries, schema="4", doc_id=doc_id).encode("utf-8")
+            new_doc_hash = hashlib.sha256(doc_schema_bytes).hexdigest()
+            await self.client.put_blob(
+                new_doc_hash, doc_schema_bytes, f"{doc_id}.docSchema", content_type="text/plain; charset=UTF-8"
+            )
+
+            root_hash, gen, schema = await self.client.get_root()
+            entries, _, _ = await self.client.get_root_index(root_hash)
+            doc_entry = Entry(
+                hash=new_doc_hash,
+                type="0",
+                doc_id=doc_id,
+                subfiles=len(file_entries),
+                size=sum(e.size for e in file_entries),
+            )
+            entries = [e for e in entries if e.doc_id != doc_id] + [doc_entry]
+            new_root_bytes = format_index(entries, schema=schema, doc_id=".").encode("utf-8")
+            new_root_hash = compute_root_hash(new_root_bytes)
+            await self.client.put_blob(
+                new_root_hash, new_root_bytes, "root.docSchema", content_type="text/plain; charset=UTF-8"
+            )
+            await self.client.update_root(new_root_hash, gen, broadcast=True)
+            # Not recording the new root as synced: the next sync pulls it back, so the local
+            # record matches exactly what the cloud holds.
+            self.trigger()
+            logger.info("Pushed notebook %s (%s) to reMarkable Cloud", doc.get("visible_name"), doc_id)
+            return True
+        except Exception as e:
+            logger.warning("Failed to push notebook %s to cloud: %s", doc_id, e)
+            return False
+
     async def update_remote_position(self, doc_id: str, page_idx: int) -> bool:
         """Update lastOpenedPage in cloud metadata and content blobs, then broadcast root update."""
         if not self.auth.tokens.is_authenticated:
@@ -691,7 +785,36 @@ class SyncEngine:
     def trigger(self) -> None:
         """Trigger an immediate background sync pass if not already syncing."""
         if not self._progress.get("is_syncing", False):
-            asyncio.create_task(self.sync_once())
+            self.spawn(self.sync_once())
+
+    def spawn(self, coro: Any) -> None:
+        """Run a cloud push in the background. Must be called on the event loop.
+
+        Keeps a reference to the task: asyncio only holds weak ones, so an
+        unreferenced task can be garbage collected mid-run and the push lost.
+        """
+        if not self.auth.tokens.is_authenticated:
+            coro.close()
+            return
+        task = asyncio.get_running_loop().create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+    def push_notebook_pdf(self, doc_id: str, title: str, parent_id: str = "") -> None:
+        """Render a local notebook to PDF and upload it to the cloud in the background.
+
+        shortcut: each call uploads a new cloud document, so repeated pushes of the
+        same notebook (e.g. "Quick Notes") leave several copies on the tablet. The Tasks
+        notebook avoids this with push_local_notebook.
+        """
+        if not self.auth.tokens.is_authenticated:
+            return
+        try:
+            pdf_bytes = self.exporter.export_annotated_pdf(doc_id)
+        except Exception as e:
+            logger.warning("Could not export %s for cloud push: %s", title, e)
+            return
+        self.spawn(self.push_document(pdf_bytes, title, parent_id=parent_id))
 
     def stop(self) -> None:
         """Stop background sync loop."""

@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import datetime
-import io
 import logging
 import random
-from typing import Any
 
 import httpx
 import pymupdf

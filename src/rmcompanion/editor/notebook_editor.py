@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import binascii
 import hashlib
 import io
 import json
@@ -12,15 +11,67 @@ import uuid
 from typing import Any
 
 import rmscene
-from rmscene import CrdtId, CrdtSequence, CrdtSequenceItem, LwwValue, RootTextBlock, scene_items as si
+from rmscene import CrdtId, CrdtSequence, CrdtSequenceItem, LwwValue, RootTextBlock
+from rmscene import scene_items as si
 from rmscene.text import TextDocument
 
 from rmcompanion.cloud.index import Entry, compute_doc_index_hash
-from rmcompanion.intelligence.task_extractor import TaskExtractor
+from rmcompanion.intelligence.task_extractor import (
+    TASKS_NOTEBOOK_STATE_KEY,
+    TaskExtractor,
+)
 from rmcompanion.store.blob_store import BlobStore
 from rmcompanion.store.db import Database
 
 logger = logging.getLogger(__name__)
+
+def page_order_key(idx: int) -> str:
+    """Page position string for .content cPages. The tablet orders pages by sorting these as
+    text, so they must have a fixed width: "ba10" would sort before "ba2"."""
+    letters = ""
+    for _ in range(3):
+        letters = chr(ord("a") + idx % 26) + letters
+        idx //= 26
+    return "b" + letters
+
+
+# Typed lines that fit on one tablet page with room for long tasks to wrap.
+TASK_PAGE_LINES = 18
+
+
+def layout_task_pages(title: str, tasks: list[dict[str, Any]], max_lines: int = TASK_PAGE_LINES) -> list[str]:
+    """Lay out open tasks as typed-text pages, grouped under the notebook each came from.
+
+    A group that runs past the end of a page continues on the next page under a repeated heading.
+    """
+    def _key(t: dict[str, Any]) -> tuple[int, str, float]:
+        name = t.get("doc_name") or ""
+        return (0 if not name else 1, name.lower(), t.get("created_at") or 0.0)
+
+    pages: list[list[str]] = [[]]
+    last_source: str | None = None
+    for t in sorted(tasks, key=_key):
+        source = t.get("doc_name") or "Captured"
+        page = pages[-1]
+        new_group = source != last_source or not page
+        needed = 1 + (1 if new_group else 0) + (1 if new_group and page else 0)
+        if page and len(page) + needed > max_lines:
+            pages.append([])
+            page = pages[-1]
+            new_group = True
+        if new_group:
+            if page:
+                page.append("")
+            page.append(source)
+        page.append(f"[ ] {t.get('clean_text', '')}")
+        last_source = source
+
+    if not tasks:
+        pages[0].append("No open tasks.")
+    return [
+        f"{title} - {len(tasks)} open - page {i}/{len(pages)}\n\n" + "\n".join(lines)
+        for i, lines in enumerate(pages, 1)
+    ]
 
 
 def extract_page_typed_text(rm_bytes: bytes) -> str:
@@ -119,10 +170,14 @@ class NotebookEditor:
         initial_text: str = "",
         parent_id: str = "",
         pages_content: list[str] | None = None,
+        doc_id: str = "",
     ) -> dict[str, Any]:
-        """Create a new native reMarkable notebook with one or more pages."""
+        """Create a native reMarkable notebook with one or more pages.
+
+        Pass an existing doc_id to rebuild that notebook in place (same ID locally and in the cloud).
+        """
         now_ms = str(int(time.time() * 1000))
-        doc_id = str(uuid.uuid4())
+        doc_id = doc_id or str(uuid.uuid4())
 
         # Determine page contents
         if pages_content is not None and len(pages_content) > 0:
@@ -159,7 +214,7 @@ class NotebookEditor:
             })
             c_pages_list.append({
                 "id": p_id,
-                "idx": {"timestamp": f"1:{idx + 1}", "value": f"ba{idx}" if idx > 0 else "ba"},
+                "idx": {"timestamp": f"1:{idx + 1}", "value": page_order_key(idx)},
                 "template": {"timestamp": "1:1", "value": "P Blank"},
             })
 
@@ -347,8 +402,8 @@ class NotebookEditor:
         if meta_key in file_map and self.blob_store.has(file_map[meta_key]["blob_hash"]):
             try:
                 meta_dict.update(json.loads(self.blob_store.get(file_map[meta_key]["blob_hash"]).decode("utf-8")))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Unreadable metadata for %s, rewriting it: %s", doc_id, e)
         meta_dict["lastModified"] = now_ms
         meta_dict["lastOpened"] = now_ms
         meta_dict["lastOpenedPage"] = page_idx
@@ -470,9 +525,12 @@ class NotebookEditor:
                     if 0 <= page_idx < len(c_pages):
                         cp = c_pages[page_idx]
                         page_id = cp.get("id", "") if isinstance(cp, dict) else str(cp)
-                elif "pages" in content_dict and isinstance(content_dict["pages"], list):
-                    if 0 <= page_idx < len(content_dict["pages"]):
-                        page_id = str(content_dict["pages"][page_idx])
+                elif (
+                    "pages" in content_dict
+                    and isinstance(content_dict["pages"], list)
+                    and 0 <= page_idx < len(content_dict["pages"])
+                ):
+                    page_id = str(content_dict["pages"][page_idx])
 
                 if "cPages" in content_dict and isinstance(content_dict["cPages"], dict) and page_id:
                     if "lastOpened" not in content_dict["cPages"] or not isinstance(content_dict["cPages"]["lastOpened"], dict):
@@ -544,37 +602,23 @@ class NotebookEditor:
         task_text: str,
         notebook_title: str = "Tasks",
     ) -> dict[str, Any]:
-        """Append a task checkbox item to a dedicated reMarkable notebook."""
-        docs = self.db.list_documents(include_deleted=False)
-        target_doc = next(
-            (d for d in docs if d.get("visible_name") == notebook_title and d.get("type") == "DocumentType"),
-            None,
-        )
-
-        task_line = f"- [ ] {task_text.strip()}"
-
-        if not target_doc:
-            # Create a brand new Tasks notebook on main page (root)
-            initial = f"# {notebook_title}\n\n{task_line}\n"
-            return self.create_notebook(title=notebook_title, initial_text=initial, parent_id="")
-
-        # Existing notebook: ensure it remains on the main page
-        doc_id = target_doc["id"]
-        if target_doc.get("parent_id") != "":
-            self.move_document(doc_id, "")
-
-        current_text = self.get_page_typed_text(doc_id, 0)
-        if current_text:
-            updated_text = current_text.rstrip() + f"\n{task_line}\n"
-        else:
-            updated_text = f"# {notebook_title}\n\n{task_line}\n"
-
-        self.update_page_typed_text(doc_id, 0, updated_text)
-        return {
-            "id": doc_id,
-            "visible_name": notebook_title,
-            "task_line": task_line,
-        }
+        """Record a captured task and rebuild the consolidated Tasks notebook."""
+        clean = task_text.strip()
+        now = time.time()
+        self.db.upsert_task({
+            "id": f"task_{uuid.uuid4().hex[:12]}",
+            "doc_id": "",
+            "page_idx": 0,
+            "raw_text": clean,
+            "clean_text": clean,
+            "status": "open",
+            "marker_type": "star",
+            "fingerprint": hashlib.sha256(f"captured:{clean.lower()}".encode()).hexdigest(),
+            "created_at": now,
+        })
+        res = self.sync_tasks_to_notebook(notebook_title)
+        res["task_line"] = f"[ ] {clean}"
+        return res
 
     def append_note_to_notebook(
         self,
@@ -608,36 +652,42 @@ class NotebookEditor:
         }
 
     def sync_tasks_to_notebook(self, notebook_title: str = "Tasks") -> dict[str, Any]:
-        """Consolidate all open tasks into the synced Tasks notebook."""
-        open_tasks = self.db.list_tasks(status="open")
-        lines = [f"# {notebook_title}", "", f"Total open tasks: {len(open_tasks)}", ""]
+        """Rebuild the single consolidated Tasks notebook from all open tasks.
 
-        for t in open_tasks:
-            origin = f" ({t.get('doc_name')})" if t.get("doc_name") else ""
-            lines.append(f"- [ ] {t.get('clean_text', '')}{origin}")
+        The notebook keeps one stable ID, so the cloud copy is updated in place rather than
+        duplicated. It is a generated view: handwriting added to it on the tablet is replaced
+        on the next rebuild. Complete tasks in the web UI or by crossing them out at the source.
+        """
+        doc_id = self._tasks_notebook_id(notebook_title)
+        # Set before writing so the task extractor skips our own generated lines.
+        self.db.set_state(TASKS_NOTEBOOK_STATE_KEY, doc_id)
 
-        content = "\n".join(lines) + "\n"
-
-        docs = self.db.list_documents(include_deleted=False)
-        target_doc = next(
-            (d for d in docs if d.get("visible_name") == notebook_title and d.get("type") == "DocumentType"),
-            None,
-        )
-
-        if not target_doc:
-            res = self.create_notebook(title=notebook_title, initial_text=content, parent_id="")
-            doc_id = res["id"]
-        else:
-            doc_id = target_doc["id"]
-            if target_doc.get("parent_id") != "":
-                self.move_document(doc_id, "")
-            self.update_page_typed_text(doc_id, 0, content)
-
+        open_tasks = [t for t in self.db.list_tasks(status="open") if t.get("doc_id") != doc_id]
+        pages = layout_task_pages(notebook_title, open_tasks)
+        with self.db.connect() as conn:  # drop index rows for pages that no longer exist
+            conn.execute("DELETE FROM search_index WHERE doc_id = ? AND source != 'title'", (doc_id,))
+        res = self.create_notebook(title=notebook_title, parent_id="", pages_content=pages, doc_id=doc_id)
         return {
             "id": doc_id,
             "visible_name": notebook_title,
             "task_count": len(open_tasks),
+            "page_count": res["page_count"],
         }
+
+    def _tasks_notebook_id(self, notebook_title: str) -> str:
+        """Reuse the known Tasks notebook, else adopt a local one with that title, else a new ID."""
+        known = self.db.get_state(TASKS_NOTEBOOK_STATE_KEY, "")
+        known_doc = self.db.get_document(known) if known else None
+        if known_doc and not known_doc.get("deleted"):
+            return known
+        existing = next(
+            (
+                d for d in self.db.list_documents(include_deleted=False)
+                if d.get("visible_name") == notebook_title and d.get("file_type") == "notebook"
+            ),
+            None,
+        )
+        return existing["id"] if existing else str(uuid.uuid4())
 
     def import_markdown(
         self,
@@ -695,7 +745,7 @@ class NotebookEditor:
             })
             c_pages_list.append({
                 "id": p_id,
-                "idx": {"timestamp": f"1:{idx + 1}", "value": f"ba{idx}" if idx > 0 else "ba"},
+                "idx": {"timestamp": f"1:{idx + 1}", "value": page_order_key(idx)},
                 "redir": {"timestamp": "1:1", "value": idx},
                 "template": {"timestamp": "1:1", "value": "P Blank"},
             })
@@ -850,7 +900,7 @@ class NotebookEditor:
             })
             c_pages_list.append({
                 "id": p_id,
-                "idx": {"timestamp": f"1:{idx + 1}", "value": f"ba{idx}" if idx > 0 else "ba"},
+                "idx": {"timestamp": f"1:{idx + 1}", "value": page_order_key(idx)},
                 "template": {"timestamp": "1:1", "value": "P Blank"},
             })
 

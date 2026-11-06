@@ -2222,7 +2222,7 @@ async function loadCurrentPage() {
     preloadAdjacentPages(state.currentDoc.id, pageIdx, totalPages, state.pageDarkMode);
   } catch (e) {
     el.readerCanvasWrapper.innerHTML = `
-      <div style="color: var(--danger); padding: 2rem; text-align: center;">Error loading page: ${e.message}</div>
+      <div style="color: var(--danger); padding: 2rem; text-align: center;">Error loading page: ${escapeHtml(e.message)}</div>
     `;
   } finally {
     if (el.readerPageSpinner) el.readerPageSpinner.style.display = "none";
@@ -3058,7 +3058,7 @@ function renderSearchResults(results) {
       </div>
       <div style="font-size: 0.78rem; color: var(--text-secondary); line-height: 1.3;">
         ${r.source === 'tag' ? 'Tag match: ' : ''}
-        ${r.snippet}
+        ${escapeHtml(r.snippet).replaceAll("&lt;mark&gt;", "<mark>").replaceAll("&lt;/mark&gt;", "</mark>")}
       </div>
     `;
 
@@ -3156,9 +3156,13 @@ window.addEventListener("keydown", (e) => {
 });
 
 function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text || "";
-  return div.innerHTML;
+  // Quotes too: results are also placed inside attributes like title="..."
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // --- Tasks Controller ---

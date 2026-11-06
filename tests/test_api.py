@@ -20,7 +20,42 @@ def test_api_status(test_client):
     assert res.status_code == 200
     data = res.json()
     assert "sync" in data
-    assert "blobs_count" in data
+
+
+def test_cross_site_writes_blocked_without_cors(test_client):
+    """Another website must not be able to change the library, and must not be able to read it."""
+    blocked = test_client.post("/api/folders", json={"name": "x"}, headers={"Sec-Fetch-Site": "cross-site"})
+    assert blocked.status_code == 403
+
+    same_origin = test_client.post("/api/folders", json={"name": "x"}, headers={"Sec-Fetch-Site": "same-origin"})
+    assert same_origin.status_code != 403
+
+    no_header = test_client.post("/api/folders", json={"name": "y"})  # curl, scripts, MCP clients
+    assert no_header.status_code != 403
+
+    read = test_client.get("/api/documents", headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in read.headers
+
+
+def test_folder_zip_export_streams_from_temp_file(test_client):
+    import io
+    import zipfile
+
+    import pymupdf
+
+    app = test_client.app
+    editor = app.state.notebook_editor
+    folder = editor.create_folder("Comics", "")
+    pdf = pymupdf.open()
+    pdf.new_page()
+    editor.import_pdf_file(title="Issue 1", pdf_bytes=pdf.tobytes(), parent_id=folder["id"])
+
+    res = test_client.get(f"/api/documents/{folder['id']}/export/zip")
+    assert res.status_code == 200
+    assert 'filename="Comics.zip"' in res.headers["content-disposition"]
+    assert zipfile.ZipFile(io.BytesIO(res.content)).namelist() == ["Issue 1.pdf"]
+    cache_dir = app.state.blob_store.settings.cache_dir
+    assert not list(cache_dir.glob("*.zip")), "temp ZIP must be deleted after sending"
 
 
 def test_api_documents_and_search(test_client):

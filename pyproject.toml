@@ -4,9 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "un-remarkable"
-version = "0.1.1"
+dynamic = ["version"]
 description = "Un-remarkable: Self-hosted companion for reMarkable devices (Paper Pro, RM2, RM1): continuous cloud sync, dark mode web reader, and MCP server"
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [
     { name = "Adam Meek" }
@@ -33,6 +34,9 @@ dev = [
 
 [project.scripts]
 rmcompanion = "rmcompanion.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "rmcompanion.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

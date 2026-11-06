@@ -52,6 +52,16 @@ class MockCloudTransport(httpx.AsyncBaseTransport):
                 },
             )
 
+        # Uploads: blobs and root updates (used by push_local_notebook)
+        if request.method == "PUT" and "/sync/v3/files/" in url_str:
+            self.put_blob(request.content)
+            return httpx.Response(200)
+        if request.method == "PUT" and "/sync/v3/root" in url_str:
+            body = json.loads(request.content)
+            self.root_hash = body["hash"]
+            self.generation += 1
+            return httpx.Response(200, json={"generation": self.generation})
+
         # 2. File blob download endpoint
         if "/sync/v3/files/" in url_str:
             blob_hash = url_str.split("/sync/v3/files/")[-1].split("?")[0]
@@ -163,5 +173,73 @@ async def test_full_sync_cycle(tmp_path, mock_cloud):
     res2 = await engine.sync_once()
     assert res2["status"] == "idle"
     assert res2["changed"] is False
+
+    await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_tasks_notebook_updates_in_place_and_changed_pages_reported(tmp_path, mock_cloud):
+    """The Tasks notebook must exist once in the cloud, however often it is rebuilt,
+    and a sync must report which pages got new handwriting."""
+    from rmcompanion.editor.notebook_editor import NotebookEditor
+
+    settings = Settings(data_dir=tmp_path)
+    db = Database(settings=settings)
+    blob_store = BlobStore(settings=settings)
+    auth = AuthManager(settings=settings)
+    auth.tokens = AuthTokens(device_token="mock_dev_token", user_token="mock_user_token")
+    http_client = httpx.AsyncClient(transport=mock_cloud)
+    client = RMCloudClient(auth=auth, settings=settings, http_client=http_client)
+
+    reported: list[dict[str, list[int]]] = []
+
+    async def on_pages_changed(changes: dict[str, list[int]]) -> None:
+        reported.append(changes)
+
+    engine = SyncEngine(
+        client=client, db=db, blob_store=blob_store, auth=auth, settings=settings,
+        on_pages_changed=on_pages_changed,
+    )
+    await engine.sync_once()
+    assert reported == [], "first sync of a library must not trigger a full OCR pass"
+
+    # Push the Tasks notebook twice: one cloud document, updated in place.
+    editor = NotebookEditor(db=db, blob_store=blob_store)
+    first = editor.append_task_to_tasks_notebook("Book the venue")
+    assert await engine.push_local_notebook(first["id"])
+    second = editor.append_task_to_tasks_notebook("Send the agenda")
+    assert second["id"] == first["id"]
+    assert await engine.push_local_notebook(second["id"])
+
+    entries, _, _ = await client.get_root_index(mock_cloud.root_hash)
+    assert [e.doc_id for e in entries].count(first["id"]) == 1
+    assert len(entries) == 2  # the original document plus Tasks
+
+    # Change the handwriting on the user's notebook page in the cloud.
+    doc_id = "test-doc-uuid"
+    root_entries, _, _ = await client.get_root_index(mock_cloud.root_hash)
+    doc_entry = next(e for e in root_entries if e.doc_id == doc_id)
+    file_entries, _, _ = await client.get_doc_index(doc_entry.hash, doc_id)
+    new_rm = b"reMarkable .lines file, version=6" + b"\x00" * 40
+    new_rm_hash = mock_cloud.put_blob(new_rm)
+    file_entries = [
+        Entry(hash=new_rm_hash, type="0", doc_id=e.doc_id, subfiles=0, size=len(new_rm)) if e.doc_id.endswith(".rm") else e
+        for e in file_entries
+    ]
+    doc_index = format_index(file_entries, schema="3")
+    new_doc_hash = compute_doc_index_hash(file_entries)
+    mock_cloud.blobs[new_doc_hash] = doc_index.encode("utf-8")
+    root_entries = [
+        Entry(hash=new_doc_hash, type=e.type, doc_id=e.doc_id, subfiles=e.subfiles, size=e.size) if e.doc_id == doc_id else e
+        for e in root_entries
+    ]
+    root_text = format_index(root_entries, schema="4")
+    mock_cloud.root_hash = mock_cloud.put_blob(root_text.encode("utf-8"))
+
+    await engine.sync_once()
+    for task in list(engine._bg_tasks):
+        await task
+    changed = {k: v for r in reported for k, v in r.items()}
+    assert changed.get(doc_id) == [0]
 
     await http_client.aclose()

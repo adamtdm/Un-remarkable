@@ -99,9 +99,8 @@ class DailyNewspaperGenerator:
             weather_str = await cls._fetch_weather(weather_location)
 
         wiki_article: dict[str, Any] | None = None
-        on_this_day: list[str] = []
         if include_wikipedia:
-            wiki_article, on_this_day = await cls._fetch_wikipedia(date)
+            wiki_article, _ = await cls._fetch_wikipedia(date)
 
         # 2. Fetch RSS items and full article text concurrently
         raw_items = await cls._fetch_all_feeds(rss_feeds, articles_per_feed=articles_per_feed)

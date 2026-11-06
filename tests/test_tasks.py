@@ -3,7 +3,10 @@
 from fastapi.testclient import TestClient
 
 from rmcompanion.config import Settings
-from rmcompanion.intelligence.task_extractor import TaskExtractor, extract_tasks_from_text
+from rmcompanion.intelligence.task_extractor import (
+    TaskExtractor,
+    extract_tasks_from_text,
+)
 from rmcompanion.mcp.server import create_mcp_server
 from rmcompanion.render.exporter import Exporter
 from rmcompanion.store.blob_store import BlobStore
@@ -158,3 +161,71 @@ def test_mcp_task_tools(tmp_path):
     tools = {t.name: t for t in server._tool_manager.list_tools()}
     assert "list_tasks" in tools
     assert "complete_task" in tools
+
+
+def test_layout_task_pages_groups_by_source_and_paginates():
+    from rmcompanion.editor.notebook_editor import layout_task_pages
+
+    tasks = [{"clean_text": f"Meeting task {i}", "doc_name": "Weekly sync", "created_at": i} for i in range(20)]
+    tasks.append({"clean_text": "Call the bank", "doc_name": None, "created_at": 0})
+
+    pages = layout_task_pages("Tasks", tasks, max_lines=10)
+
+    assert len(pages) == 3
+    assert pages[0].startswith("Tasks - 21 open - page 1/3")
+    body = [p.split("\n\n", 1)[1].split("\n") for p in pages]
+    assert all(len(lines) <= 10 for lines in body)
+    assert body[0][:2] == ["Captured", "[ ] Call the bank"]  # captured tasks come first
+    assert body[1][0] == "Weekly sync"  # a group continued on a new page gets its heading again
+    assert sum(line.startswith("[ ] ") for lines in body for line in lines) == 21
+
+
+def test_layout_task_pages_empty():
+    from rmcompanion.editor.notebook_editor import layout_task_pages
+
+    assert layout_task_pages("Tasks", []) == ["Tasks - 0 open - page 1/1\n\nNo open tasks."]
+
+
+def test_tasks_notebook_is_one_document_and_never_mines_itself(tmp_path):
+    from rmcompanion.config import Settings
+    from rmcompanion.editor.notebook_editor import NotebookEditor
+    from rmcompanion.intelligence.task_extractor import TaskExtractor
+    from rmcompanion.render.exporter import Exporter
+    from rmcompanion.store.blob_store import BlobStore
+    from rmcompanion.store.db import Database
+
+    settings = Settings(data_dir=tmp_path)
+    db = Database(settings=settings)
+    blob_store = BlobStore(settings=settings)
+    extractor = TaskExtractor(db=db, blob_store=blob_store, exporter=Exporter(db=db, blob_store=blob_store, settings=settings))
+    editor = NotebookEditor(db=db, blob_store=blob_store, task_extractor=extractor)
+
+    ids = {editor.append_task_to_tasks_notebook(f"Task number {i}")["id"] for i in range(40)}
+    res = editor.sync_tasks_to_notebook()
+
+    assert ids == {res["id"]}, "every rebuild must reuse the same notebook"
+    assert res["task_count"] == 40, "the notebook's own lines must not be re-extracted as new tasks"
+    assert res["page_count"] > 1
+    assert len([d for d in db.list_documents() if d["visible_name"] == "Tasks"]) == 1
+
+
+def test_crossed_out_task_is_completed_on_rescan(tmp_path):
+    from rmcompanion.config import Settings
+    from rmcompanion.store.db import Database
+
+    db = Database(settings=Settings(data_dir=tmp_path))
+    base = {"doc_id": "d1", "page_idx": 0, "raw_text": "x", "clean_text": "x", "fingerprint": "fp", "created_at": 1.0}
+    db.upsert_task({**base, "id": "t1", "status": "open"})
+    db.upsert_task({**base, "id": "t2", "status": "completed"})
+    db.upsert_task({**base, "id": "t3", "status": "open"})
+
+    tasks = db.list_tasks()
+    assert [(t["id"], t["status"]) for t in tasks] == [("t1", "completed")]
+
+
+def test_page_order_keys_sort_in_page_order():
+    from rmcompanion.editor.notebook_editor import page_order_key
+
+    keys = [page_order_key(i) for i in range(1000)]
+    assert keys == sorted(keys)
+    assert len(set(keys)) == 1000

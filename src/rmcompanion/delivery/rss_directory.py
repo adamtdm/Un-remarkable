@@ -585,8 +585,8 @@ async def discover_feed_url(target: str) -> list[dict[str, Any]]:
                                     "source": f"Standard path {path}",
                                 })
                                 break
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Feed probe %s failed: %s", test_url, e)
 
             # Validate each discovered candidate
             verified_results: list[dict[str, Any]] = []

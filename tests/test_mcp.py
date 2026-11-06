@@ -119,3 +119,40 @@ def test_mcp_respects_exclusions(populated_env):
     # recent_changes should omit doc-alpha
     recent = recent_fn(limit=10)
     assert not any(r["id"] == "doc-alpha" for r in recent)
+
+
+async def test_mcp_writes_are_pushed_to_cloud(tmp_path):
+    """MCP edits must reach the tablet the same way web UI edits do."""
+
+    class FakeSync:
+        def __init__(self):
+            self.calls = []
+
+        def spawn(self, coro):
+            self.calls.append(coro.cr_code.co_name)
+            coro.close()
+
+        def push_notebook_pdf(self, doc_id, title, parent_id=""):
+            self.calls.append(f"push_notebook_pdf:{title}")
+
+        async def push_local_notebook(self, *a): ...
+        async def create_remote_folder(self, *a): ...
+        async def move_remote_document(self, *a): ...
+        async def delete_remote_document(self, *a): ...
+
+    settings = Settings(data_dir=tmp_path)
+    fake = FakeSync()
+    server = create_mcp_server(settings=settings, sync_engine=fake)
+    tools = server._tool_manager._tools
+
+    folder = await tools["create_folder"].fn(name="Inbox")
+    await tools["quick_capture"].fn(text="Buy tips", is_task=True)
+    await tools["move_document"].fn(doc_id=folder["id"], parent_id="")
+    await tools["delete_document"].fn(doc_id=folder["id"])
+
+    assert fake.calls == [
+        "create_remote_folder",
+        "push_local_notebook",
+        "move_remote_document",
+        "delete_remote_document",
+    ]

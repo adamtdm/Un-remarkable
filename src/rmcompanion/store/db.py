@@ -707,6 +707,12 @@ class Database:
             if fingerprint:
                 existing = conn.execute("SELECT id, status FROM tasks WHERE fingerprint = ?", (fingerprint,)).fetchone()
                 if existing:
+                    # A task crossed out on the tablet is re-read as completed; never reopen one.
+                    if existing["status"] == "open" and task_data.get("status") == "completed":
+                        conn.execute(
+                            "UPDATE tasks SET status = 'completed', completed_at = ? WHERE id = ?",
+                            (task_data.get("completed_at") or now, existing["id"]),
+                        )
                     return
 
             conn.execute(

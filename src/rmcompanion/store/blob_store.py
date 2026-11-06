@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from pathlib import Path
 
 from rmcompanion.config import Settings, get_settings
@@ -57,7 +58,8 @@ class BlobStore:
             return target_path
 
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = target_path.with_suffix(".tmp")
+        # Per-process temp name: the stdio MCP process and the server can write the same blob at once
+        tmp_path = target_path.with_name(f"{target_path.name}.{os.getpid()}.tmp")
         tmp_path.write_bytes(data)
         tmp_path.replace(target_path)
         return target_path

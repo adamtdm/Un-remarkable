@@ -71,6 +71,7 @@ def test_render_typed_text_styles():
 
 def test_render_pdf_page_image_comic_vs_text():
     import numpy as np
+
     from rmcompanion.render.pdf_render import render_pdf_page_image
 
     # 1. Text PDF (should be inverted in dark mode to dark zinc paper ~24)
@@ -108,7 +109,9 @@ def test_render_pdf_page_image_comic_vs_text():
 
 def test_render_thumbnail_dark_mode_note_vs_cover(tmp_path):
     import hashlib
+
     import numpy as np
+
     from rmcompanion.config import Settings
     from rmcompanion.render.exporter import Exporter
     from rmcompanion.store.blob_store import BlobStore

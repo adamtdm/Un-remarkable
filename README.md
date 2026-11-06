@@ -8,7 +8,7 @@ Mirror your entire reMarkable cloud library locally without jailbreaking, modify
 
 ## Key Features
 
-- **Zero-Jailbreak Cloud Sync (`sync15`):** Continuous background synchronization with the official reMarkable cloud using WebSocket notifications and content-addressed blob storage.
+- **Zero-Jailbreak Cloud Sync (`sync15`):** Continuous background synchronization with the official reMarkable cloud (polls for changes every 2 minutes by default) with content-addressed blob storage.
 - **Detailed Live Sync Monitor:** Real-time sync drawer with stage indicators, document and file progress, data transfer metrics, and session activity logs.
 - **reMarkable Document & Comic Converter:** 5-stop quality slider converting heavy fixed-layout EPUBs, double-spread CBZ comics, and bulky PDFs into lean, single-layer PDFs sized to your device's native screen (Paper Pro Color Canvas, Paper Pro Move, RM2, RM1).
 - **Perceptual OKLCH Dark Mode Reader:** Vector SVG renderer inverting background lightness while preserving color hues and highlights for natural night-time reading.
@@ -17,7 +17,7 @@ Mirror your entire reMarkable cloud library locally without jailbreaking, modify
 - **AI Assistant Integration (MCP):** Native Model Context Protocol server exposing read and write tools over Streamable HTTP (`/mcp`) and stdio for Claude Desktop, Antigravity, and Cursor.
 - **Typed Notebook Editor & Markdown Import:** Create and type native reMarkable v6 `.rm` CRDT documents directly in your browser. Distraction-free Type Folio overlay in the reader and instant Markdown (`.md`) import.
 - **Handwriting OCR & Task Intelligence:** Rule-based parser extracting tasks (`*`, `- [ ]`, `TODO:`) and Vision OCR support (Google Gemini / OpenAI / Ollama) consolidating to-dos across notebooks into a synced "Tasks" notebook.
-- **Progressive Web App (PWA):** Installable standalone app on iOS, iPadOS, Android, and macOS with service worker offline shell and responsive touch controls.
+- **Progressive Web App (PWA):** Installable standalone app on iOS, iPadOS, Android, and macOS with responsive touch controls.
 - **Immutable Content-Addressed Store:** Files are stored by SHA-256 hash in `./data/blobs/`, retaining full version history and point-in-time snapshots.
 
 ---
@@ -28,7 +28,7 @@ Mirror your entire reMarkable cloud library locally without jailbreaking, modify
 |---|:---:|:---:|
 | **Hosting & Data Ownership** | Proprietary cloud (subscription-based Connect plan) | 100% Self-Hosted Docker container; full local data sovereignty |
 | **Local Offline Storage** | Temporary browser session cache | Content-addressed immutable blob store (`./data/blobs/`) with point-in-time versioning |
-| **Two-Way Cloud Sync (`sync15`)** | Official cloud sync | Direct `sync15` WebSocket sync with Merkle root checks & 2-way notebook pushes |
+| **Two-Way Cloud Sync (`sync15`)** | Official cloud sync | Direct `sync15` sync with root hash change detection & 2-way notebook pushes |
 | **Live Sync Drawer & Transfer Metrics** | Simple spinner icon | Real-time stage indicators, file progress, transfer rates, and session activity logs |
 | **Dark Mode Reader** | Light mode only (blinding white background) | Perceptual OKLCH dark mode (inverts lightness while preserving color highlighter hues) |
 | **Fullscreen Distraction-Free Mode** | Standard browser view with browser Chrome | Dedicated HUD with auto-hide timer, exit pill, and edge tap zones (Prev / Menu / Next) |
@@ -89,10 +89,16 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `8099` | Web UI and REST API port |
-| `RM_DATA_DIR` | `/data` | Path to data directory (mounted in Docker) |
-| `RM_SYNC_INTERVAL_SECONDS` | `120` | Interval between background cloud sync checks |
-| `RM_LOG_LEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `RMC_PORT` | `8099` | Host port for the web UI, REST API and MCP endpoint |
+| `RMC_SYNC_INTERVAL_SECONDS` | `120` | Interval between background cloud sync checks |
+| `RMC_MAX_CONCURRENT_DOWNLOADS` | `6` | Parallel blob downloads during sync |
+| `RMC_LOG_LEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `GEMINI_API_KEY` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` | – | Optional Vision OCR provider keys (can also be set in Settings) |
+
+Data is stored in `./data` next to `docker-compose.yml` (mounted at `/data` in the container).
+
+### Security model
+There is no login. Anyone who can reach the port can read and change your library, so only expose it on your home network or tailnet, never the public internet. Other websites you visit cannot use it: the server sends no CORS headers (so other sites can't read responses) and rejects writes that the browser marks as cross-site.
 
 ### 3. Start the Service
 ```bash
@@ -138,7 +144,7 @@ The built-in converter optimizes documents into lean, single-layer PDFs matching
 
 ## AI Assistant Integration (Model Context Protocol)
 
-reMarkable Companion provides a native MCP server for integration with LLM assistants like Claude, Antigravity, and Cursor.
+Un-remarkable provides a native MCP server for integration with LLM assistants like Claude, Antigravity, and Cursor.
 
 ### Streamable HTTP (Remote / Tailscale / Antigravity)
 Add the HTTP endpoint to your MCP configuration:
@@ -163,8 +169,10 @@ Add the server to your `claude_desktop_config.json`:
 - `list_documents`: Browse folders and list documents with metadata, page counts, and exclusion status.
 - `search`: Full-text search across titles, typed notes, PDF text, and tags.
 - `get_document`: Inspect document details, tags, versions, and page manifests.
-- `render_page`: Render any notebook page to vector SVG (with dark mode support).
-- `get_sync_status`: Check current sync generation, progress, and blob store statistics.
+- `get_page_text`: Read the typed or indexed text of a page.
+- `get_page_image`: Render a page to an image (with dark mode support).
+- `recent_changes`: List recently modified documents.
+- `sync_status`: Check current sync generation, last sync time, and blob store statistics.
 - `list_tasks`: Query open or completed tasks consolidated from notebooks.
 - `complete_task`: Mark an action item or task as completed.
 - `create_notebook`: Create a new native reMarkable notebook with initial typed text.
@@ -257,7 +265,7 @@ Navigate and operate your companion with keyboard speed:
 
 ## Typed Notebook Editor & Markdown Import
 
-reMarkable Companion provides full native typing support generating authentic `.rm` v6 binary stroke and CRDT text trees:
+Un-remarkable provides full native typing support generating authentic `.rm` v6 binary stroke and CRDT text trees:
 
 1. **Creating a Notebook:**
    - Click **+ New Note** in the top navigation bar.
@@ -276,21 +284,20 @@ reMarkable Companion provides full native typing support generating authentic `.
 
 ## Task Intelligence & Vision OCR
 
-reMarkable Companion automatically finds action items and to-dos in your notebooks:
+Write `*` before a task anywhere in your handwritten notes, and it shows up in one **Tasks** notebook on your tablet.
 
-- **Rule-Based Extraction:** Scans typed text for checkboxes (`- [ ]`, `[ ]`), asterisks (`*`), and `TODO:` / `FIXME:` tags.
-- **Vision OCR for Handwriting:** Connect Google Gemini (`gemini-flash-lite-latest` recommended) or OpenAI/Ollama compatible endpoints in **⚙️ Settings** to transcribe handwritten margin notes, starred action items, and circled tasks. Live model options are dynamically queried directly from provider APIs.
-- **Task Consolidation:**
-  - Click **☑ Tasks** in the header to review all discovered open and completed tasks across all documents.
-  - Click **📓 Sync to 'Tasks' Notebook** to automatically assemble a master checklist notebook that syncs to your tablet.
-  - Add quick tasks directly using the top input field.
+- **Handwritten `*` tasks (Vision OCR):** Connect Google Gemini (`gemini-flash-lite-latest` recommended) or an OpenAI/Ollama-compatible endpoint in **⚙️ Settings**. After each sync, only the pages whose handwriting changed are read, so cost stays proportional to what you write. A task runs from the `*` to the next `*`, the end of the sentence, or the end of the line. Cross a task out on the page and it is marked done on the next sync.
+- **Typed tasks:** Typed text is also scanned for `*`, checkboxes (`- [ ]`) and `TODO:`.
+- **One Tasks notebook:** Open tasks are written into a single native notebook, grouped under the notebook each task came from, across as many pages as needed. The notebook keeps the same ID, so the tablet copy is updated in place, never duplicated. It is generated: anything you write on it on the tablet is replaced on the next update. To finish a task, tick it in **☑ Tasks** in the web UI (or via MCP), or cross it out where you wrote it.
+- **Capture:** Quick Capture and the Tasks drawer input add a task straight to the notebook (under "Captured").
+- **First run:** The first sync of a library does not OCR anything. To pick up `*` tasks you already wrote, click **Scan Documents** in the Tasks drawer, then **📓 Sync to 'Tasks' Notebook**.
 
 ---
 
 ## Mobile PWA & Remote Access (Tailscale)
 
 ### Install as a Mobile App (PWA)
-reMarkable Companion is a Progressive Web App with service worker caching:
+Un-remarkable is an installable Progressive Web App:
 - **iPhone / iPad:** Open the web UI in Safari, tap **Share (square with arrow)**, and tap **Add to Home Screen**.
 - **Android:** Open in Chrome and tap the **Install app** or **Add to Home screen** banner.
 - **Desktop (macOS / Windows / Linux):** Click the install icon in Chrome or Edge address bar to run as a standalone window.
@@ -298,7 +305,7 @@ reMarkable Companion is a Progressive Web App with service worker caching:
 ### Remote Access via Tailscale (Zero Port-Forwarding)
 To securely access your companion and sync from outside your home without exposing ports to the public internet:
 
-1. Install Tailscale on the host machine running reMarkable Companion:
+1. Install Tailscale on the host machine running Un-remarkable:
    ```bash
    curl -fsSL https://tailscale.com/install.sh | sh
    sudo tailscale up
@@ -328,9 +335,9 @@ data/
 
 ### Key Components
 - `rmcompanion.cloud`: Async HTTP client implementing the reMarkable `sync15` sync protocol, token exchange, and signed download URL resolution.
-- `rmcompanion.sync`: Background sync loop with real-time state tracking, Merkle tree root hash verification, and delta updates.
+- `rmcompanion.sync`: Background sync loop with real-time state tracking, root hash change detection, and per-document delta updates.
 - `rmcompanion.render`: Vector `.rm` v6 stroke parser with OKLCH perceptual dark mode lightness inversion.
-- `rmcompanion.converter`: Multi-threaded PyMuPDF comic conversion engine with memory-mapped streaming.
+- `rmcompanion.converter`: PyMuPDF conversion engine for PDF, EPUB and CBZ (runs in background jobs).
 - `rmcompanion.web`: FastAPI REST API, static asset server, and interactive dark web UI.
 - `rmcompanion.mcp`: Streamable HTTP and stdio Model Context Protocol server.
 
@@ -339,7 +346,7 @@ data/
 ## Local Development & Testing
 
 ### Prerequisites
-- Python 3.12+
+- Python 3.11+
 - `libmupdf-dev` or binary wheels for PyMuPDF
 
 ### Setup

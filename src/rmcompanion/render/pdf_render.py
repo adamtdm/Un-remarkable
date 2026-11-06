@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import numpy as np
 import pymupdf
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def render_pdf_page_image(
-    pdf_bytes: bytes,
+    pdf_source: bytes | Path,
     page_num: int,
     dark_mode: bool = False,
     dpi: int = 150,
@@ -23,7 +24,11 @@ def render_pdf_page_image(
     Returns:
         (image_bytes, width, height)
     """
-    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    # Opening by path lets MuPDF read only the pages it needs (1 GB comic: 0.2s vs 4.7s per page)
+    if isinstance(pdf_source, Path):
+        doc = pymupdf.open(pdf_source, filetype="pdf")
+    else:
+        doc = pymupdf.open(stream=pdf_source, filetype="pdf")
     try:
         total_pages = len(doc)
         if total_pages == 0:

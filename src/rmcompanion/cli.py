@@ -74,7 +74,11 @@ def cmd_mcp(args: argparse.Namespace) -> None:
         db = Database(settings=settings)
         blob_store = BlobStore(settings=settings)
         exporter = Exporter(db=db, blob_store=blob_store, settings=settings)
-        server = create_mcp_server(db=db, blob_store=blob_store, exporter=exporter, settings=settings)
+        # No background loop here: the sync engine is only used to push MCP edits to the cloud.
+        sync_engine = SyncEngine(db=db, blob_store=blob_store, settings=settings, exporter=exporter)
+        server = create_mcp_server(
+            db=db, blob_store=blob_store, exporter=exporter, sync_engine=sync_engine, settings=settings
+        )
         await server.run_stdio_async()
 
     asyncio.run(_run_mcp())

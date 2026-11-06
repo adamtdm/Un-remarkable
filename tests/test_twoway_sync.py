@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from rmcompanion.cloud.client import RMCloudClient, crc32c
 from rmcompanion.config import Settings

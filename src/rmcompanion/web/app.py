@@ -6,13 +6,15 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import Response
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
+from rmcompanion import __version__
 from rmcompanion.cloud.auth import AuthManager
 from rmcompanion.cloud.client import RMCloudClient
 from rmcompanion.config import Settings, get_settings
@@ -30,6 +32,28 @@ from rmcompanion.sync.engine import SyncEngine
 from rmcompanion.web.api import get_router
 
 logger = logging.getLogger(__name__)
+
+
+class CrossSiteWriteGuard:
+    """Reject state-changing requests that a browser marks as coming from another site.
+
+    Browsers send `Sec-Fetch-Site` on every request, so a page on another site can't
+    delete or upload through a plain form post. curl, scripts and MCP clients don't send
+    the header and are let through, so local use needs no password.
+    """
+
+    SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["method"] not in self.SAFE_METHODS:
+            site = dict(scope["headers"]).get(b"sec-fetch-site", b"none")
+            if site not in (b"same-origin", b"none"):
+                await JSONResponse({"detail": "Cross-site request blocked"}, status_code=403)(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -78,6 +102,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     sync_engine.delivery_manager = delivery_manager
 
+    async def consolidate_tasks(changed_pages: dict[str, list[int]]) -> None:
+        """After a sync, look for * tasks on the pages that changed and refresh the Tasks notebook."""
+        before = {t["id"] for t in db.list_tasks(status="open")}
+        for doc_id, page_idxs in changed_pages.items():
+            await task_extractor.scan_document_for_tasks(doc_id, page_idxs)
+        if {t["id"] for t in db.list_tasks(status="open")} != before:
+            sync_engine.refresh_tasks_notebook(notebook_editor)
+
+    sync_engine.on_pages_changed = consolidate_tasks
+
     # Initialize MCP Server
     mcp_server = create_mcp_server(
         db=db,
@@ -107,7 +141,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="reMarkable Companion",
         description="Local cloud mirror, dark mode web reader, and MCP server for reMarkable devices (Paper Pro, RM2, RM1)",
-        version="0.1.1",
+        version=__version__,
         lifespan=lifespan,
     )
 
@@ -123,14 +157,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.notebook_editor = notebook_editor
     app.state.delivery_manager = delivery_manager
 
-    # CORS support for local and remote access
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # No CORS middleware on purpose: the UI is same-origin, and allowing other origins
+    # would let any website you visit read and delete your library.
+    app.add_middleware(CrossSiteWriteGuard)
 
     # Mount REST API
     api_router = get_router(

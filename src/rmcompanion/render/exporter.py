@@ -49,7 +49,6 @@ class Exporter:
         if not doc:
             raise FileNotFoundError(f"Document {doc_id} not found")
 
-        doc_hash = doc.get("doc_hash", "")
         pages = doc.get("pages", [])
         if not pages:
             # Empty or uninitialized document
@@ -92,12 +91,11 @@ class Exporter:
             if not pdf_file_key or not self.blob_store.has(files[pdf_file_key]):
                 svg_content = self._blank_svg(dark_mode)
             else:
-                pdf_blob = self.blob_store.get(files[pdf_file_key])
                 actual_pdf_page = redir if redir >= 0 else page_idx
 
                 # Render PDF page to image
                 img_bytes, width, height = render_pdf_page_image(
-                    pdf_blob, actual_pdf_page, dark_mode=dark_mode, dpi=150
+                    self.blob_store.get_path(files[pdf_file_key]), actual_pdf_page, dark_mode=dark_mode, dpi=150
                 )
                 b64_img = base64.b64encode(img_bytes).decode("ascii")
                 mime_type = "image/jpeg" if img_bytes.startswith(b"\xff\xd8") else "image/png"
@@ -194,7 +192,6 @@ class Exporter:
         page_id = target_page.get("page_id", "")
         redir = target_page.get("redir", -1)
         files = {f["file_id"]: f["blob_hash"] for f in doc.get("files", [])}
-        file_type = doc.get("file_type", "notebook")
         pdf_file_key = next((k for k in files if k.endswith(".pdf")), None)
 
         png_bytes = b""
@@ -202,9 +199,8 @@ class Exporter:
         # Case 1: PDF / EPUB document (covers are rendered in authentic original colors, never inverted)
         if pdf_file_key and self.blob_store.has(files[pdf_file_key]):
             try:
-                pdf_blob = self.blob_store.get(files[pdf_file_key])
-                actual_page = redir if redir >= 0 else 0
-                with pymupdf.open("pdf", pdf_blob) as pdf_doc:
+                actual_page = max(redir, 0)
+                with pymupdf.open(self.blob_store.get_path(files[pdf_file_key]), filetype="pdf") as pdf_doc:
                     if 0 <= actual_page < len(pdf_doc):
                         p = pdf_doc[actual_page]
                         scale = max_width / max(float(p.rect.width), 1.0)

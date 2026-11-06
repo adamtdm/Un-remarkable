@@ -72,6 +72,7 @@ def test_document_and_folder_exclusion(tmp_path):
 
 def test_api_recursive_unexclusion_reindexing(tmp_path):
     import hashlib
+
     import pymupdf
     from fastapi.testclient import TestClient
 
