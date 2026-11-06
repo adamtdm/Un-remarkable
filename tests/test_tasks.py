@@ -229,3 +229,29 @@ def test_page_order_keys_sort_in_page_order():
     keys = [page_order_key(i) for i in range(1000)]
     assert keys == sorted(keys)
     assert len(set(keys)) == 1000
+
+
+async def test_vision_scan_skips_pages_without_handwriting(tmp_path):
+    from rmcompanion.config import Settings
+    from rmcompanion.intelligence.task_extractor import TaskExtractor
+    from rmcompanion.store.blob_store import BlobStore
+    from rmcompanion.store.db import Database
+
+    db = Database(settings=Settings(data_dir=tmp_path))
+    db.upsert_document({"id": "book", "visible_name": "Book", "type": "DocumentType", "file_type": "pdf", "doc_hash": "h"})
+    db.set_document_pages("h", [
+        {"page_idx": 0, "page_id": "p0", "deleted": False, "redir": 0},
+        {"page_idx": 1, "page_id": "p1", "deleted": False, "redir": 1},
+    ])
+    db.set_document_files("h", [{"file_id": "book/p1.rm", "blob_hash": "x", "file_type": "rm", "size": 1}])
+
+    scanned: list[int] = []
+
+    class Extractor(TaskExtractor):
+        async def extract_from_handwriting_page(self, doc_id, page_idx):
+            scanned.append(page_idx)
+            return []
+
+    ex = Extractor(db=db, blob_store=BlobStore(settings=Settings(data_dir=tmp_path)), exporter=None, vision_provider=object())
+    await ex.scan_document_for_tasks("book")
+    assert scanned == [1]

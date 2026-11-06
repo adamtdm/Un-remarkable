@@ -229,9 +229,13 @@ class TaskExtractor:
             return []
 
         all_tasks: list[dict[str, Any]] = []
+        # Only pages with pen strokes (.rm file) can hold handwritten tasks; book pages are skipped.
+        inked = {f["file_id"] for f in doc.get("files", []) if f["file_id"].endswith(".rm")}
         pages = [
             p for p in doc.get("pages", [])
-            if not p.get("deleted") and (page_idxs is None or p.get("page_idx", 0) in page_idxs)
+            if not p.get("deleted")
+            and f"{doc_id}/{p.get('page_id', '')}.rm" in inked
+            and (page_idxs is None or p.get("page_idx", 0) in page_idxs)
         ]
 
         # 1. First, check typed text indexed in FTS5
