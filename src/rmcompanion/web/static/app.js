@@ -245,6 +245,7 @@ const el = {
   btnReaderExcludeToggle: document.getElementById("btn-reader-exclude-toggle"),
   btnReaderConvert: document.getElementById("btn-reader-convert"),
   btnFitToggle: document.getElementById("btn-fit-toggle"),
+  btnTwoPageToggle: document.getElementById("btn-two-page-toggle"),
   btnPageDarkToggle: document.getElementById("btn-page-dark-toggle"),
   btnExportPdf: document.getElementById("btn-export-pdf"),
   btnReaderFullscreen: document.getElementById("btn-reader-fullscreen"),
@@ -442,6 +443,8 @@ const el = {
   trayReaderDarkLabel: document.getElementById("tray-reader-dark-label"),
   trayReaderFitToggle: document.getElementById("tray-reader-fit-toggle"),
   trayReaderFitLabel: document.getElementById("tray-reader-fit-label"),
+  trayReaderTwoPageToggle: document.getElementById("tray-reader-two-page-toggle"),
+  trayReaderTwoPageLabel: document.getElementById("tray-reader-two-page-label"),
   trayReaderConvert: document.getElementById("tray-reader-convert"),
   trayReaderExclude: document.getElementById("tray-reader-exclude"),
   trayReaderExcludeLabel: document.getElementById("tray-reader-exclude-label"),
@@ -1855,6 +1858,7 @@ function openReaderOptionsTray() {
   if (el.trayReaderFitLabel) {
     el.trayReaderFitLabel.textContent = `Fit Mode: ${state.fitMode === "width" ? "Fit Width" : "Fit Page"}`;
   }
+  updateTwoPageControls();
   if (el.trayReaderExcludeLabel) {
     const isExcluded = state.currentDoc.exclude_from_search || state.currentDoc.effective_exclude;
     el.trayReaderExcludeLabel.textContent = isExcluded ? "Include in Search" : "Exclude from Search";
@@ -1890,6 +1894,13 @@ if (el.trayReaderDarkToggle) {
   el.trayReaderDarkToggle.addEventListener("click", () => {
     closeReaderOptionsTray();
     if (el.btnPageDarkToggle) el.btnPageDarkToggle.click();
+  });
+}
+
+if (el.trayReaderTwoPageToggle) {
+  el.trayReaderTwoPageToggle.addEventListener("click", () => {
+    closeReaderOptionsTray();
+    toggleTwoPage();
   });
 }
 
@@ -1952,36 +1963,100 @@ el.filterTabs.forEach((tab) => {
 // --- Reader View & Page Preloading ---
 const pageSvgCache = new Map();
 let preloadTimer = null;
+let pageRenderToken = 0;
+
+async function fetchPageSvg(docId, pageIdx, darkMode) {
+  const key = `${docId}_${pageIdx}_${darkMode}`;
+  if (pageSvgCache.has(key)) return pageSvgCache.get(key);
+  const res = await fetch(`/api/documents/${docId}/pages/${pageIdx}/svg?dark=${darkMode}&v=4`);
+  if (!res.ok) throw new Error("Failed to render page");
+  const svg = await res.text();
+  pageSvgCache.set(key, svg);
+  return svg;
+}
 
 function preloadAdjacentPages(docId, currentPageIdx, totalPages, darkMode) {
   if (!docId || totalPages <= 1) return;
   if (preloadTimer) clearTimeout(preloadTimer);
 
   preloadTimer = setTimeout(async () => {
-    // Sequentially preload next page (+1), then previous (-1) without flooding network/CPU
-    const targets = [currentPageIdx + 1, currentPageIdx - 1];
+    // Sequentially preload the next view, then the previous one, without flooding network/CPU.
+    // In two-page mode a view is two pages.
+    const step = readerStep();
+    const targets = [];
+    for (let i = 0; i < step; i++) targets.push(currentPageIdx + step + i);
+    for (let i = step; i > 0; i--) targets.push(currentPageIdx - i);
     for (const pIdx of targets) {
       if (pIdx >= 0 && pIdx < totalPages) {
-        const key = `${docId}_${pIdx}_${darkMode}`;
-        if (!pageSvgCache.has(key)) {
-          try {
-            const res = await fetch(`/api/documents/${docId}/pages/${pIdx}/svg?dark=${darkMode}&v=4`);
-            if (res.ok) {
-              const svg = await res.text();
-              pageSvgCache.set(key, svg);
-            }
-          } catch (_) {}
-        }
+        try {
+          await fetchPageSvg(docId, pIdx, darkMode);
+        } catch (_) {}
       }
     }
   }, 160);
 }
 
-function renderSvgContent(svgText) {
-  el.readerCanvasWrapper.innerHTML = svgText;
-  const svgEl = el.readerCanvasWrapper.querySelector("svg");
-  if (svgEl) {
-    svgEl.classList.add("reader-canvas");
+function renderPages(svgTexts) {
+  el.readerCanvasWrapper.innerHTML = svgTexts.join("");
+  el.readerCanvasWrapper.querySelectorAll(":scope > svg").forEach((svgEl) => svgEl.classList.add("reader-canvas"));
+}
+
+// --- Page navigation (single page or two-page spread) ---
+// Every page turn (buttons, keys, tap zones, swipe, page jump) goes through goToPage/stepPage.
+function readerPageCount() {
+  return Math.max((state.currentDoc?.pages || []).filter((p) => !p.deleted).length, 1);
+}
+
+function readerStep() {
+  return state.currentDoc?.two_page ? 2 : 1;
+}
+
+// Spreads pair pages (1,2), (3,4)... like the Android app, so a spread starts on an even index.
+function spreadStart(idx) {
+  return state.currentDoc?.two_page ? idx - (idx % 2) : idx;
+}
+
+function goToPage(idx) {
+  if (!state.currentDoc) return false;
+  const target = spreadStart(Math.max(0, Math.min(idx, readerPageCount() - 1)));
+  if (target === state.currentPageIdx) return false;
+  state.currentPageIdx = target;
+  loadCurrentPage();
+  return true;
+}
+
+function stepPage(direction) {
+  return goToPage(spreadStart(state.currentPageIdx) + direction * readerStep());
+}
+
+function updateTwoPageControls() {
+  const on = Boolean(state.currentDoc?.two_page);
+  el.readerView.classList.toggle("two-page", on);
+  if (el.btnTwoPageToggle) {
+    el.btnTwoPageToggle.textContent = on ? "2 Pages" : "1 Page";
+    el.btnTwoPageToggle.setAttribute("aria-pressed", String(on));
+  }
+  if (el.trayReaderTwoPageLabel) {
+    el.trayReaderTwoPageLabel.textContent = `Two-Page View: ${on ? "On" : "Off"}`;
+  }
+}
+
+async function toggleTwoPage() {
+  const doc = state.currentDoc;
+  if (!doc) return;
+  doc.two_page = !doc.two_page;
+  updateTwoPageControls();
+  state.currentPageIdx = spreadStart(state.currentPageIdx);
+  loadCurrentPage();
+  try {
+    const res = await fetch(`/api/documents/${doc.id}/view`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ two_page: doc.two_page }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  } catch (e) {
+    showToast("Couldn't save two-page setting for this book", "error");
   }
 }
 
@@ -2002,9 +2077,11 @@ async function openReader(docId, initialPageIdx = null) {
     const maxPage = (doc.pages && doc.pages.length > 0) ? doc.pages.length - 1 : (doc.page_count ? doc.page_count - 1 : 0);
     startingPage = Math.max(0, Math.min(startingPage, maxPage));
 
+    startingPage = spreadStart(startingPage);
     state.currentPageIdx = startingPage;
     state.currentDoc._savedPageIdx = startingPage;
     el.readerTitle.textContent = doc.visible_name;
+    updateTwoPageControls();
 
     updateReaderExclusionState();
     if (el.btnReaderOpenTab) {
@@ -2152,13 +2229,15 @@ async function loadCurrentPage() {
     el.readerContent.scrollTop = 0;
     el.readerContent.scrollLeft = 0;
   }
-  const pages = (state.currentDoc.pages || []).filter((p) => !p.deleted);
-  const totalPages = Math.max(pages.length, 1);
-  const pageIdx = Math.min(state.currentPageIdx, totalPages - 1);
+  const doc = state.currentDoc;
+  const totalPages = readerPageCount();
+  const pageIdx = spreadStart(Math.min(state.currentPageIdx, totalPages - 1));
   state.currentPageIdx = pageIdx;
+  const pageIdxs = doc.two_page && pageIdx + 1 < totalPages ? [pageIdx, pageIdx + 1] : [pageIdx];
+  const token = ++pageRenderToken;
 
   if (el.readerPageCurrent && el.readerPageTotal) {
-    el.readerPageCurrent.textContent = String(pageIdx + 1);
+    el.readerPageCurrent.textContent = pageIdxs.map((i) => i + 1).join("–");
     el.readerPageTotal.textContent = String(totalPages);
     if (el.readerPageTotalEdit) el.readerPageTotalEdit.textContent = String(totalPages);
     if (el.readerPageInput && document.activeElement !== el.readerPageInput) {
@@ -2166,10 +2245,10 @@ async function loadCurrentPage() {
       el.readerPageInput.max = String(totalPages);
     }
   } else if (el.readerPageIndicator) {
-    el.readerPageIndicator.textContent = `Page ${pageIdx + 1} of ${totalPages}`;
+    el.readerPageIndicator.textContent = `Page ${pageIdxs.map((i) => i + 1).join("–")} of ${totalPages}`;
   }
   el.btnPagePrev.disabled = pageIdx <= 0;
-  el.btnPageNext.disabled = pageIdx >= totalPages - 1;
+  el.btnPageNext.disabled = pageIdx + readerStep() >= totalPages;
 
   if (state.isFullscreen) {
     flashPageIndicator();
@@ -2188,45 +2267,38 @@ async function loadCurrentPage() {
     }
   } catch (_) {}
 
-  const cacheKey = `${state.currentDoc.id}_${pageIdx}_${state.pageDarkMode}`;
-  if (pageSvgCache.has(cacheKey)) {
-    if (el.readerPageSpinner) el.readerPageSpinner.style.display = "none";
-    if (el.readerCanvasWrapper) el.readerCanvasWrapper.classList.remove("is-page-loading");
-    renderSvgContent(pageSvgCache.get(cacheKey));
-    preloadAdjacentPages(state.currentDoc.id, pageIdx, totalPages, state.pageDarkMode);
-    return;
-  }
-
-  // Pre-load / loading indicator feedback in navigation pill & canvas
-  if (el.readerPageSpinner) el.readerPageSpinner.style.display = "inline-flex";
-  if (el.readerCanvasWrapper) el.readerCanvasWrapper.classList.add("is-page-loading");
-  if (state.isFullscreen && el.readerNav) {
-    el.readerNav.classList.add("flash-visible");
-  }
-
-  const existingSvg = el.readerCanvasWrapper.querySelector("svg");
-  if (!existingSvg) {
-    el.readerCanvasWrapper.innerHTML = `
-      <div style="color: var(--text-muted); padding: 3rem; text-align: center;">Loading page...</div>
-    `;
+  const dark = state.pageDarkMode;
+  const cached = pageIdxs.every((i) => pageSvgCache.has(`${doc.id}_${i}_${dark}`));
+  if (!cached) {
+    // Pre-load / loading indicator feedback in navigation pill & canvas
+    if (el.readerPageSpinner) el.readerPageSpinner.style.display = "inline-flex";
+    if (el.readerCanvasWrapper) el.readerCanvasWrapper.classList.add("is-page-loading");
+    if (state.isFullscreen && el.readerNav) {
+      el.readerNav.classList.add("flash-visible");
+    }
+    if (!el.readerCanvasWrapper.querySelector("svg")) {
+      el.readerCanvasWrapper.innerHTML = `
+        <div style="color: var(--text-muted); padding: 3rem; text-align: center;">Loading page...</div>
+      `;
+    }
   }
 
   try {
-    const res = await fetch(
-      `/api/documents/${state.currentDoc.id}/pages/${pageIdx}/svg?dark=${state.pageDarkMode}&v=4`
-    );
-    if (!res.ok) throw new Error("Failed to render page");
-    const svgText = await res.text();
-    pageSvgCache.set(cacheKey, svgText);
-    renderSvgContent(svgText);
-    preloadAdjacentPages(state.currentDoc.id, pageIdx, totalPages, state.pageDarkMode);
+    const svgs = await Promise.all(pageIdxs.map((i) => fetchPageSvg(doc.id, i, dark)));
+    // A newer page turn started while this one loaded: let it draw instead.
+    if (token !== pageRenderToken || state.currentDoc !== doc) return;
+    renderPages(svgs);
+    preloadAdjacentPages(doc.id, pageIdx, totalPages, dark);
   } catch (e) {
+    if (token !== pageRenderToken) return;
     el.readerCanvasWrapper.innerHTML = `
       <div style="color: var(--danger); padding: 2rem; text-align: center;">Error loading page: ${escapeHtml(e.message)}</div>
     `;
   } finally {
-    if (el.readerPageSpinner) el.readerPageSpinner.style.display = "none";
-    if (el.readerCanvasWrapper) el.readerCanvasWrapper.classList.remove("is-page-loading");
+    if (token === pageRenderToken) {
+      if (el.readerPageSpinner) el.readerPageSpinner.style.display = "none";
+      if (el.readerCanvasWrapper) el.readerCanvasWrapper.classList.remove("is-page-loading");
+    }
   }
 }
 
@@ -2256,16 +2328,8 @@ function closePageJumpInput(applyJump = false) {
   if (el.readerPageJumpForm.style.display === "none") return;
 
   if (applyJump && state.currentDoc) {
-    const pages = (state.currentDoc.pages || []).filter((p) => !p.deleted);
-    const totalPages = Math.max(pages.length, 1);
     const val = parseInt(el.readerPageInput.value, 10);
-    if (!isNaN(val)) {
-      const targetIdx = Math.max(0, Math.min(val - 1, totalPages - 1));
-      if (targetIdx !== state.currentPageIdx) {
-        state.currentPageIdx = targetIdx;
-        loadCurrentPage();
-      }
-    }
+    if (!isNaN(val)) goToPage(val - 1);
   }
 
   el.readerPageJumpForm.style.display = "none";
@@ -2305,20 +2369,9 @@ if (el.readerPageInput) {
   });
 }
 
-el.btnPagePrev.addEventListener("click", () => {
-  if (state.currentPageIdx > 0) {
-    state.currentPageIdx--;
-    loadCurrentPage();
-  }
-});
-
-el.btnPageNext.addEventListener("click", () => {
-  const pages = (state.currentDoc.pages || []).filter((p) => !p.deleted);
-  if (state.currentPageIdx < pages.length - 1) {
-    state.currentPageIdx++;
-    loadCurrentPage();
-  }
-});
+el.btnPagePrev.addEventListener("click", () => stepPage(-1));
+el.btnPageNext.addEventListener("click", () => stepPage(1));
+if (el.btnTwoPageToggle) el.btnTwoPageToggle.addEventListener("click", toggleTwoPage);
 
 // Fit toggle
 el.btnFitToggle.addEventListener("click", () => {
@@ -2468,10 +2521,7 @@ if (el.zonePrev) {
     if (readerZoomState.hasMoved || readerZoomState.scale > 1.05) return;
     const canTap = state.pageTurnMode === "tap" || state.pageTurnMode === "both";
     if (canTap) {
-      if (state.currentPageIdx > 0) {
-        state.currentPageIdx--;
-        loadCurrentPage();
-      }
+      stepPage(-1);
     } else {
       toggleHud();
     }
@@ -2484,11 +2534,7 @@ if (el.zoneNext) {
     if (readerZoomState.hasMoved || readerZoomState.scale > 1.05) return;
     const canTap = state.pageTurnMode === "tap" || state.pageTurnMode === "both";
     if (canTap) {
-      const pages = (state.currentDoc?.pages || []).filter((p) => !p.deleted);
-      if (state.currentPageIdx < pages.length - 1) {
-        state.currentPageIdx++;
-        loadCurrentPage();
-      }
+      stepPage(1);
     } else {
       toggleHud();
     }
@@ -2760,20 +2806,8 @@ if (el.readerContent) {
       const absY = Math.abs(readerZoomState.swipeDeltaY);
       if (canSwipe && absX > 32 && absX > absY * 1.2) {
         readerZoomState.hasMoved = true;
-        if (readerZoomState.swipeDeltaX < 0) {
-          // Swipe left -> Next page
-          const pages = (state.currentDoc?.pages || []).filter((p) => !p.deleted);
-          if (state.currentPageIdx < pages.length - 1) {
-            state.currentPageIdx++;
-            loadCurrentPage();
-          }
-        } else if (readerZoomState.swipeDeltaX > 0) {
-          // Swipe right -> Previous page
-          if (state.currentPageIdx > 0) {
-            state.currentPageIdx--;
-            loadCurrentPage();
-          }
-        }
+        // Swipe left -> next page, swipe right -> previous page
+        stepPage(readerZoomState.swipeDeltaX < 0 ? 1 : -1);
       }
     }
 
@@ -3151,6 +3185,8 @@ window.addEventListener("keydown", (e) => {
       el.btnPageNext.click();
     } else if (e.key === "d") {
       el.btnPageDarkToggle.click();
+    } else if (e.key === "2") {
+      toggleTwoPage();
     }
   }
 });
@@ -4526,7 +4562,9 @@ if (el.btnTypingSave) {
         body: JSON.stringify({ text: newText }),
       });
       if (res.ok) {
-        // Refresh page SVG render
+        // Refresh page SVG render (drop the cached old render first)
+        pageSvgCache.delete(`${state.currentDoc.id}_${pageIdx}_true`);
+        pageSvgCache.delete(`${state.currentDoc.id}_${pageIdx}_false`);
         await loadCurrentPage();
         fetchTasks();
         showToast("Typed text saved and synced", "success");

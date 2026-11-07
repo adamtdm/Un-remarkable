@@ -124,6 +124,10 @@ class MoveDocumentRequest(BaseModel):
     parent_id: str = ""
 
 
+class DocumentViewRequest(BaseModel):
+    two_page: bool
+
+
 class UpdatePositionRequest(BaseModel):
     page_idx: int
 
@@ -264,7 +268,16 @@ def get_router(
             raise HTTPException(status_code=404, detail="Document not found")
         versions = db.list_versions(doc_id)
         doc["versions"] = versions
+        doc["two_page"] = db.get_two_page(doc_id)
         return doc
+
+    @r.post("/documents/{doc_id}/view")
+    def set_document_view(doc_id: str, payload: DocumentViewRequest) -> dict[str, Any]:
+        """Remember the web reader's two-page (spread) choice for this document."""
+        if not db.get_document(doc_id):
+            raise HTTPException(status_code=404, detail="Document not found")
+        db.set_two_page(doc_id, payload.two_page)
+        return {"ok": True, "two_page": payload.two_page}
 
     @r.post("/documents/{doc_id}/exclude-search")
     def set_exclude_search(doc_id: str, payload: ExcludeSearchRequest) -> dict[str, Any]:

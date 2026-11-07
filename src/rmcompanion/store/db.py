@@ -115,6 +115,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     completed_at REAL
 );
 
+-- Web-reader-only view settings. Kept out of `documents` so cloud syncs never overwrite them.
+CREATE TABLE IF NOT EXISTS doc_view_prefs (
+    doc_id TEXT PRIMARY KEY,
+    two_page BOOLEAN NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_docs_parent ON documents(parent_id, deleted);
 CREATE INDEX IF NOT EXISTS idx_docs_type ON documents(type, deleted);
 CREATE INDEX IF NOT EXISTS idx_doc_files ON document_files(doc_hash);
@@ -426,6 +432,19 @@ class Database:
                 )
                 results.append(d)
             return results
+
+    def get_two_page(self, doc_id: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute("SELECT two_page FROM doc_view_prefs WHERE doc_id = ?", (doc_id,)).fetchone()
+            return bool(row and row["two_page"])
+
+    def set_two_page(self, doc_id: str, two_page: bool) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO doc_view_prefs (doc_id, two_page) VALUES (?, ?)"
+                " ON CONFLICT(doc_id) DO UPDATE SET two_page = excluded.two_page",
+                (doc_id, two_page),
+            )
 
     def is_excluded_from_search(self, doc_id: str) -> bool:
         """Check if document or any of its parent folders are marked exclude_from_search."""

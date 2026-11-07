@@ -228,3 +228,24 @@ def test_api_update_document_position(tmp_path):
         assert doc_res.status_code == 200
         assert doc_res.json()["last_opened_page"] == 0
 
+
+
+def test_two_page_view_is_remembered_per_document(test_client):
+    app = test_client.app
+    pdf = __import__("pymupdf").open()
+    pdf.new_page()
+    pdf.new_page()
+    doc_id = app.state.notebook_editor.import_pdf_file(title="Comic", pdf_bytes=pdf.tobytes(), parent_id="")["id"]
+
+    assert test_client.get(f"/api/documents/{doc_id}").json()["two_page"] is False
+
+    res = test_client.post(f"/api/documents/{doc_id}/view", json={"two_page": True})
+    assert res.status_code == 200
+    assert test_client.get(f"/api/documents/{doc_id}").json()["two_page"] is True
+
+    # A cloud sync rewrites the document row; the reader setting must survive it.
+    db = app.state.db
+    db.upsert_document({**db.get_document(doc_id), "visible_name": "Comic (synced)"})
+    assert test_client.get(f"/api/documents/{doc_id}").json()["two_page"] is True
+
+    assert test_client.post("/api/documents/missing/view", json={"two_page": True}).status_code == 404

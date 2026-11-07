@@ -3959,3 +3959,31 @@ main {
 
 
 
+
+/* Two-page spread: each page takes half the width, the pair sits together like an open book */
+.two-page #reader-canvas-wrapper {
+  gap: 2px;
+}
+
+.two-page .reader-canvas {
+  min-width: 0;
+  max-width: calc(50% - 1px);
+}
+
+.two-page.fit-width #reader-canvas-wrapper {
+  max-width: 1600px;
+}
+
+.two-page.fit-width .reader-canvas {
+  width: calc(50% - 1px);
+}
+
+.reader-container.is-fullscreen.two-page.fit-page .reader-canvas {
+  max-width: calc(50vw - 1px);
+  margin: 0; /* auto margins would push the two pages apart */
+}
+
+.reader-container.is-fullscreen.two-page.fit-width .reader-canvas {
+  width: calc(50vw - 1px);
+  max-width: calc(50vw - 1px);
+}

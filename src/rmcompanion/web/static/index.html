@@ -12,7 +12,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg?v=20261103d">
   <link rel="icon" type="image/svg+xml" href="/icon.svg?v=20261103d">
-  <link rel="stylesheet" href="/style.css?v=20261103d">
+  <link rel="stylesheet" href="/style.css?v=20261107b">
   <script>
     // Immediately unregister all Service Workers and clear CacheStorage
     if ("serviceWorker" in navigator) {
@@ -304,6 +304,7 @@
       <div class="reader-actions-desktop" style="display: flex; align-items: center; gap: 0.5rem;">
         <button id="btn-reader-type-toggle" class="btn btn-sm btn-primary" title="Open distraction-free typed text editor">⌨ Type</button>
         <button id="btn-fit-toggle" class="btn" title="Toggle Fit Mode">Fit Width</button>
+        <button id="btn-two-page-toggle" class="btn" title="Show one or two pages side by side, remembered per book (2)" aria-pressed="false">1 Page</button>
         <button id="btn-page-dark-toggle" class="btn" title="Toggle Inverted Dark Mode for Document">Dark: On</button>
         <button id="btn-reader-fullscreen" class="btn" title="Toggle Fullscreen Reading Mode (F)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1546,6 +1547,15 @@
             <span>Toggle full page or zoom to width</span>
           </div>
         </button>
+        <button id="tray-reader-two-page-toggle" class="tray-action-btn">
+          <span class="tray-btn-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="9" height="16" rx="1"></rect><rect x="13" y="4" width="9" height="16" rx="1"></rect></svg>
+          </span>
+          <div class="tray-btn-text">
+            <strong id="tray-reader-two-page-label">Two-Page View: Off</strong>
+            <span>Show pages side by side, remembered per book</span>
+          </div>
+        </button>
         <button id="tray-reader-convert" class="tray-action-btn">
           <span class="tray-btn-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><circle cx="12" cy="18" r="1"></circle></svg>
@@ -1685,6 +1695,6 @@
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-  <script src="/app.js?v=20261106a"></script>
+  <script src="/app.js?v=20261107a"></script>
 </body>
 </html>
