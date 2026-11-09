@@ -215,6 +215,14 @@ async def test_tasks_notebook_updates_in_place_and_changed_pages_reported(tmp_pa
     assert [e.doc_id for e in entries].count(first["id"]) == 1
     assert len(entries) == 2  # the original document plus Tasks
 
+    # Folders are written in the same v4 index format the tablet uses.
+    assert await engine.create_remote_folder("folder-uuid", "Inbox")
+    entries, _, _ = await client.get_root_index(mock_cloud.root_hash)
+    folder_entry = next(e for e in entries if e.doc_id == "folder-uuid")
+    folder_index = mock_cloud.blobs[folder_entry.hash]
+    assert folder_index.startswith(b"4\n0:folder-uuid:1:")
+    assert hashlib.sha256(folder_index).hexdigest() == folder_entry.hash
+
     # Change the handwriting on the user's notebook page in the cloud.
     doc_id = "test-doc-uuid"
     root_entries, _, _ = await client.get_root_index(mock_cloud.root_hash)

@@ -1029,15 +1029,17 @@ def get_router(
 
     # Phase 4: Typed notebook editor and markdown import endpoints
     @r.post("/documents/new")
-    def create_notebook_endpoint(payload: CreateNotebookRequest) -> dict[str, Any]:
+    async def create_notebook_endpoint(payload: CreateNotebookRequest) -> dict[str, Any]:
         """Create a new native reMarkable notebook."""
         title = payload.title.strip() or "Untitled Notebook"
         try:
-            return editor.create_notebook(
+            res = editor.create_notebook(
                 title=title,
                 initial_text=payload.initial_text,
                 parent_id=payload.parent_id,
             )
+            sync_engine.spawn(sync_engine.push_local_notebook(res["id"]))
+            return res
         except Exception as e:
             logger.error("Failed to create notebook: %s", e)
             raise HTTPException(status_code=500, detail=str(e))
@@ -1064,9 +1066,7 @@ def get_router(
             res = editor.update_page_typed_text(doc_id, page_idx, payload.text)
             target_doc = db.get_document(doc_id)
             if target_doc:
-                title = target_doc.get("visible_name", "document")
-                pid = "" if title.strip().lower() == "tasks" else target_doc.get("parent_id", "")
-                sync_engine.push_notebook_pdf(doc_id, title, parent_id=pid)
+                sync_engine.spawn(sync_engine.push_local_notebook(doc_id))
             return {"ok": True, "result": res}
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Document not found")
@@ -1077,15 +1077,17 @@ def get_router(
             raise HTTPException(status_code=500, detail=str(e))
 
     @r.post("/documents/import-markdown")
-    def import_markdown_endpoint(payload: ImportMarkdownRequest) -> dict[str, Any]:
+    async def import_markdown_endpoint(payload: ImportMarkdownRequest) -> dict[str, Any]:
         """Import markdown content to a new notebook."""
         title = payload.title.strip() or "Imported Note"
         try:
-            return editor.import_markdown(
+            res = editor.import_markdown(
                 title=title,
                 markdown_content=payload.markdown,
                 parent_id=payload.parent_id,
             )
+            sync_engine.spawn(sync_engine.push_local_notebook(res["id"]))
+            return res
         except Exception as e:
             logger.error("Failed to import markdown: %s", e)
             raise HTTPException(status_code=500, detail=str(e))
@@ -1127,7 +1129,7 @@ def get_router(
             else:
                 target_title = payload.notebook_title or "Quick Notes"
                 res = editor.append_note_to_notebook(text, target_title)
-                sync_engine.push_notebook_pdf(res["id"], target_title)
+                sync_engine.spawn(sync_engine.push_local_notebook(res["id"]))
             return {"ok": True, "result": res}
         except Exception as e:
             logger.error("Failed to process quick capture: %s", e)
@@ -1177,7 +1179,7 @@ def get_router(
                     text_str = content.decode("utf-8", errors="replace")
                     res = await asyncio.to_thread(editor.import_markdown, title=stem, markdown_content=text_str, parent_id=parent_id)
                     imported.append({"file": orig_name, "id": res["id"], "type": "notebook", "optimized": False})
-                    sync_engine.push_notebook_pdf(res["id"], stem, parent_id=parent_id)
+                    sync_engine.spawn(sync_engine.push_local_notebook(res["id"]))
                 else:
                     errors.append({"file": orig_name, "error": f"Unsupported file type .{ext}"})
             except Exception as e:

@@ -132,9 +132,6 @@ async def test_mcp_writes_are_pushed_to_cloud(tmp_path):
             self.calls.append(coro.cr_code.co_name)
             coro.close()
 
-        def push_notebook_pdf(self, doc_id, title, parent_id=""):
-            self.calls.append(f"push_notebook_pdf:{title}")
-
         async def push_local_notebook(self, *a): ...
         async def create_remote_folder(self, *a): ...
         async def move_remote_document(self, *a): ...
@@ -147,11 +144,15 @@ async def test_mcp_writes_are_pushed_to_cloud(tmp_path):
 
     folder = await tools["create_folder"].fn(name="Inbox")
     await tools["quick_capture"].fn(text="Buy tips", is_task=True)
+    await tools["quick_capture"].fn(text="Idea", is_task=False)
+    await tools["create_notebook"].fn(title="Fresh")
     await tools["move_document"].fn(doc_id=folder["id"], parent_id="")
     await tools["delete_document"].fn(doc_id=folder["id"])
 
     assert fake.calls == [
         "create_remote_folder",
+        "push_local_notebook",
+        "push_local_notebook",
         "push_local_notebook",
         "move_remote_document",
         "delete_remote_document",

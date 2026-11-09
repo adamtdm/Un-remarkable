@@ -429,8 +429,9 @@ class SyncEngine:
                 subfiles=0,
                 size=len(meta_bytes),
             )
-            folder_doc_hash = compute_doc_index_hash([meta_entry])
-            doc_schema_bytes = format_index([meta_entry], schema="3").encode("utf-8")
+            # Same v4 index format the cloud and tablet write, as in push_local_notebook.
+            doc_schema_bytes = format_index([meta_entry], schema="4", doc_id=folder_id).encode("utf-8")
+            folder_doc_hash = hashlib.sha256(doc_schema_bytes).hexdigest()
 
             # 1. Upload metadata blob
             await self.client.put_blob(meta_hash, meta_bytes, f"{folder_id}.metadata")
@@ -593,8 +594,8 @@ class SyncEngine:
     async def push_local_notebook(self, doc_id: str) -> bool:
         """Upload a locally built notebook to the cloud under its own ID, replacing any older copy.
 
-        Used for generated notebooks (the consolidated Tasks notebook) so the tablet keeps one
-        document that updates in place.
+        Used for every notebook we create or edit (Tasks, Quick Notes, typed pages, Markdown
+        imports) so the tablet keeps one document that updates in place.
         """
         if not self.auth.tokens.is_authenticated:
             return False
@@ -799,22 +800,6 @@ class SyncEngine:
         task = asyncio.get_running_loop().create_task(coro)
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
-
-    def push_notebook_pdf(self, doc_id: str, title: str, parent_id: str = "") -> None:
-        """Render a local notebook to PDF and upload it to the cloud in the background.
-
-        shortcut: each call uploads a new cloud document, so repeated pushes of the
-        same notebook (e.g. "Quick Notes") leave several copies on the tablet. The Tasks
-        notebook avoids this with push_local_notebook.
-        """
-        if not self.auth.tokens.is_authenticated:
-            return
-        try:
-            pdf_bytes = self.exporter.export_annotated_pdf(doc_id)
-        except Exception as e:
-            logger.warning("Could not export %s for cloud push: %s", title, e)
-            return
-        self.spawn(self.push_document(pdf_bytes, title, parent_id=parent_id))
 
     def stop(self) -> None:
         """Stop background sync loop."""

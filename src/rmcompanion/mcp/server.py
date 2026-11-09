@@ -41,11 +41,7 @@ def create_mcp_server(
     )
 
     # Write tools are async so cloud pushes can be scheduled on the running event loop.
-    def _push_pdf(res: dict[str, Any], title: str) -> None:
-        if sync_engine:
-            sync_engine.push_notebook_pdf(res["id"], title)
-
-    def _push_tasks(res: dict[str, Any]) -> None:
+    def _push(res: dict[str, Any]) -> None:
         if sync_engine:
             sync_engine.spawn(sync_engine.push_local_notebook(res["id"]))
 
@@ -264,7 +260,7 @@ def create_mcp_server(
         name="create_notebook",
         description="Create a new native reMarkable notebook with initial typed text.",
     )
-    def create_notebook(title: str, text: str = "", parent_id: str = "") -> dict[str, Any]:
+    async def create_notebook(title: str, text: str = "", parent_id: str = "") -> dict[str, Any]:
         """Create a new notebook.
 
         Args:
@@ -272,7 +268,9 @@ def create_mcp_server(
             text: Initial typed content for the first page.
             parent_id: Optional parent folder UUID.
         """
-        return app_editor.create_notebook(title=title, initial_text=text, parent_id=parent_id)
+        res = app_editor.create_notebook(title=title, initial_text=text, parent_id=parent_id)
+        _push(res)
+        return res
 
     @server.tool(
         name="append_task",
@@ -286,7 +284,7 @@ def create_mcp_server(
             notebook_title: Target notebook title (defaults to 'Tasks').
         """
         res = app_editor.append_task_to_tasks_notebook(task_text=text, notebook_title=notebook_title)
-        _push_tasks(res)
+        _push(res)
         return res
 
     @server.tool(
@@ -307,11 +305,11 @@ def create_mcp_server(
         """
         if is_task:
             res = app_editor.append_task_to_tasks_notebook(task_text=text, notebook_title=notebook_title or "Tasks")
-            _push_tasks(res)
+            _push(res)
         else:
             title = notebook_title or "Quick Notes"
             res = app_editor.append_note_to_notebook(text=text, notebook_title=title)
-            _push_pdf(res, title)
+            _push(res)
         return res
 
     @server.tool(
@@ -329,9 +327,7 @@ def create_mcp_server(
         res = app_editor.update_page_typed_text(doc_id=doc_id, page_idx=page_idx, text=text)
         doc = app_db.get_document(doc_id)
         if sync_engine and doc:
-            title = doc.get("visible_name", "document")
-            pid = "" if title.strip().lower() == "tasks" else doc.get("parent_id", "")
-            sync_engine.push_notebook_pdf(doc_id, title, parent_id=pid)
+            sync_engine.spawn(sync_engine.push_local_notebook(doc_id))
         return res
 
     @server.tool(

@@ -633,7 +633,7 @@ class NotebookEditor:
 
         docs = self.db.list_documents(include_deleted=False)
         target_doc = next(
-            (d for d in docs if d.get("visible_name") == notebook_title and d.get("type") == "DocumentType"),
+            (d for d in docs if d.get("visible_name") == notebook_title and d.get("file_type") == "notebook"),
             None,
         )
 
