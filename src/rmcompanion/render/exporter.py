@@ -32,6 +32,15 @@ class Exporter:
         self.db = db or Database(settings=self.settings)
         self.blob_store = blob_store or BlobStore(settings=self.settings)
 
+    def _page_images(self, files: dict[str, str], doc_id: str, page_id: str) -> dict[str, bytes]:
+        """Pasted images stored in the page's folder, keyed by file name."""
+        prefix = f"{doc_id}/{page_id}/"
+        return {
+            fid[len(prefix):]: self.blob_store.get(h)
+            for fid, h in files.items()
+            if fid.startswith(prefix) and self.blob_store.has(h)
+        }
+
     def _get_cache_path(self, key: str, ext: str) -> Path:
         prefix = "thumb_" if key.startswith("thumb_") else ("page_" if key.startswith("page_") else "")
         digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:20]
@@ -69,7 +78,7 @@ class Exporter:
         rm_blob_hash = files.get(rm_file_key, "")
 
         # Cache key based on actual content blob hashes, not mutable metadata doc_hash
-        cache_key = f"page_{doc_id}_{page_idx}_{page_id}_{redir}_{pdf_blob_hash}_{rm_blob_hash}_{'dark' if dark_mode else 'light'}_v4"
+        cache_key = f"page_{doc_id}_{page_idx}_{page_id}_{redir}_{pdf_blob_hash}_{rm_blob_hash}_{'dark' if dark_mode else 'light'}_v5"
         cache_file = self._get_cache_path(cache_key, "svg")
         if cache_file.is_file():
             return cache_file.read_text(encoding="utf-8")
@@ -81,7 +90,12 @@ class Exporter:
 
             if rm_blob_hash and self.blob_store.has(rm_blob_hash):
                 rm_bytes = self.blob_store.get(rm_blob_hash)
-                svg_content = render_rm_to_svg(rm_bytes, dark_mode=dark_mode, include_background=True)
+                svg_content = render_rm_to_svg(
+                    rm_bytes,
+                    dark_mode=dark_mode,
+                    include_background=True,
+                    images=self._page_images(files, doc_id, page_id),
+                )
             else:
                 svg_content = self._blank_svg(dark_mode)
 
@@ -114,6 +128,7 @@ class Exporter:
                             include_background=False,
                             target_width=width,
                             target_height=height,
+                            images=self._page_images(files, doc_id, page_id),
                         )
                         # Strip outer <svg> and </svg> tags to embed inside composite SVG
                         ink_svg = self._extract_inner_svg(ink_svg)
@@ -140,24 +155,14 @@ class Exporter:
         page_idx: int = 0,
         dark_mode: bool = False,
     ) -> bytes:
-        """Render a single page to PNG bytes."""
-        cache_key = f"png_{doc_id}_{page_idx}_{'dark' if dark_mode else 'light'}"
-        cache_file = self._get_cache_path(cache_key, "png")
-        if cache_file.is_file():
-            return cache_file.read_bytes()
-
+        """Render a single page to PNG bytes (from the SVG, which is cached by content hash)."""
         svg_content = self.render_page_svg(doc_id, page_idx=page_idx, dark_mode=dark_mode)
 
         # PyMuPDF renders SVG string directly to pixmap
         doc = pymupdf.open(stream=svg_content.encode("utf-8"), filetype="svg")
         try:
             pix = doc[0].get_pixmap(dpi=150)
-            png_bytes = pix.tobytes("png")
-            try:
-                cache_file.write_bytes(png_bytes)
-            except OSError:
-                pass
-            return png_bytes
+            return pix.tobytes("png")
         finally:
             doc.close()
 
@@ -174,7 +179,7 @@ class Exporter:
 
         doc_hash = doc.get("doc_hash", "")
         mode_tag = "dark" if dark_mode else "light"
-        cache_key = f"thumb_{doc_hash}_{max_width}_{mode_tag}_v4"
+        cache_key = f"thumb_{doc_hash}_{max_width}_{mode_tag}_v5"
         cache_file = self._get_cache_path(cache_key, "png")
         if cache_file.is_file():
             return cache_file.read_bytes()
@@ -277,6 +282,7 @@ class Exporter:
                         rm_bytes,
                         dark_mode=dark_mode,
                         include_background=True,
+                        images=self._page_images(files, doc_id, page_id),
                     )
                     with pymupdf.open(
                         stream=svg_content.encode("utf-8"), filetype="svg"

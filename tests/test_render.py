@@ -1,11 +1,13 @@
 """Tests for SVG and PNG rendering of .rm v6 scene files."""
 
+import base64
+import struct
 from pathlib import Path
 
 import pymupdf
 import pytest
 
-from rmcompanion.render.notebook import render_rm_to_svg
+from rmcompanion.render.notebook import read_page_images, render_rm_to_svg
 from rmcompanion.render.palette import lookup_color
 
 SAMPLE_DIR = Path(__file__).parent / "fixtures" / "rm"
@@ -180,3 +182,47 @@ def test_render_thumbnail_dark_mode_note_vs_cover(tmp_path):
     assert arr_cd[2, 2][0] > 240
 
 
+
+
+# Blocks written by reMarkable 3.2x for a pasted image (here the Meeting Notes calendar icon):
+# block 14 names the image file, block 15 places it on the page as a 40x40 quad.
+_IMAGE_DEF_BLOCK = bytes.fromhex(
+    "1c5d000000010c570000003d065f13533342bb53466167575f92fd1c330000001f0197012c2a0000002801"
+    + b"6dc5c2c2-c963-4845-90bc-a9fe158ed9f9.png".hex()
+    + "2c0a0000001f00002c020000001100"
+)
+_IMAGE_ITEM_BLOCK = bytes.fromhex(
+    "1f01a1012f01a6013f00004f000054000000006c8b000000071c190000001f0199012c100000003d065f13"
+    "533342bb53466167575f92fd2f0198013c4100000010008071c10000f8c100000000000000000040c74100"
+    "00f8c10000803f000000000040c741000010410000803f0000803f008071c100001041000000000000803f"
+    "4c19000000060000000001000000020000000200000003000000000000005f019a01"
+)
+
+
+def _block(block_type: int, version: int, body: bytes) -> bytes:
+    return struct.pack("<IBBBB", len(body), 0, version, version, block_type) + body
+
+
+def test_pasted_images_are_rendered():
+    """Images pasted with the Capture tool (rmscene can't read them) are drawn under the ink."""
+    rm = (SAMPLE_DIR / "Bold_Heading_Bullet_Normal.rm").read_bytes()
+    rm += _block(14, 3, _IMAGE_DEF_BLOCK) + _block(15, 2, _IMAGE_ITEM_BLOCK)
+
+    images = read_page_images(rm)
+    assert len(images) == 1
+    img = images[0]
+    assert img["file"] == "6dc5c2c2-c963-4845-90bc-a9fe158ed9f9.png"
+    assert round(img["w"]) == 40 and round(img["h"]) == 40
+
+    png = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 4, 4), False)
+    png.clear_with(0)
+    svg = render_rm_to_svg(rm, images={img["file"]: png.tobytes("png")})
+    assert svg.count("<image ") == 1
+    assert svg.index("<image ") < svg.index('class="rm-drawing"')
+    # Missing image bytes are skipped, not an error.
+    assert "<image " not in render_rm_to_svg(rm, images={"other.png": b"x"})
+    # Dark mode re-colours the image itself; black becomes the light ink colour.
+    dark = render_rm_to_svg(rm, dark_mode=True, images={img["file"]: png.tobytes("png")})
+    b64 = dark.split('href="data:image/png;base64,')[1].split('"')[0]
+    pix = pymupdf.Pixmap(base64.b64decode(b64))
+    assert pix.pixel(0, 0)[0] > 200
