@@ -3987,3 +3987,319 @@ main {
   width: calc(50vw - 1px);
   max-width: calc(50vw - 1px);
 }
+
+/* --- Reader: contents panel (table of contents, bookmarks, highlights) --- */
+.reader-side-panel {
+  /* Fixed to the screen (the page area scrolls); --side-panel-top clears the header. */
+  position: fixed;
+  top: var(--side-panel-top, 4.5rem);
+  left: 1.5rem;
+  bottom: 5.5rem;
+  width: 340px;
+  max-width: calc(100% - 2rem);
+  flex-direction: column;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  z-index: 45;
+}
+
+.side-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.6rem 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.side-panel-tabs {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.side-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.side-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 40px;
+  padding: 0.55rem 0.65rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.side-item:hover,
+.side-item:focus-visible {
+  background-color: var(--bg-tertiary);
+}
+
+.side-item.current {
+  background-color: var(--accent-dim);
+  font-weight: 600;
+}
+
+.side-item-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.side-highlight {
+  border-left: 3px solid;
+  padding-left: 0.6rem;
+}
+
+.side-item-page {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  padding-top: 0.1rem;
+}
+
+.side-action {
+  align-self: flex-start;
+  margin: 0.25rem 0.25rem 0.5rem;
+  text-decoration: none;
+}
+
+.side-empty {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  padding: 0.75rem;
+  margin: 0;
+}
+
+#btn-reader-bookmark[aria-pressed="true"] svg,
+#btn-reader-contents.active {
+  color: var(--text-primary);
+}
+
+#btn-reader-bookmark[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+
+#btn-reader-contents.active {
+  background-color: var(--bg-tertiary);
+  border-color: var(--text-secondary);
+}
+
+/* --- Reader: page scrubber inside the navigation pill --- */
+.reader-scrubber-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: clamp(56px, 22vw, 240px);
+}
+
+.reader-scrubber-wrap[hidden] {
+  display: none;
+}
+
+.reader-scrubber {
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  accent-color: var(--text-primary);
+  cursor: pointer;
+}
+
+.reader-scrubber-bubble {
+  position: absolute;
+  bottom: calc(100% + 0.6rem);
+  transform: translateX(-50%);
+  max-width: min(260px, 70vw);
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+@media (max-width: 768px) {
+  .reader-side-panel {
+    left: 0.5rem;
+    right: 0.5rem;
+    width: auto;
+    max-width: none;
+  }
+}
+
+/* --- Library: Continue Reading shelf --- */
+.continue-shelf {
+  margin-bottom: 1.5rem;
+}
+
+.shelf-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem;
+}
+
+.shelf-row {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+}
+
+.shelf-card {
+  flex: 0 0 auto;
+  width: 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+
+.shelf-thumb {
+  display: block;
+  aspect-ratio: 3 / 4;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.shelf-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.shelf-card:hover .shelf-thumb,
+.shelf-card:focus-visible .shelf-thumb {
+  border-color: var(--text-secondary);
+  transform: translateY(-2px);
+}
+
+.shelf-name {
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.shelf-progress {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background-color: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+.shelf-progress span {
+  display: block;
+  height: 100%;
+  background-color: var(--text-primary);
+}
+
+.shelf-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shelf-thumb {
+    transition: none;
+  }
+}
+
+/* --- Highlights modal --- */
+.highlights-list {
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.highlight-book h3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.highlight-book-title {
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+
+.highlight-book-title:hover {
+  text-decoration: underline;
+}
+
+/* Narrow phones (Fold cover screen): keep the nav pill inside the screen. */
+.reader-page-current-pill {
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .reader-nav {
+    max-width: calc(100vw - 16px);
+    padding: 0.3rem 0.45rem;
+    gap: 0.3rem;
+  }
+
+  .reader-nav .reader-page-label {
+    display: none;
+  }
+
+  .reader-page-indicator {
+    min-width: 0;
+  }
+}

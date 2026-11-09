@@ -249,3 +249,43 @@ def test_two_page_view_is_remembered_per_document(test_client):
     assert test_client.get(f"/api/documents/{doc_id}").json()["two_page"] is True
 
     assert test_client.post("/api/documents/missing/view", json={"two_page": True}).status_code == 404
+
+    # Other choices update independently, without resetting two-page view.
+    res = test_client.post(f"/api/documents/{doc_id}/view", json={"rtl": True, "bookmarks": [5, 1, 5]})
+    assert res.json()["bookmarks"] == [1, 5]
+    doc = test_client.get(f"/api/documents/{doc_id}").json()
+    assert (doc["two_page"], doc["rtl"], doc["cover_alone"], doc["bookmarks"]) == (True, True, False, [1, 5])
+
+
+def test_table_of_contents_and_highlights(test_client):
+    pdf = __import__("pymupdf").open()
+    for _ in range(3):
+        pdf.new_page()
+    pdf.set_toc([[1, "Chapter One", 1], [2, "A Section", 2], [1, "Chapter Two", 3]])
+    doc_id = test_client.app.state.notebook_editor.import_pdf_file(title="Book", pdf_bytes=pdf.tobytes(), parent_id="")["id"]
+
+    toc = test_client.get(f"/api/documents/{doc_id}/toc").json()["toc"]
+    assert [(t["level"], t["title"], t["page"]) for t in toc] == [(1, "Chapter One", 0), (2, "A Section", 1), (1, "Chapter Two", 2)]
+
+    assert test_client.get(f"/api/documents/{doc_id}/highlights").json() == {"highlights": []}
+    md = test_client.get(f"/api/documents/{doc_id}/highlights?format=md")
+    assert md.headers["content-disposition"] == 'attachment; filename="Book.md"'
+    assert "No highlights yet" in md.text
+    assert test_client.get("/api/highlights").json() == {"books": []}
+    assert test_client.get("/api/documents/missing/toc").status_code == 404
+
+
+def test_continue_reading_lists_unfinished_books_most_recent_first(test_client):
+    db = test_client.app.state.db
+    base = {"type": "DocumentType", "parent_id": "", "deleted": False, "file_type": "pdf", "doc_hash": ""}
+    for doc_id, opened, page, pages in [
+        ("older", "1000", 3, 50),
+        ("newer", "2000", 10, 50),
+        ("finished", "3000", 49, 50),
+        ("crossword", "4000", 0, 1),
+        ("never-opened", "", 0, 50),
+    ]:
+        db.upsert_document({**base, "id": doc_id, "visible_name": doc_id, "last_opened": opened,
+                            "last_opened_page": page, "page_count": pages})
+    ids = [d["id"] for d in test_client.get("/api/documents/continue-reading").json()["documents"]]
+    assert ids == ["newer", "older"]

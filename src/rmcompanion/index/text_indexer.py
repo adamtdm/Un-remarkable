@@ -7,6 +7,7 @@ import logging
 
 import pymupdf
 from rmscene import read_tree
+from rmscene import scene_items as si
 from rmscene.text import TextDocument
 
 from rmcompanion.store.blob_store import BlobStore
@@ -82,5 +83,10 @@ class TextIndexer:
                     full_text = "\n".join(lines)
                     if full_text:
                         self.db.index_content(doc_id, page_idx, "typed_text", full_text)
+
+                # Text highlighted on the tablet, so it can be found in search
+                highlighted = [g.text.strip() for g in tree.walk() if isinstance(g, si.GlyphRange) and g.text]
+                if highlighted:
+                    self.db.index_content(doc_id, page_idx, "highlight", "\n".join(highlighted))
             except Exception as e:
                 logger.debug("Failed to index .rm text for %s page %d: %s", doc_id, page_idx, e)

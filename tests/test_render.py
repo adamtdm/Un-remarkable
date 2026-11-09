@@ -226,3 +226,25 @@ def test_pasted_images_are_rendered():
     b64 = dark.split('href="data:image/png;base64,')[1].split('"')[0]
     pix = pymupdf.Pixmap(base64.b64decode(b64))
     assert pix.pixel(0, 0)[0] > 200
+
+
+def test_highlights_are_read_from_pages(tmp_path):
+    """Text highlighted on the tablet is read back, with its page and colour, and exported as Markdown."""
+    import hashlib
+
+    from rmcompanion.config import Settings
+    from rmcompanion.reading import document_highlights, highlights_markdown
+    from rmcompanion.store.blob_store import BlobStore
+
+    store = BlobStore(settings=Settings(data_dir=tmp_path))
+    files = []
+    for name, data in (("book.pdf", b"%PDF-1.4"), ("book/p2.rm", (SAMPLE_DIR / "Wikipedia_highlighted_p1.rm").read_bytes())):
+        h = hashlib.sha256(data).hexdigest()
+        store.put(h, data)
+        files.append({"file_id": name, "blob_hash": h})
+    doc = {"id": "book", "files": files, "pages": [{"page_id": "p1"}, {"page_id": "p2"}]}
+
+    found = document_highlights(doc, store)
+    assert found and all(h["page"] == 1 and h["text"] and h["color"].startswith("rgba(") for h in found)
+    md = highlights_markdown([("Wiki", found)])
+    assert md.startswith("# Highlights\n\n## Wiki") and "— page 2" in md

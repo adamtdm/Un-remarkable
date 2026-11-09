@@ -246,6 +246,18 @@ const el = {
   btnReaderConvert: document.getElementById("btn-reader-convert"),
   btnFitToggle: document.getElementById("btn-fit-toggle"),
   btnTwoPageToggle: document.getElementById("btn-two-page-toggle"),
+  btnReaderContents: document.getElementById("btn-reader-contents"),
+  btnReaderContentsMobile: document.getElementById("btn-reader-contents-mobile"),
+  btnReaderBookmark: document.getElementById("btn-reader-bookmark"),
+  btnReaderRtl: document.getElementById("btn-reader-rtl"),
+  btnReaderCover: document.getElementById("btn-reader-cover"),
+  readerRtlLabel: document.getElementById("reader-rtl-label"),
+  readerCoverLabel: document.getElementById("reader-cover-label"),
+  readerSidePanel: document.getElementById("reader-side-panel"),
+  sidePanelBody: document.getElementById("side-panel-body"),
+  btnSidePanelClose: document.getElementById("btn-side-panel-close"),
+  readerScrubber: document.getElementById("reader-scrubber"),
+  readerScrubberBubble: document.getElementById("reader-scrubber-bubble"),
   btnPageDarkToggle: document.getElementById("btn-page-dark-toggle"),
   btnExportPdf: document.getElementById("btn-export-pdf"),
   btnReaderFullscreen: document.getElementById("btn-reader-fullscreen"),
@@ -445,6 +457,12 @@ const el = {
   trayReaderFitLabel: document.getElementById("tray-reader-fit-label"),
   trayReaderTwoPageToggle: document.getElementById("tray-reader-two-page-toggle"),
   trayReaderTwoPageLabel: document.getElementById("tray-reader-two-page-label"),
+  trayReaderBookmark: document.getElementById("tray-reader-bookmark"),
+  trayReaderBookmarkLabel: document.getElementById("tray-reader-bookmark-label"),
+  trayReaderRtl: document.getElementById("tray-reader-rtl"),
+  trayReaderRtlLabel: document.getElementById("tray-reader-rtl-label"),
+  trayReaderCover: document.getElementById("tray-reader-cover"),
+  trayReaderCoverLabel: document.getElementById("tray-reader-cover-label"),
   trayReaderConvert: document.getElementById("tray-reader-convert"),
   trayReaderExclude: document.getElementById("tray-reader-exclude"),
   trayReaderExcludeLabel: document.getElementById("tray-reader-exclude-label"),
@@ -481,10 +499,10 @@ function applyAppTheme(pref) {
   localStorage.setItem("rmc_theme", effectiveTheme);
 
   const isDark = effectiveTheme === "dark";
-  document.querySelectorAll(".doc-card-thumb img[data-doc-id]").forEach((img) => {
+  document.querySelectorAll(".doc-card-thumb img[data-doc-id], .shelf-thumb img[data-doc-id]").forEach((img) => {
     const docId = img.getAttribute("data-doc-id");
     const docHash = img.getAttribute("data-doc-hash") || "";
-    img.src = `/api/documents/${docId}/thumbnail?h=${encodeURIComponent(docHash)}&dark=${isDark}&v=4`;
+    img.src = `/api/documents/${docId}/thumbnail?h=${encodeURIComponent(docHash)}&dark=${isDark}&v=5`;
   });
 
   if (el.themeChoiceAuto) el.themeChoiceAuto.checked = pref === "auto";
@@ -945,7 +963,7 @@ async function fetchDocuments() {
       }
 
       // Always keep the Tasks notebook pinned to the top of notebooks on the main page
-      if (state.currentFolderId === "") {
+      if (state.currentFolder === "") {
         const isTasksA = (a.visible_name || "").trim().toLowerCase() === "tasks";
         const isTasksB = (b.visible_name || "").trim().toLowerCase() === "tasks";
         if (isTasksA !== isTasksB) {
@@ -970,10 +988,50 @@ async function fetchDocuments() {
 
     state.currentRenderedDocs = docs;
     renderDocumentGrid(docs);
+    renderContinueShelf();
   } catch (e) {
     console.error("Failed to load documents", e);
   }
 }
+
+// "Continue Reading": recently opened books and comics with how far through you are.
+// Shown on the library's home view only.
+async function renderContinueShelf() {
+  const shelf = document.getElementById("continue-shelf");
+  const row = document.getElementById("continue-shelf-row");
+  if (!shelf || !row) return;
+  const onHome = state.currentFolder === "" && (!state.currentFilter || state.currentFilter === "all") && !el.searchInput?.value.trim();
+  if (!onHome) {
+    shelf.hidden = true;
+    return;
+  }
+  let books = [];
+  try {
+    const res = await fetch("/api/documents/continue-reading?limit=12");
+    if (res.ok) books = (await res.json()).documents || [];
+  } catch (_) {}
+  shelf.hidden = books.length === 0;
+  const isDark = state.appTheme === "dark";
+  row.innerHTML = books
+    .map((d) => {
+      const total = Math.max(d.page_count || 1, 1);
+      const page = Math.min((d.last_opened_page || 0) + 1, total);
+      const pct = Math.round((page / total) * 100);
+      return `<button class="shelf-card" data-doc-id="${escapeHtml(d.id)}" title="${escapeHtml(d.visible_name)}">
+        <span class="shelf-thumb"><img data-doc-id="${escapeHtml(d.id)}" data-doc-hash="${escapeHtml(d.doc_hash || "")}" loading="lazy" alt=""
+          src="/api/documents/${encodeURIComponent(d.id)}/thumbnail?h=${encodeURIComponent(d.doc_hash || "")}&dark=${isDark}&v=5"></span>
+        <span class="shelf-name">${escapeHtml(d.visible_name)}</span>
+        <span class="shelf-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${pct}% read"><span style="width:${pct}%"></span></span>
+        <span class="shelf-meta">Page ${page} of ${total}</span>
+      </button>`;
+    })
+    .join("");
+}
+
+document.getElementById("continue-shelf-row")?.addEventListener("click", (e) => {
+  const card = e.target.closest(".shelf-card");
+  if (card) openReader(card.dataset.docId);
+});
 
 function renderDocumentGrid(docs) {
   if (!el.docGrid) return;
@@ -1069,7 +1127,7 @@ function renderDocumentGrid(docs) {
         `;
       } else {
         const isDark = state.appTheme === "dark";
-        const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}&dark=${isDark}&v=4`;
+        const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}&dark=${isDark}&v=5`;
         iconHtml = `<img src="${thumbUrl}" data-doc-id="${escapeHtml(doc.id)}" data-doc-hash="${escapeHtml(doc.doc_hash || "")}" alt="${escapeHtml(doc.visible_name)} preview" loading="lazy" width="320" height="426">`;
       }
 
@@ -1904,6 +1962,17 @@ if (el.trayReaderTwoPageToggle) {
   });
 }
 
+for (const [btn, action] of [
+  [el.trayReaderBookmark, toggleBookmark],
+  [el.trayReaderRtl, () => toggleViewPref("rtl")],
+  [el.trayReaderCover, () => toggleViewPref("cover_alone")],
+]) {
+  btn?.addEventListener("click", () => {
+    closeReaderOptionsTray();
+    action();
+  });
+}
+
 if (el.trayReaderFitToggle) {
   el.trayReaderFitToggle.addEventListener("click", () => {
     closeReaderOptionsTray();
@@ -1964,11 +2033,12 @@ el.filterTabs.forEach((tab) => {
 const pageSvgCache = new Map();
 let preloadTimer = null;
 let pageRenderToken = 0;
+let sidePanelTab = "toc";
 
 async function fetchPageSvg(docId, pageIdx, darkMode) {
   const key = `${docId}_${pageIdx}_${darkMode}`;
   if (pageSvgCache.has(key)) return pageSvgCache.get(key);
-  const res = await fetch(`/api/documents/${docId}/pages/${pageIdx}/svg?dark=${darkMode}&v=4`);
+  const res = await fetch(`/api/documents/${docId}/pages/${pageIdx}/svg?dark=${darkMode}&v=5`);
   if (!res.ok) throw new Error("Failed to render page");
   const svg = await res.text();
   pageSvgCache.set(key, svg);
@@ -2012,8 +2082,25 @@ function readerStep() {
 }
 
 // Spreads pair pages (1,2), (3,4)... like the Android app, so a spread starts on an even index.
+// With "cover page alone" the cover stands by itself and spreads are (2,3), (4,5)...
 function spreadStart(idx) {
-  return state.currentDoc?.two_page ? idx - (idx % 2) : idx;
+  const doc = state.currentDoc;
+  if (!doc?.two_page) return idx;
+  if (doc.cover_alone) return idx <= 0 ? 0 : idx - ((idx - 1) % 2);
+  return idx - (idx % 2);
+}
+
+// The pages shown for the view starting at `start`, in reading order.
+function spreadPages(start) {
+  const doc = state.currentDoc;
+  const total = readerPageCount();
+  const alone = !doc?.two_page || start + 1 >= total || (doc.cover_alone && start === 0);
+  return alone ? [start] : [start, start + 1];
+}
+
+// Turn by screen side (-1 = left, 1 = right). Right-to-left books read leftwards.
+function stepScreen(side) {
+  return stepPage(state.currentDoc?.rtl ? -side : side);
 }
 
 function goToPage(idx) {
@@ -2026,12 +2113,30 @@ function goToPage(idx) {
 }
 
 function stepPage(direction) {
-  return goToPage(spreadStart(state.currentPageIdx) + direction * readerStep());
+  const shown = spreadPages(spreadStart(state.currentPageIdx));
+  return goToPage(direction > 0 ? shown[shown.length - 1] + 1 : shown[0] - 1);
 }
 
 function updateTwoPageControls() {
-  const on = Boolean(state.currentDoc?.two_page);
+  const doc = state.currentDoc;
+  const on = Boolean(doc?.two_page);
+  const rtl = Boolean(doc?.rtl);
+  const cover = Boolean(doc?.cover_alone);
+  const marked = currentBookmarkPage() !== undefined;
   el.readerView.classList.toggle("two-page", on);
+  el.readerView.classList.toggle("rtl", rtl);
+  if (el.readerScrubber) el.readerScrubber.dir = rtl ? "rtl" : "ltr";
+  if (el.readerRtlLabel) el.readerRtlLabel.textContent = `Right-to-Left (Manga): ${rtl ? "On" : "Off"}`;
+  if (el.trayReaderRtlLabel) el.trayReaderRtlLabel.textContent = `Right-to-Left (Manga): ${rtl ? "On" : "Off"}`;
+  if (el.btnReaderRtl) el.btnReaderRtl.setAttribute("aria-pressed", String(rtl));
+  if (el.readerCoverLabel) el.readerCoverLabel.textContent = `Cover Page Alone: ${cover ? "On" : "Off"}`;
+  if (el.trayReaderCoverLabel) el.trayReaderCoverLabel.textContent = `Cover Page Alone: ${cover ? "On" : "Off"}`;
+  if (el.btnReaderCover) el.btnReaderCover.setAttribute("aria-pressed", String(cover));
+  if (el.btnReaderBookmark) {
+    el.btnReaderBookmark.setAttribute("aria-pressed", String(marked));
+    el.btnReaderBookmark.title = marked ? "Remove bookmark (B)" : "Bookmark this page (B)";
+  }
+  if (el.trayReaderBookmarkLabel) el.trayReaderBookmarkLabel.textContent = marked ? "Remove Bookmark" : "Bookmark This Page";
   if (el.btnTwoPageToggle) {
     el.btnTwoPageToggle.textContent = on ? "2 Pages" : "1 Page";
     el.btnTwoPageToggle.setAttribute("aria-pressed", String(on));
@@ -2041,23 +2146,49 @@ function updateTwoPageControls() {
   }
 }
 
-async function toggleTwoPage() {
-  const doc = state.currentDoc;
-  if (!doc) return;
-  doc.two_page = !doc.two_page;
-  updateTwoPageControls();
-  state.currentPageIdx = spreadStart(state.currentPageIdx);
-  loadCurrentPage();
+// Reader choices are saved per book on the server (reMarkable has nowhere to keep them).
+async function saveViewPrefs(doc, changes) {
   try {
     const res = await fetch(`/api/documents/${doc.id}/view`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ two_page: doc.two_page }),
+      body: JSON.stringify(changes),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   } catch (e) {
-    showToast("Couldn't save two-page setting for this book", "error");
+    showToast("Couldn't save this setting for the book", "error");
   }
+}
+
+function toggleViewPref(key) {
+  const doc = state.currentDoc;
+  if (!doc) return;
+  doc[key] = !doc[key];
+  updateTwoPageControls();
+  state.currentPageIdx = spreadStart(state.currentPageIdx);
+  loadCurrentPage();
+  saveViewPrefs(doc, { [key]: doc[key] });
+}
+
+const toggleTwoPage = () => toggleViewPref("two_page");
+
+function currentBookmarkPage() {
+  const doc = state.currentDoc;
+  const shown = spreadPages(spreadStart(state.currentPageIdx));
+  return shown.find((i) => (doc?.bookmarks || []).includes(i));
+}
+
+function toggleBookmark() {
+  const doc = state.currentDoc;
+  if (!doc) return;
+  const marked = currentBookmarkPage();
+  const bookmarks = (doc.bookmarks || []).filter((i) => i !== marked);
+  if (marked === undefined) bookmarks.push(spreadStart(state.currentPageIdx));
+  doc.bookmarks = bookmarks.sort((a, b) => a - b);
+  updateTwoPageControls();
+  showToast(marked === undefined ? `Bookmarked page ${spreadStart(state.currentPageIdx) + 1}` : "Bookmark removed", "info", 1800);
+  if (sidePanelTab === "bookmarks") renderSidePanel();
+  saveViewPrefs(doc, { bookmarks: doc.bookmarks });
 }
 
 async function openReader(docId, initialPageIdx = null) {
@@ -2194,6 +2325,8 @@ function closeReader() {
   }
   closePageJumpInput(false);
   resetZoom(false);
+  if (el.readerSidePanel) el.readerSidePanel.style.display = "none";
+  el.btnReaderContents?.classList.remove("active");
   if (state.isFullscreen) {
     toggleFullscreenMode(false);
   }
@@ -2205,6 +2338,8 @@ function closeReader() {
     el.btnReaderTypeToggle.textContent = "⌨ Type";
   }
   state.currentDoc = null;
+  // Reading moved the bookmark: refresh the shelf once the position save has landed.
+  setTimeout(renderContinueShelf, 400);
   try {
     const url = new URL(window.location.href);
     url.searchParams.delete("read");
@@ -2233,8 +2368,15 @@ async function loadCurrentPage() {
   const totalPages = readerPageCount();
   const pageIdx = spreadStart(Math.min(state.currentPageIdx, totalPages - 1));
   state.currentPageIdx = pageIdx;
-  const pageIdxs = doc.two_page && pageIdx + 1 < totalPages ? [pageIdx, pageIdx + 1] : [pageIdx];
+  const pageIdxs = spreadPages(pageIdx);
   const token = ++pageRenderToken;
+  updateTwoPageControls();
+  if (el.readerScrubber) {
+    el.readerScrubber.max = String(totalPages);
+    el.readerScrubber.value = String(pageIdx + 1);
+    el.readerScrubber.closest(".reader-scrubber-wrap").hidden = totalPages <= 1;
+  }
+  if (sidePanelTab === "toc" && el.readerSidePanel?.style.display !== "none") markCurrentChapter();
 
   if (el.readerPageCurrent && el.readerPageTotal) {
     el.readerPageCurrent.textContent = pageIdxs.map((i) => i + 1).join("–");
@@ -2247,8 +2389,11 @@ async function loadCurrentPage() {
   } else if (el.readerPageIndicator) {
     el.readerPageIndicator.textContent = `Page ${pageIdxs.map((i) => i + 1).join("–")} of ${totalPages}`;
   }
-  el.btnPagePrev.disabled = pageIdx <= 0;
-  el.btnPageNext.disabled = pageIdx + readerStep() >= totalPages;
+  const atStart = pageIdx <= 0;
+  const atEnd = pageIdxs[pageIdxs.length - 1] >= totalPages - 1;
+  // The chevrons are screen sides: in a right-to-left book the left one goes forward.
+  el.btnPagePrev.disabled = doc.rtl ? atEnd : atStart;
+  el.btnPageNext.disabled = doc.rtl ? atStart : atEnd;
 
   if (state.isFullscreen) {
     flashPageIndicator();
@@ -2287,7 +2432,8 @@ async function loadCurrentPage() {
     const svgs = await Promise.all(pageIdxs.map((i) => fetchPageSvg(doc.id, i, dark)));
     // A newer page turn started while this one loaded: let it draw instead.
     if (token !== pageRenderToken || state.currentDoc !== doc) return;
-    renderPages(svgs);
+    // Right-to-left spreads put the first page on the right.
+    renderPages(doc.rtl ? svgs.slice().reverse() : svgs);
     preloadAdjacentPages(doc.id, pageIdx, totalPages, dark);
   } catch (e) {
     if (token !== pageRenderToken) return;
@@ -2369,9 +2515,168 @@ if (el.readerPageInput) {
   });
 }
 
-el.btnPagePrev.addEventListener("click", () => stepPage(-1));
-el.btnPageNext.addEventListener("click", () => stepPage(1));
+el.btnPagePrev.addEventListener("click", () => stepScreen(-1));
+el.btnPageNext.addEventListener("click", () => stepScreen(1));
 if (el.btnTwoPageToggle) el.btnTwoPageToggle.addEventListener("click", toggleTwoPage);
+el.btnReaderBookmark?.addEventListener("click", toggleBookmark);
+for (const [btn, key] of [[el.btnReaderRtl, "rtl"], [el.btnReaderCover, "cover_alone"]]) {
+  btn?.addEventListener("click", () => {
+    if (el.readerMoreMenuDesktop) el.readerMoreMenuDesktop.style.display = "none";
+    toggleViewPref(key);
+  });
+}
+
+// --- Contents panel: table of contents, bookmarks, highlights ---
+function isSidePanelOpen() {
+  return el.readerSidePanel && el.readerSidePanel.style.display !== "none";
+}
+
+function toggleSidePanel(open = !isSidePanelOpen(), tab = null) {
+  if (!el.readerSidePanel || !state.currentDoc) return;
+  if (tab) sidePanelTab = tab;
+  const header = document.getElementById("reader-header");
+  const headerBottom = header && !state.isFullscreen ? header.getBoundingClientRect().bottom : 0;
+  el.readerSidePanel.style.setProperty("--side-panel-top", `${Math.max(headerBottom, 0) + 12}px`);
+  el.readerSidePanel.style.display = open ? "flex" : "none";
+  el.btnReaderContents?.setAttribute("aria-expanded", String(open));
+  el.btnReaderContents?.classList.toggle("active", open);
+  if (open) renderSidePanel();
+}
+
+// Table of contents and highlights are fetched once per opened book.
+async function loadReadingAid(doc, kind) {
+  const key = `_${kind}`;
+  if (!doc[key]) {
+    doc[key] = fetch(`/api/documents/${doc.id}/${kind}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data) => data[kind])
+      .catch((e) => {
+        doc[key] = null;
+        throw e;
+      });
+  }
+  return doc[key];
+}
+
+function sideItem(page, labelHtml, extraClass = "") {
+  return `<button class="side-item ${extraClass}" data-page="${page}">${labelHtml}<span class="side-item-page">${page + 1}</span></button>`;
+}
+
+function markCurrentChapter() {
+  const items = el.sidePanelBody?.querySelectorAll(".side-item[data-toc]") || [];
+  let current = null;
+  for (const item of items) {
+    if (Number(item.dataset.page) <= state.currentPageIdx) current = item;
+  }
+  items.forEach((item) => item.classList.toggle("current", item === current));
+  if (current) current.setAttribute("aria-current", "true");
+}
+
+async function renderSidePanel() {
+  const doc = state.currentDoc;
+  if (!doc || !el.sidePanelBody) return;
+  const tab = sidePanelTab;
+  el.readerSidePanel.querySelectorAll("[data-side-tab]").forEach((b) => {
+    const active = b.dataset.sideTab === tab;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", String(active));
+  });
+  const body = el.sidePanelBody;
+  const empty = (msg) => `<p class="side-empty">${msg}</p>`;
+
+  if (tab === "bookmarks") {
+    const marks = doc.bookmarks || [];
+    body.innerHTML =
+      `<button class="btn btn-sm side-action" id="btn-side-bookmark">${currentBookmarkPage() === undefined ? "Bookmark this page" : "Remove bookmark here"}</button>` +
+      (marks.length
+        ? marks.map((p) => sideItem(p, `<span class="side-item-text">Page ${p + 1}</span>`)).join("")
+        : empty("No bookmarks yet. Press B or tap the bookmark button to mark a page."));
+    body.querySelector("#btn-side-bookmark")?.addEventListener("click", toggleBookmark);
+    return;
+  }
+
+  body.innerHTML = empty("Loading…");
+  try {
+    if (tab === "toc") {
+      const toc = await loadReadingAid(doc, "toc");
+      if (sidePanelTab !== tab || state.currentDoc !== doc) return;
+      body.innerHTML = toc.length
+        ? toc
+            .map((t) =>
+              sideItem(t.page, `<span class="side-item-text" style="padding-left:${(t.level - 1) * 0.9}rem">${escapeHtml(t.title)}</span>`).replace(
+                "<button ",
+                "<button data-toc ",
+              ),
+            )
+            .join("")
+        : empty(doc.file_type === "notebook" ? "Notebooks don't have a table of contents. Use bookmarks to mark pages." : "This book has no table of contents.");
+      markCurrentChapter();
+      body.querySelector(".side-item.current")?.scrollIntoView({ block: "center" });
+    } else {
+      const highlights = await loadReadingAid(doc, "highlights");
+      if (sidePanelTab !== tab || state.currentDoc !== doc) return;
+      body.innerHTML = highlights.length
+        ? `<a class="btn btn-sm side-action" href="/api/documents/${doc.id}/highlights?format=md" download>Export as Markdown</a>` +
+          highlights
+            .map((h) => sideItem(h.page, `<span class="side-item-text side-highlight" style="border-color:${escapeHtml(h.color)}">${escapeHtml(h.text)}</span>`))
+            .join("")
+        : empty("Nothing highlighted in this book yet. Highlights made on the tablet appear here after a sync.");
+    }
+  } catch (e) {
+    if (sidePanelTab === tab) body.innerHTML = empty(`Couldn't load: ${escapeHtml(e.message)}`);
+  }
+}
+
+el.readerSidePanel?.addEventListener("click", (e) => {
+  const tabBtn = e.target.closest("[data-side-tab]");
+  if (tabBtn) {
+    sidePanelTab = tabBtn.dataset.sideTab;
+    renderSidePanel();
+    return;
+  }
+  const item = e.target.closest(".side-item");
+  if (item) {
+    goToPage(Number(item.dataset.page));
+    // On narrow screens the panel covers the page, so get out of the way.
+    if (window.matchMedia("(max-width: 768px)").matches) toggleSidePanel(false);
+  }
+});
+el.btnSidePanelClose?.addEventListener("click", () => toggleSidePanel(false));
+el.btnReaderContents?.addEventListener("click", () => toggleSidePanel());
+el.btnReaderContentsMobile?.addEventListener("click", () => toggleSidePanel());
+
+// --- Page scrubber: drag to preview a page number (and chapter), release to jump ---
+function chapterFor(pageIdx) {
+  const toc = Array.isArray(state.currentDoc?._tocResolved) ? state.currentDoc._tocResolved : [];
+  let title = "";
+  for (const t of toc) if (t.page <= pageIdx) title = t.title;
+  return title;
+}
+
+if (el.readerScrubber) {
+  el.readerScrubber.addEventListener("pointerdown", () => {
+    const doc = state.currentDoc;
+    if (doc && !doc._tocResolved) {
+      loadReadingAid(doc, "toc").then((toc) => (doc._tocResolved = toc)).catch(() => {});
+    }
+  });
+  el.readerScrubber.addEventListener("input", () => {
+    const page = Number(el.readerScrubber.value);
+    const chapter = chapterFor(page - 1);
+    const bubble = el.readerScrubberBubble;
+    bubble.textContent = chapter ? `Page ${page} · ${chapter}` : `Page ${page}`;
+    bubble.hidden = false;
+    const max = Number(el.readerScrubber.max) || 1;
+    let frac = max > 1 ? (page - 1) / (max - 1) : 0;
+    if (el.readerScrubber.dir === "rtl") frac = 1 - frac;
+    bubble.style.left = `${frac * 100}%`;
+  });
+  el.readerScrubber.addEventListener("change", () => {
+    el.readerScrubberBubble.hidden = true;
+    goToPage(Number(el.readerScrubber.value) - 1);
+  });
+  el.readerScrubber.addEventListener("blur", () => (el.readerScrubberBubble.hidden = true));
+}
 
 // Fit toggle
 el.btnFitToggle.addEventListener("click", () => {
@@ -2521,7 +2826,7 @@ if (el.zonePrev) {
     if (readerZoomState.hasMoved || readerZoomState.scale > 1.05) return;
     const canTap = state.pageTurnMode === "tap" || state.pageTurnMode === "both";
     if (canTap) {
-      stepPage(-1);
+      stepScreen(-1);
     } else {
       toggleHud();
     }
@@ -2534,7 +2839,7 @@ if (el.zoneNext) {
     if (readerZoomState.hasMoved || readerZoomState.scale > 1.05) return;
     const canTap = state.pageTurnMode === "tap" || state.pageTurnMode === "both";
     if (canTap) {
-      stepPage(1);
+      stepScreen(1);
     } else {
       toggleHud();
     }
@@ -2806,8 +3111,8 @@ if (el.readerContent) {
       const absY = Math.abs(readerZoomState.swipeDeltaY);
       if (canSwipe && absX > 32 && absX > absY * 1.2) {
         readerZoomState.hasMoved = true;
-        // Swipe left -> next page, swipe right -> previous page
-        stepPage(readerZoomState.swipeDeltaX < 0 ? 1 : -1);
+        // Swipe left brings in the page on the right (next, or previous in a right-to-left book)
+        stepScreen(readerZoomState.swipeDeltaX < 0 ? 1 : -1);
       }
     }
 
@@ -3151,6 +3456,11 @@ window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeQuickCapture();
     return;
   }
+  const highlightsModal = document.getElementById("highlights-modal");
+  if (highlightsModal?.style.display === "flex") {
+    if (e.key === "Escape") highlightsModal.style.display = "none";
+    return;
+  }
 
   if ((e.key === "c" || e.key === "C") && e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA" && el.readerView.style.display !== "flex") {
     e.preventDefault();
@@ -3167,7 +3477,9 @@ window.addEventListener("keydown", (e) => {
       return;
     }
     if (e.key === "Escape") {
-      if (state.isFullscreen) {
+      if (isSidePanelOpen()) {
+        toggleSidePanel(false);
+      } else if (state.isFullscreen) {
         toggleFullscreenMode(false);
       } else {
         closeReader();
@@ -3178,11 +3490,20 @@ window.addEventListener("keydown", (e) => {
     } else if (e.key === "f" || e.key === "F") {
       e.preventDefault();
       toggleFullscreenMode();
-    } else if (e.key === "ArrowLeft" || e.key === "k" || e.key === "p") {
-      el.btnPagePrev.click();
-    } else if (e.key === "ArrowRight" || e.key === "j" || e.key === "n" || e.key === " ") {
+    } else if (e.key === "ArrowLeft") {
+      stepScreen(-1);
+    } else if (e.key === "ArrowRight") {
       e.preventDefault();
-      el.btnPageNext.click();
+      stepScreen(1);
+    } else if (e.key === "k" || e.key === "p") {
+      stepPage(-1);
+    } else if (e.key === "j" || e.key === "n" || e.key === " ") {
+      e.preventDefault();
+      stepPage(1);
+    } else if (e.key === "b" || e.key === "B") {
+      toggleBookmark();
+    } else if (e.key === "c" || e.key === "C") {
+      toggleSidePanel();
     } else if (e.key === "d") {
       el.btnPageDarkToggle.click();
     } else if (e.key === "2") {
@@ -3212,6 +3533,68 @@ function closeTasksModal() {
 }
 
 if (el.btnTasksToggle) el.btnTasksToggle.addEventListener("click", openTasksModal);
+
+// --- Highlights from every book ---
+let highlightBooks = null;
+
+async function openHighlightsModal() {
+  const modal = document.getElementById("highlights-modal");
+  const list = document.getElementById("highlights-list");
+  if (!modal || !list) return;
+  modal.style.display = "flex";
+  document.getElementById("highlights-filter")?.focus();
+  if (!highlightBooks) {
+    // The first look reads every annotated page, so it can take a while; later ones are cached.
+    list.innerHTML = `<p class="side-empty">Gathering highlights from your books…</p>`;
+    try {
+      const res = await fetch("/api/highlights");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      highlightBooks = (await res.json()).books || [];
+    } catch (e) {
+      list.innerHTML = `<p class="side-empty">Couldn't load highlights: ${escapeHtml(e.message)}</p>`;
+      return;
+    }
+  }
+  renderHighlightsList();
+}
+
+function renderHighlightsList() {
+  const list = document.getElementById("highlights-list");
+  const q = (document.getElementById("highlights-filter")?.value || "").trim().toLowerCase();
+  const books = (highlightBooks || [])
+    .map((b) => ({ ...b, highlights: b.highlights.filter((h) => !q || h.text.toLowerCase().includes(q) || b.title.toLowerCase().includes(q)) }))
+    .filter((b) => b.highlights.length);
+  if (!books.length) {
+    list.innerHTML = `<p class="side-empty">${q ? "No highlights match." : "No highlights yet. Highlight text in a PDF or EPUB on your tablet and it will show up here after a sync."}</p>`;
+    return;
+  }
+  list.innerHTML = books
+    .map(
+      (b) => `<section class="highlight-book">
+        <h3><button class="highlight-book-title" data-doc-id="${escapeHtml(b.doc_id)}" data-page="">${escapeHtml(b.title)}</button>
+          <span class="side-item-page">${b.highlights.length}</span></h3>
+        ${b.highlights
+          .map((h) => sideItem(h.page, `<span class="side-item-text side-highlight" style="border-color:${escapeHtml(h.color)}">${escapeHtml(h.text)}</span>`).replace("<button ", `<button data-doc-id="${escapeHtml(b.doc_id)}" `))
+          .join("")}
+      </section>`,
+    )
+    .join("");
+}
+
+document.getElementById("highlights-list")?.addEventListener("click", (e) => {
+  const target = e.target.closest("[data-doc-id]");
+  if (!target) return;
+  document.getElementById("highlights-modal").style.display = "none";
+  openReader(target.dataset.docId, target.dataset.page === "" ? null : Number(target.dataset.page));
+});
+document.getElementById("highlights-filter")?.addEventListener("input", renderHighlightsList);
+document.getElementById("btn-highlights-toggle")?.addEventListener("click", openHighlightsModal);
+document.getElementById("btn-highlights-close")?.addEventListener("click", () => {
+  document.getElementById("highlights-modal").style.display = "none";
+});
+document.getElementById("highlights-modal")?.addEventListener("click", (e) => {
+  if (e.target.id === "highlights-modal") e.target.style.display = "none";
+});
 if (el.btnTasksClose) el.btnTasksClose.addEventListener("click", closeTasksModal);
 if (el.btnTasksDone) el.btnTasksDone.addEventListener("click", closeTasksModal);
 
@@ -5024,6 +5407,13 @@ if (el.btnBulkImportSubmit) {
 
 // --- Command Palette Controller (Cmd+K / Ctrl+K) ---
 const APP_COMMANDS = [
+  {
+    id: "highlights",
+    icon: ICONS.notebook,
+    title: "Highlights",
+    desc: "Everything you've highlighted, across all books",
+    action: () => openHighlightsModal(),
+  },
   {
     id: "new-note",
     icon: ICONS.notebook,

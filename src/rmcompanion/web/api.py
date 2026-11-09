@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -44,6 +45,11 @@ from rmcompanion.delivery.rss_directory import (
 from rmcompanion.editor.notebook_editor import NotebookEditor
 from rmcompanion.index.text_indexer import TextIndexer
 from rmcompanion.intelligence.task_extractor import TaskExtractor
+from rmcompanion.reading import (
+    document_highlights,
+    highlights_markdown,
+    table_of_contents,
+)
 from rmcompanion.render.exporter import Exporter
 from rmcompanion.store.blob_store import BlobStore
 from rmcompanion.store.db import Database
@@ -125,7 +131,10 @@ class MoveDocumentRequest(BaseModel):
 
 
 class DocumentViewRequest(BaseModel):
-    two_page: bool
+    two_page: bool | None = None
+    rtl: bool | None = None
+    cover_alone: bool | None = None
+    bookmarks: list[int] | None = None
 
 
 class UpdatePositionRequest(BaseModel):
@@ -158,6 +167,13 @@ def get_router(
         sync_engine=sync_engine,
         notebook_editor=editor,
     )
+
+    def _markdown_download(md: str, name: str) -> Response:
+        return Response(
+            content=md,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{_safe_name(name, "highlights")}.md"'},
+        )
 
     @r.get("/status")
     async def get_status() -> dict[str, Any]:
@@ -200,6 +216,20 @@ def get_router(
         pid = parent_id if parent_id else ""
         effective_file_type = file_type or type
         return db.list_documents(parent_id=pid, include_deleted=include_deleted, file_type=effective_file_type)
+
+    @r.get("/documents/continue-reading")
+    def continue_reading(limit: int = 10) -> dict[str, Any]:
+        """Books and comics most recently opened (on the tablet or here), for the Continue Reading shelf."""
+        books = [
+            d for d in db.list_documents(include_deleted=False)
+            if d.get("type") == "DocumentType" and d.get("file_type") in ("pdf", "epub")
+            and d.get("parent_id") != "trash" and str(d.get("last_opened") or "0").isdigit()
+            and int(d.get("last_opened") or 0) > 0
+            # Unfinished, and long enough to be "reading" (not a one-page crossword).
+            and (d.get("page_count") or 0) > 2 and (d.get("last_opened_page") or 0) < d["page_count"] - 1
+        ]
+        books.sort(key=lambda d: int(d["last_opened"]), reverse=True)
+        return {"documents": books[: max(1, min(limit, 50))]}
 
     @r.get("/folders")
     def list_folders() -> list[dict[str, Any]]:
@@ -268,16 +298,69 @@ def get_router(
             raise HTTPException(status_code=404, detail="Document not found")
         versions = db.list_versions(doc_id)
         doc["versions"] = versions
-        doc["two_page"] = db.get_two_page(doc_id)
+        doc.update(db.get_view_prefs(doc_id))
         return doc
 
     @r.post("/documents/{doc_id}/view")
     def set_document_view(doc_id: str, payload: DocumentViewRequest) -> dict[str, Any]:
-        """Remember the web reader's two-page (spread) choice for this document."""
+        """Remember the web reader's choices for this document: spreads, reading direction, bookmarks."""
         if not db.get_document(doc_id):
             raise HTTPException(status_code=404, detail="Document not found")
-        db.set_two_page(doc_id, payload.two_page)
-        return {"ok": True, "two_page": payload.two_page}
+        return {"ok": True, **db.set_view_prefs(doc_id, **payload.model_dump(exclude_none=True))}
+
+    def _toc(doc: dict[str, Any]) -> list[dict[str, Any]]:
+        source = next((f["blob_hash"] for f in doc.get("files", []) if f["file_id"].endswith((".pdf", ".epub"))), "")
+        if not source:
+            return []
+        # Page mapping depends on the page list too, so key on the document hash as well.
+        return db.cached(f"toc:{source}:{doc.get('doc_hash', '')}", lambda: table_of_contents(doc, blob_store))
+
+    def _highlights(doc: dict[str, Any]) -> list[dict[str, Any]]:
+        return db.cached(f"highlights:{doc.get('doc_hash', '')}", lambda: document_highlights(doc, blob_store))
+
+    def _doc_or_404(doc_id: str) -> dict[str, Any]:
+        doc = db.get_document(doc_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return doc
+
+    @r.get("/documents/{doc_id}/toc")
+    async def get_toc(doc_id: str) -> dict[str, Any]:
+        """The book's table of contents, with reader page numbers."""
+        doc = _doc_or_404(doc_id)
+        return {"toc": await asyncio.to_thread(_toc, doc)}
+
+    @r.get("/documents/{doc_id}/highlights")
+    async def get_document_highlights(doc_id: str, format: str = "json") -> Any:
+        """Text highlighted on the tablet in this book. `format=md` downloads it as Markdown."""
+        doc = _doc_or_404(doc_id)
+        highlights = await asyncio.to_thread(_highlights, doc)
+        if format == "md":
+            md = highlights_markdown([(doc.get("visible_name", "Untitled"), highlights)])
+            return _markdown_download(md, doc.get("visible_name", "highlights"))
+        return {"highlights": highlights}
+
+    @r.get("/highlights")
+    async def get_all_highlights(format: str = "json") -> Any:
+        """Highlights from every book, newest-read book first. `format=md` downloads Markdown."""
+
+        def collect() -> list[dict[str, Any]]:
+            books = []
+            for d in db.list_documents(include_deleted=False):
+                if d.get("type") != "DocumentType" or d.get("file_type") not in ("pdf", "epub"):
+                    continue
+                doc = db.get_document(d["id"])
+                found = _highlights(doc) if doc else []
+                if found:
+                    books.append({"doc_id": d["id"], "title": d.get("visible_name", ""),
+                                  "last_opened": d.get("last_opened", ""), "highlights": found})
+            books.sort(key=lambda b: int(b["last_opened"] or 0), reverse=True)
+            return books
+
+        books = await asyncio.to_thread(collect)
+        if format == "md":
+            return _markdown_download(highlights_markdown([(b["title"], b["highlights"]) for b in books]), "Highlights")
+        return {"books": books}
 
     @r.post("/documents/{doc_id}/exclude-search")
     def set_exclude_search(doc_id: str, payload: ExcludeSearchRequest) -> dict[str, Any]:
@@ -328,7 +411,7 @@ def get_router(
 
         doc_hash = doc.get("doc_hash", "")
         mode_tag = "dark" if dark else "light"
-        etag = f'"{doc_hash}_{mode_tag}_v4"'
+        etag = f'"{doc_hash}_{mode_tag}_v5"'
 
         if request:
             if_none_match = request.headers.get("if-none-match")
@@ -367,15 +450,16 @@ def get_router(
     def get_page_svg(doc_id: str, page_idx: int = 0, dark: bool = False, request: Request = None) -> Response:
         """Render a single page to SVG."""
         try:
-            svg = exporter.render_page_svg(doc_id, page_idx=page_idx, dark_mode=dark)
-            content = "" if (request and request.method == "HEAD") else svg
+            svg = exporter.render_page_svg(doc_id, page_idx=page_idx, dark_mode=dark).encode("utf-8")
+            # Pages change when the tablet syncs new ink, so revalidate every time (a 304 is cheap).
+            headers = {"Cache-Control": "no-cache", "ETag": f'"{hashlib.sha1(svg).hexdigest()}"'}
+            if request and request.headers.get("if-none-match") == headers["ETag"]:
+                return Response(status_code=304, headers=headers)
+            content = b"" if (request and request.method == "HEAD") else svg
             return Response(
                 content=content,
                 media_type="image/svg+xml",
-                headers={
-                    "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
-                    "Content-Length": str(len(svg.encode("utf-8"))),
-                },
+                headers={**headers, "Content-Length": str(len(svg))},
             )
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Document not found")
@@ -393,7 +477,7 @@ def get_router(
                 content=content,
                 media_type="image/png",
                 headers={
-                    "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+                    "Cache-Control": "no-cache",
                     "Content-Length": str(len(png)),
                 },
             )

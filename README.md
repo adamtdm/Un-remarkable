@@ -12,6 +12,8 @@ Mirror your entire reMarkable cloud library locally without jailbreaking, modify
 - **Detailed Live Sync Monitor:** Real-time sync drawer with stage indicators, document and file progress, data transfer metrics, and session activity logs.
 - **reMarkable Document & Comic Converter:** 5-stop quality slider converting heavy fixed-layout EPUBs, double-spread CBZ comics, and bulky PDFs into lean, single-layer PDFs sized to your device's native screen (Paper Pro Color Canvas, Paper Pro Move, RM2, RM1).
 - **Perceptual OKLCH Dark Mode Reader:** Vector SVG renderer inverting background lightness while preserving color hues and highlights for natural night-time reading.
+- **Reader That Remembers Each Book:** Table of contents, bookmarks, a page scrubber, two-page spreads (with the cover on its own if you like) and right-to-left manga reading, all saved per book. A Continue Reading shelf picks up where you left off on the tablet or in the browser.
+- **Highlights:** Everything you highlight on the tablet, per book or across the library, searchable and exportable as Markdown.
 - **Selective Search & OCR Exclusions:** Recursive folder-level and document-level search exclusions so novels and comics don't pollute meeting notes and notebook search queries.
 - **Full-Text Search (SQLite FTS5):** Instant full-text search across titles, tags, typed notes, and PDF text with search filtering (Notes only, All documents).
 - **AI Assistant Integration (MCP):** Native Model Context Protocol server exposing read and write tools over Streamable HTTP (`/mcp`) and stdio for Claude Desktop, Antigravity, and Cursor.

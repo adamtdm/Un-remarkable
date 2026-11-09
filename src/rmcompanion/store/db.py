@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import sqlite3
 import time
@@ -118,7 +119,16 @@ CREATE TABLE IF NOT EXISTS tasks (
 -- Web-reader-only view settings. Kept out of `documents` so cloud syncs never overwrite them.
 CREATE TABLE IF NOT EXISTS doc_view_prefs (
     doc_id TEXT PRIMARY KEY,
-    two_page BOOLEAN NOT NULL DEFAULT 0
+    two_page BOOLEAN NOT NULL DEFAULT 0,
+    rtl BOOLEAN NOT NULL DEFAULT 0,
+    cover_alone BOOLEAN NOT NULL DEFAULT 0,
+    bookmarks TEXT NOT NULL DEFAULT '[]'
+);
+
+-- Derived data (tables of contents, highlights) keyed by the content hash it came from.
+CREATE TABLE IF NOT EXISTS derived_cache (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_docs_parent ON documents(parent_id, deleted);
@@ -147,6 +157,12 @@ class Database:
                 conn.execute("ALTER TABLE documents ADD COLUMN exclude_from_search BOOLEAN NOT NULL DEFAULT 0")
             except sqlite3.OperationalError:
                 pass  # column already exists
+            for col in ("rtl BOOLEAN NOT NULL DEFAULT 0", "cover_alone BOOLEAN NOT NULL DEFAULT 0",
+                        "bookmarks TEXT NOT NULL DEFAULT '[]'"):
+                try:
+                    conn.execute(f"ALTER TABLE doc_view_prefs ADD COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass
 
     @contextlib.contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -433,18 +449,47 @@ class Database:
                 results.append(d)
             return results
 
-    def get_two_page(self, doc_id: str) -> bool:
-        with self.connect() as conn:
-            row = conn.execute("SELECT two_page FROM doc_view_prefs WHERE doc_id = ?", (doc_id,)).fetchone()
-            return bool(row and row["two_page"])
+    def cached(self, key: str, compute: Any) -> Any:
+        """Return the JSON value stored under `key`, computing and storing it on a miss.
 
-    def set_two_page(self, doc_id: str, two_page: bool) -> None:
+        Keys must include a content hash, so a stored value never goes stale.
+        """
+        with self.connect() as conn:
+            row = conn.execute("SELECT value FROM derived_cache WHERE key = ?", (key,)).fetchone()
+        if row:
+            return json.loads(row["value"])
+        value = compute()
+        with self.connect() as conn:
+            conn.execute("INSERT OR REPLACE INTO derived_cache (key, value) VALUES (?, ?)", (key, json.dumps(value)))
+        return value
+
+    def get_view_prefs(self, doc_id: str) -> dict[str, Any]:
+        """Web reader choices for one document. Kept apart from synced data, which reMarkable owns."""
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT two_page, rtl, cover_alone, bookmarks FROM doc_view_prefs WHERE doc_id = ?", (doc_id,)
+            ).fetchone()
+        if not row:
+            return {"two_page": False, "rtl": False, "cover_alone": False, "bookmarks": []}
+        return {
+            "two_page": bool(row["two_page"]),
+            "rtl": bool(row["rtl"]),
+            "cover_alone": bool(row["cover_alone"]),
+            "bookmarks": json.loads(row["bookmarks"] or "[]"),
+        }
+
+    def set_view_prefs(self, doc_id: str, **changes: Any) -> dict[str, Any]:
+        """Update some of a document's view prefs (two_page, rtl, cover_alone, bookmarks); return them all."""
+        prefs = {**self.get_view_prefs(doc_id), **changes}
         with self.connect() as conn:
             conn.execute(
-                "INSERT INTO doc_view_prefs (doc_id, two_page) VALUES (?, ?)"
-                " ON CONFLICT(doc_id) DO UPDATE SET two_page = excluded.two_page",
-                (doc_id, two_page),
+                "INSERT OR REPLACE INTO doc_view_prefs (doc_id, two_page, rtl, cover_alone, bookmarks)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (doc_id, prefs["two_page"], prefs["rtl"], prefs["cover_alone"],
+                 json.dumps(sorted(set(prefs["bookmarks"])))),
             )
+        prefs["bookmarks"] = sorted(set(prefs["bookmarks"]))
+        return prefs
 
     def is_excluded_from_search(self, doc_id: str) -> bool:
         """Check if document or any of its parent folders are marked exclude_from_search."""
