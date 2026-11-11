@@ -1048,6 +1048,8 @@ function renderDocumentGrid(docs) {
     return;
   }
 
+  // Grid view keeps folders in their own compact row above the portrait cards.
+  let folderRow = null;
   docs.forEach((doc) => {
     const isFolder = doc.type === "CollectionType";
     const isExcluded = Boolean(doc.exclude_from_search || doc.effective_exclude);
@@ -1118,33 +1120,32 @@ function renderDocumentGrid(docs) {
       `;
     } else {
       element.className = isFolder ? "doc-card doc-card-folder" : "doc-card";
-      let iconHtml = "";
       if (isFolder) {
-        iconHtml = `
-          <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        element.innerHTML = `
+          <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
           </svg>
+          <div class="doc-card-title" title="${escapeHtml(doc.visible_name)}">${escapeHtml(doc.visible_name)}</div>
+          ${menuHtml}
         `;
       } else {
         const isDark = state.appTheme === "dark";
         const thumbUrl = `/api/documents/${doc.id}/thumbnail?h=${encodeURIComponent(doc.doc_hash || "")}&dark=${isDark}&v=5`;
-        iconHtml = `<img src="${thumbUrl}" data-doc-id="${escapeHtml(doc.id)}" data-doc-hash="${escapeHtml(doc.doc_hash || "")}" alt="${escapeHtml(doc.visible_name)} preview" loading="lazy" width="320" height="426">`;
+        element.innerHTML = `
+          <div class="doc-card-thumb"><img src="${thumbUrl}" data-doc-id="${escapeHtml(doc.id)}" data-doc-hash="${escapeHtml(doc.doc_hash || "")}" alt="${escapeHtml(doc.visible_name)} preview" loading="lazy" width="320" height="426"></div>
+          <div class="doc-card-body">
+            <div class="card-header-row">
+              <div class="doc-card-title" title="${escapeHtml(doc.visible_name)}">${escapeHtml(doc.visible_name)}</div>
+              ${menuHtml}
+            </div>
+            <div class="doc-card-meta">
+              <span class="doc-badge">${badgeText}</span>
+              ${optimizeBadge}
+              <span>${pageText}</span>
+            </div>
+          </div>
+        `;
       }
-
-      element.innerHTML = `
-        <div class="doc-card-thumb">${iconHtml}</div>
-        <div class="doc-card-body">
-          <div class="card-header-row">
-            <div class="doc-card-title" title="${escapeHtml(doc.visible_name)}">${escapeHtml(doc.visible_name)}</div>
-            ${menuHtml}
-          </div>
-          <div class="doc-card-meta">
-            <span class="doc-badge">${badgeText}</span>
-            ${optimizeBadge}
-            <span>${pageText}</span>
-          </div>
-        </div>
-      `;
     }
 
     // Desktop Drag & Drop file and folder management (strictly ignored on mobile/touch)
@@ -1337,7 +1338,16 @@ function renderDocumentGrid(docs) {
       });
     }
 
-    el.docGrid.appendChild(element);
+    if (isFolder && state.viewMode !== "list") {
+      if (!folderRow) {
+        folderRow = document.createElement("div");
+        folderRow.className = "folder-row";
+        el.docGrid.prepend(folderRow);
+      }
+      folderRow.appendChild(element);
+    } else {
+      el.docGrid.appendChild(element);
+    }
   });
 }
 
