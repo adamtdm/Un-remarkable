@@ -3645,6 +3645,8 @@ async function fetchTasks() {
     if (el.tasksCountPill) {
       el.tasksCountPill.textContent = `${openCount} Open`;
     }
+    const btnAll = document.getElementById("btn-tasks-complete-all");
+    if (btnAll) btnAll.style.display = openCount > 0 ? "" : "none";
 
     renderTasks(tasks);
   } catch (err) {
@@ -3719,6 +3721,20 @@ function renderTasks(tasks) {
     el.tasksList.appendChild(item);
   });
 }
+
+document.getElementById("btn-tasks-complete-all")?.addEventListener("click", async () => {
+  const open = Number(el.tasksCountPill?.textContent.match(/\d+/)?.[0] || 0);
+  if (!confirm(`Mark all ${open} open tasks as completed?`)) return;
+  try {
+    const res = await fetch("/api/tasks/complete-all", { method: "POST" });
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    showToast(`${data.completed} tasks marked complete`, "success");
+    fetchTasks();
+  } catch (e) {
+    showToast(`Could not complete tasks: ${e.message}`, "error");
+  }
+});
 
 if (el.btnTasksScanAll) {
   el.btnTasksScanAll.addEventListener("click", async () => {

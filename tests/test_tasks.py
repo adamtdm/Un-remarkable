@@ -123,6 +123,17 @@ def test_tasks_api_endpoints(tmp_path):
     res_open = client.get("/api/tasks?status=open")
     assert len(res_open.json()) == 0
 
+    # Mark all complete
+    for n in (2, 3):
+        db.upsert_task({
+            "id": f"t-{n}", "doc_id": "d-1", "page_idx": 0, "raw_text": f"* Task {n}",
+            "clean_text": f"Task {n}", "status": "open", "marker_type": "star", "fingerprint": f"fp{n}",
+        })
+    done = client.post("/api/tasks/complete-all", headers={"Sec-Fetch-Site": "same-origin"})
+    assert done.json() == {"ok": True, "completed": 2}
+    assert client.get("/api/tasks?status=open").json() == []
+    assert len(client.get("/api/tasks?status=completed").json()) == 3
+
     # Vision settings
     settings_res = client.get("/api/settings/vision")
     assert settings_res.status_code == 200

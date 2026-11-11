@@ -836,6 +836,17 @@ class Database:
             )
             return cur.rowcount > 0
 
+    def complete_open_tasks(self) -> int:
+        """Mark every visible open task completed; returns how many changed."""
+        ids = [t["id"] for t in self.list_tasks(status="open")]
+        now = time.time()
+        with self.connect() as conn:
+            conn.executemany(
+                "UPDATE tasks SET status = 'completed', completed_at = ? WHERE id = ?",
+                [(now, i) for i in ids],
+            )
+        return len(ids)
+
     def delete_task(self, task_id: str) -> bool:
         with self.connect() as conn:
             cur = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))

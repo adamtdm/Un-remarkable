@@ -12,7 +12,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.svg?v=20261103d">
   <link rel="icon" type="image/svg+xml" href="/icon.svg?v=20261103d">
-  <link rel="stylesheet" href="/style.css?v=20261111a">
+  <link rel="stylesheet" href="/style.css?v=20261111b">
   <script>
     // Immediately unregister all Service Workers and clear CacheStorage
     if ("serviceWorker" in navigator) {
@@ -662,6 +662,10 @@
           <button id="btn-sync-tasks-notebook" class="btn btn-sm btn-accent" title="Consolidate all open tasks into the synced reMarkable Tasks notebook">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
             <span>Sync to 'Tasks' Notebook</span>
+          </button>
+          <button id="btn-tasks-complete-all" class="btn btn-sm btn-accent" title="Mark every open task as completed">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Mark all complete</span>
           </button>
           <button id="btn-tasks-scan-all" class="btn btn-sm btn-accent" title="Scan documents for new to-do items">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 21h5v-5"></path></svg>
@@ -1780,6 +1784,6 @@
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-  <script src="/app.js?v=20261111a"></script>
+  <script src="/app.js?v=20261111b"></script>
 </body>
 </html>

@@ -703,6 +703,14 @@ def get_router(
         """List tasks extracted from notebooks and handwritten notes."""
         return db.list_tasks(status=status, doc_id=doc_id)
 
+    @r.post("/tasks/complete-all")
+    async def complete_all_tasks() -> dict[str, Any]:
+        """Mark every open task completed and refresh the Tasks notebook once."""
+        count = db.complete_open_tasks()
+        if count:
+            sync_engine.refresh_tasks_notebook(editor)
+        return {"ok": True, "completed": count}
+
     @r.post("/tasks/{task_id}/status")
     async def update_task_status(task_id: str, payload: TaskStatusRequest) -> dict[str, Any]:
         """Update task completion status and refresh the Tasks notebook."""
