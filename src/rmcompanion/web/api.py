@@ -79,6 +79,10 @@ class TaskStatusRequest(BaseModel):
     status: str
 
 
+class TasksNotebookSyncRequest(BaseModel):
+    enabled: bool
+
+
 class VisionSettingsRequest(BaseModel):
     provider: str = "gemini"
     api_key: str = ""
@@ -702,6 +706,23 @@ def get_router(
     def list_tasks(status: str | None = None, doc_id: str | None = None) -> list[dict[str, Any]]:
         """List tasks extracted from notebooks and handwritten notes."""
         return db.list_tasks(status=status, doc_id=doc_id)
+
+    @r.get("/tasks/notebook-sync")
+    def get_tasks_notebook_sync() -> dict[str, Any]:
+        """Whether this server maintains the Tasks notebook on the tablet."""
+        from rmcompanion.intelligence.task_extractor import tasks_notebook_sync_enabled
+
+        return {"enabled": tasks_notebook_sync_enabled(db)}
+
+    @r.put("/tasks/notebook-sync")
+    def put_tasks_notebook_sync(payload: TasksNotebookSyncRequest) -> dict[str, Any]:
+        """Switch Tasks notebook maintenance on or off (off when another app maintains it)."""
+        from rmcompanion.intelligence.task_extractor import set_tasks_notebook_sync
+
+        set_tasks_notebook_sync(db, payload.enabled)
+        if payload.enabled:
+            sync_engine.refresh_tasks_notebook(editor)
+        return {"enabled": payload.enabled}
 
     @r.post("/tasks/complete-all")
     async def complete_all_tasks() -> dict[str, Any]:

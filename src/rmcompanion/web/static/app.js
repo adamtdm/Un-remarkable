@@ -3722,6 +3722,41 @@ function renderTasks(tasks) {
   });
 }
 
+// Tasks notebook sync switch: off when another app (Un-remarkable for Mac) maintains the notebook.
+async function loadTasksNotebookSync() {
+  const toggle = document.getElementById("toggle-tasks-notebook-sync");
+  if (!toggle) return;
+  try {
+    const res = await fetch("/api/tasks/notebook-sync");
+    if (!res.ok) return;
+    const data = await res.json();
+    toggle.checked = !!data.enabled;
+    const syncBtn = document.getElementById("btn-sync-tasks-notebook");
+    if (syncBtn) syncBtn.style.display = data.enabled ? "" : "none";
+  } catch (e) {
+    console.error("Failed to load Tasks notebook sync setting", e);
+  }
+}
+
+document.getElementById("toggle-tasks-notebook-sync")?.addEventListener("change", async (ev) => {
+  const enabled = ev.target.checked;
+  try {
+    const res = await fetch("/api/tasks/notebook-sync", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) throw new Error(res.statusText);
+    showToast(enabled ? "This server now maintains the Tasks notebook" : "Tasks notebook left to another app", "success");
+    loadTasksNotebookSync();
+  } catch (e) {
+    ev.target.checked = !enabled;
+    showToast(`Could not change setting: ${e.message}`, "error");
+  }
+});
+
+loadTasksNotebookSync();
+
 document.getElementById("btn-tasks-complete-all")?.addEventListener("click", async () => {
   const open = Number(el.tasksCountPill?.textContent.match(/\d+/)?.[0] || 0);
   if (!confirm(`Mark all ${open} open tasks as completed?`)) return;

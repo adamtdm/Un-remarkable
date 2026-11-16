@@ -266,3 +266,59 @@ async def test_vision_scan_skips_pages_without_handwriting(tmp_path):
     ex = Extractor(db=db, blob_store=BlobStore(settings=Settings(data_dir=tmp_path)), exporter=None, vision_provider=object())
     await ex.scan_document_for_tasks("book")
     assert scanned == [1]
+
+
+def test_tasks_notebook_sync_can_be_switched_off(tmp_path):
+    """With sync off (another app maintains the Tasks notebook), tasks are kept but the notebook isn't touched."""
+    from rmcompanion.editor.notebook_editor import NotebookEditor
+    from rmcompanion.intelligence.task_extractor import (
+        set_tasks_notebook_sync,
+        tasks_notebook_sync_enabled,
+    )
+
+    settings = Settings(data_dir=tmp_path)
+    db = Database(settings=settings)
+    blob_store = BlobStore(settings=settings)
+    extractor = TaskExtractor(db=db, blob_store=blob_store, exporter=Exporter(db=db, blob_store=blob_store, settings=settings))
+    editor = NotebookEditor(db=db, blob_store=blob_store, task_extractor=extractor)
+
+    assert tasks_notebook_sync_enabled(db)  # default on
+    set_tasks_notebook_sync(db, False)
+    assert not tasks_notebook_sync_enabled(db)
+
+    res = editor.append_task_to_tasks_notebook("Order pen tips")
+    assert res["id"] == "" and res["notebook_sync"] is False
+    assert [t["clean_text"] for t in db.list_tasks(status="open")] == ["Order pen tips"]
+    assert not any(d.get("visible_name") == "Tasks" for d in db.list_documents(include_deleted=False))
+
+    set_tasks_notebook_sync(db, True)
+    res = editor.append_task_to_tasks_notebook("Book the room")
+    assert res["id"]
+    assert any(d.get("visible_name") == "Tasks" for d in db.list_documents(include_deleted=False))
+
+
+def test_tasks_notebook_sync_setting_from_env(tmp_path, monkeypatch):
+    from rmcompanion.intelligence.task_extractor import (
+        set_tasks_notebook_sync,
+        tasks_notebook_sync_enabled,
+    )
+
+    monkeypatch.setenv("RMC_TASKS_NOTEBOOK_SYNC", "false")
+    settings = Settings(data_dir=tmp_path)
+    db = Database(settings=settings)
+    assert not tasks_notebook_sync_enabled(db)
+    set_tasks_notebook_sync(db, True)  # a choice saved in the database wins
+    assert tasks_notebook_sync_enabled(db)
+
+
+def test_tasks_notebook_sync_api(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    app = create_app(settings=settings)
+    with TestClient(app) as client:
+        assert client.get("/api/tasks/notebook-sync").json() == {"enabled": True}
+        assert client.put("/api/tasks/notebook-sync", json={"enabled": False}).json() == {"enabled": False}
+        assert client.get("/api/tasks/notebook-sync").json() == {"enabled": False}
+        # Rebuild requests are ignored while off.
+        res = client.post("/api/tasks/export-to-notebook", json={"notebook_title": "Tasks"})
+        assert res.status_code == 200
+        assert res.json()["result"].get("skipped") is True

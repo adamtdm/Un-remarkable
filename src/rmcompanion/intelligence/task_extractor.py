@@ -96,6 +96,24 @@ def extract_tasks_from_text(text: str) -> list[dict[str, Any]]:
 
 
 TASKS_NOTEBOOK_STATE_KEY = "tasks_notebook_id"
+TASKS_NOTEBOOK_SYNC_STATE_KEY = "tasks_notebook_sync"
+
+
+def tasks_notebook_sync_enabled(db: Database) -> bool:
+    """Whether this server maintains the Tasks notebook on the tablet.
+
+    A runtime choice saved in the database wins; otherwise the RMC_TASKS_NOTEBOOK_SYNC setting applies.
+    """
+    from rmcompanion.config import get_settings
+
+    saved = db.get_state(TASKS_NOTEBOOK_SYNC_STATE_KEY, "")
+    if saved in ("on", "off"):
+        return saved == "on"
+    return (getattr(db, "settings", None) or get_settings()).tasks_notebook_sync
+
+
+def set_tasks_notebook_sync(db: Database, enabled: bool) -> None:
+    db.set_state(TASKS_NOTEBOOK_SYNC_STATE_KEY, "on" if enabled else "off")
 
 
 class TaskExtractor:

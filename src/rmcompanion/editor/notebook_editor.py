@@ -19,6 +19,7 @@ from rmcompanion.cloud.index import Entry, compute_doc_index_hash
 from rmcompanion.intelligence.task_extractor import (
     TASKS_NOTEBOOK_STATE_KEY,
     TaskExtractor,
+    tasks_notebook_sync_enabled,
 )
 from rmcompanion.store.blob_store import BlobStore
 from rmcompanion.store.db import Database
@@ -616,6 +617,10 @@ class NotebookEditor:
             "fingerprint": hashlib.sha256(f"captured:{clean.lower()}".encode()).hexdigest(),
             "created_at": now,
         })
+        if not tasks_notebook_sync_enabled(self.db):
+            # Another app maintains the Tasks notebook: keep the task here, leave the tablet alone.
+            # An empty id makes the callers' push_local_notebook a no-op.
+            return {"id": "", "visible_name": notebook_title, "task_line": f"[ ] {clean}", "notebook_sync": False}
         res = self.sync_tasks_to_notebook(notebook_title)
         res["task_line"] = f"[ ] {clean}"
         return res

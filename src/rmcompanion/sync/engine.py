@@ -583,7 +583,12 @@ class SyncEngine:
         """Rebuild the consolidated Tasks notebook and update it in the cloud. Call on the event loop.
 
         With no title, keeps the notebook's current name (or "Tasks" the first time).
+        Does nothing while Tasks notebook sync is switched off (another app maintains it).
         """
+        from rmcompanion.intelligence.task_extractor import tasks_notebook_sync_enabled
+
+        if not tasks_notebook_sync_enabled(self.db):
+            return {"id": "", "skipped": True, "notebook_sync": False}
         if title is None:
             known = self.db.get_state(TASKS_NOTEBOOK_STATE_KEY, "")
             title = ((self.db.get_document(known) or {}).get("visible_name") if known else None) or "Tasks"
