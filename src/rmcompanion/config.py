@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     app_password: str = ""
     mcp_bearer_token: str = ""
 
+    # Tasks notebook: set False when another app (e.g. Un-remarkable for Mac) maintains the
+    # tablet's Tasks notebook, so the two don't overwrite each other. Can also be switched at runtime
+    # from the Tasks view (stored in the database, which takes precedence).
+    tasks_notebook_sync: bool = True
+
     # Vision & OCR Settings
     gemini_api_key: str = Field(
         default="",

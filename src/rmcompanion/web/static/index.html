@@ -659,6 +659,10 @@
           <button class="search-pill" data-task-filter="all">All</button>
         </div>
         <div style="display: flex; gap: 0.5rem;">
+          <label class="tasks-notebook-sync-toggle" title="Turn off when another app (e.g. Un-remarkable for Mac) maintains the Tasks notebook on your tablet" style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem;">
+            <input type="checkbox" id="toggle-tasks-notebook-sync" checked>
+            <span>Keep Tasks notebook on tablet</span>
+          </label>
           <button id="btn-sync-tasks-notebook" class="btn btn-sm btn-accent" title="Consolidate all open tasks into the synced reMarkable Tasks notebook">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
             <span>Sync to 'Tasks' Notebook</span>
@@ -1784,6 +1788,6 @@
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-  <script src="/app.js?v=20261111b"></script>
+  <script src="/app.js?v=20261116a"></script>
 </body>
 </html>

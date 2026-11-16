@@ -94,6 +94,7 @@ cp .env.example .env
 | `RMC_PORT` | `8099` | Host port for the web UI, REST API and MCP endpoint |
 | `RMC_SYNC_INTERVAL_SECONDS` | `120` | Interval between background cloud sync checks |
 | `RMC_MAX_CONCURRENT_DOWNLOADS` | `6` | Parallel blob downloads during sync |
+| `RMC_TASKS_NOTEBOOK_SYNC` | `true` | Maintain the tablet's Tasks notebook. Set `false` (or untick *Keep Tasks notebook on tablet* in the Tasks view) when Un-remarkable for Mac maintains it |
 | `RMC_LOG_LEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `GEMINI_API_KEY` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` | – | Optional Vision OCR provider keys (can also be set in Settings) |
 
